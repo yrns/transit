@@ -1,0 +1,34 @@
+// a door as a statechart
+
+// resolve state ids, self-referentiality
+
+// statechart events, associated type?
+
+Statechart(
+        id: "door",
+        initial: "locked",
+        states: {
+                locked: {
+                        on: {
+                            UNLOCK: Unlock( // impl Transition
+                                    target: "closed", // state id
+                                    // actions: multiple? trait implements this
+                            ),
+                        },
+                },
+                closed: {
+                        on: {
+                            OPEN: Open( target: "opened" ),
+                            LOCK: Lock( target: "locked" ),
+                        },
+                },
+                open: {
+                      on: {
+                          CLOSE: Close( target: "closed" ),
+                      },
+                },
+                destroyed: {
+                           type: 'final', // enum?
+                },
+        },
+)

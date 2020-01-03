@@ -1,0 +1,16 @@
+[package]
+name = "transit"
+version = "0.1.0"
+authors = ["Al McElrath <hello@yrns.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+petgraph = { version = "0.5.0", features = ["serde-1"] }
+serde = "1.0.104"
+ron = "0.5.1"
+serde_json = "1.0.44"
+anyhow = "1.0.26"
+typetag = "0.1.4"
+#serde_traitobject = "0.2.4"
