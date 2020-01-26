@@ -1,8 +1,15 @@
+///! this is a door
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use transit::{
+    DefaultStateContext, DefaultTransitionContext, Initial, State, StateContext, Statechart,
+    TransitionContext,
+};
 
-///! this is a door
-use transit::{DefaultStateContext, DefaultTransitionContext, Initial, State, Statechart};
+#[derive(Serialize, Deserialize)]
+struct Door {
+    hit_points: f32,
+}
 
 #[derive(Serialize, Deserialize)]
 enum DoorEvent {
@@ -10,8 +17,18 @@ enum DoorEvent {
     Unlock,
     Open,
     Close,
-    Destroy,
+    Bash,
 }
+
+// impl Statechart for Door {
+//     type Event = DoorEvent;
+// }
+
+#[derive(Serialize, Deserialize)]
+struct BashContext;
+
+#[typetag::serialize]
+impl TransitionContext<Door, DoorEvent> for BashContext {}
 
 fn main() -> Result<()> {
     let door = mk_door()?;
@@ -21,8 +38,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn mk_door() -> Result<Statechart<DoorEvent, u32>> {
-    let mut door = Statechart::new("door");
+fn mk_door() -> Result<Statechart<Door, DoorEvent, u32>> {
+    let mut door = Statechart::new("door", Door { hit_points: 100. });
     let intact = door.add_state(State::new("intact", DefaultStateContext {}, None))?;
     let locked = door.add_state(State::new("locked", DefaultStateContext {}, Some(intact)))?;
     let closed = door.add_state(State::new("closed", DefaultStateContext {}, Some(intact)))?;
@@ -33,12 +50,7 @@ fn mk_door() -> Result<Statechart<DoorEvent, u32>> {
     door.set_initial(Initial::Initial(intact))?;
     door.get_mut(intact).set_initial(Initial::Initial(locked))?;
 
-    door.add_transition(
-        intact,
-        destroyed,
-        DoorEvent::Destroy,
-        DefaultTransitionContext {},
-    )?;
+    door.add_transition(intact, destroyed, DoorEvent::Bash, BashContext {})?;
 
     door.add_transition(
         locked,
