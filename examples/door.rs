@@ -8,9 +8,10 @@ use transit::{
     TransitionContext,
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Door {
     hit_points: f32,
+    key: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -20,8 +21,8 @@ struct Attack {
 
 #[derive(Serialize, Deserialize)]
 enum DoorEvent {
-    Lock,
-    Unlock,
+    Lock(Option<String>),
+    Unlock(Option<String>),
     Open,
     Close,
     Bash(Attack),
@@ -31,24 +32,121 @@ enum DoorEvent {
 //     type Event = DoorEvent;
 // }
 
-#[derive(Serialize, Deserialize)]
-struct BashContext;
-
-impl<Scc, E> TransitionContext<Scc, E> for BashContext {}
-
 #[derive(Serialize, Deserialize, Default)]
-struct LockedContext {
-    attempts: usize,
+struct IntactContext;
+
+impl StateContext<Door, DoorEvent> for IntactContext {
+    fn entry(&mut self, _scc: &mut Door, _event: &DoorEvent) -> Result<()> {
+        println!("You see a sturdy door.");
+        Ok(())
+    }
 }
 
-impl<Scc, E> StateContext<Scc, E> for LockedContext {}
+#[derive(Serialize, Deserialize)]
+struct LockedContext;
+
+impl StateContext<Door, DoorEvent> for LockedContext {}
+
+#[derive(Serialize, Deserialize, Default)]
+struct ClosedContext;
+
+impl StateContext<Door, DoorEvent> for ClosedContext {
+    fn entry(&mut self, _scc: &mut Door, _event: &DoorEvent) -> Result<()> {
+        println!("The door is now closed.");
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct OpenedContext;
+
+impl StateContext<Door, DoorEvent> for OpenedContext {
+    fn entry(&mut self, _scc: &mut Door, _event: &DoorEvent) -> Result<()> {
+        println!("The door is now open.");
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct DestroyedContext;
+
+impl StateContext<Door, DoorEvent> for DestroyedContext {
+    fn entry(&mut self, _scc: &mut Door, _event: &DoorEvent) -> Result<()> {
+        println!("The door shatters into many pieces.");
+        Ok(())
+    }
+}
 
 // TODO: devise a macro to generate these enums and the impls for contexts
 //#[enum_dispatch(StateContext)]
 #[derive(Serialize, Deserialize)]
 enum DoorStateContext {
     DefaultStateContext(DefaultStateContext),
+    IntactContext(IntactContext),
     LockedContext(LockedContext),
+    ClosedContext(ClosedContext),
+    OpenedContext(OpenedContext),
+    DestroyedContext(DestroyedContext),
+}
+
+#[derive(Serialize, Deserialize)]
+struct BashContext;
+
+impl TransitionContext<Door, DoorEvent> for BashContext {
+    fn guard(&mut self, door: &mut Door, event: &DoorEvent) -> bool {
+        if let DoorEvent::Bash(attack) = event {
+            door.hit_points -= attack.damage;
+            if door.hit_points <= 0. {
+                // destroyed
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct LockContext;
+
+impl TransitionContext<Door, DoorEvent> for LockContext {
+    fn guard(&mut self, _door: &mut Door, event: &DoorEvent) -> bool {
+        if let DoorEvent::Unlock(Some(key)) = event {
+            if key == "the right key" {
+                println!("You lock the door.");
+                true
+            } else {
+                println!("That isn't the right key.");
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct UnlockContext {
+    attempts: usize,
+}
+
+impl TransitionContext<Door, DoorEvent> for UnlockContext {
+    fn guard(&mut self, _door: &mut Door, event: &DoorEvent) -> bool {
+        if let DoorEvent::Unlock(Some(key)) = event {
+            if key == "the right key" {
+                println!("You unlock the door.");
+                true
+            } else {
+                println!("That isn't the right key. The lock wears slightly.");
+                self.attempts += 1;
+                false
+            }
+        } else {
+            false
+        }
+    }
 }
 
 //#[enum_dispatch(StateContext)]
@@ -56,6 +154,8 @@ enum DoorStateContext {
 enum DoorTransitionContext {
     DefaultTransitionContext(DefaultTransitionContext),
     BashContext(BashContext),
+    LockContext(LockContext),
+    UnlockContext(UnlockContext),
 }
 
 // also make the macro do these
@@ -75,14 +175,22 @@ impl StateContext<Door, DoorEvent> for DoorStateContext {
     fn entry(&mut self, scc: &mut Door, event: &DoorEvent) -> Result<()> {
         match self {
             DoorStateContext::DefaultStateContext(ref mut ctx) => ctx.entry(scc, event),
+            DoorStateContext::IntactContext(ref mut ctx) => ctx.entry(scc, event),
             DoorStateContext::LockedContext(ref mut ctx) => ctx.entry(scc, event),
+            DoorStateContext::ClosedContext(ref mut ctx) => ctx.entry(scc, event),
+            DoorStateContext::OpenedContext(ref mut ctx) => ctx.entry(scc, event),
+            DoorStateContext::DestroyedContext(ref mut ctx) => ctx.entry(scc, event),
         }
     }
 
     fn exit(&mut self, scc: &mut Door, event: &DoorEvent) -> Result<()> {
         match self {
-            DoorStateContext::DefaultStateContext(ref mut ctx) => ctx.entry(scc, event),
-            DoorStateContext::LockedContext(ref mut ctx) => ctx.entry(scc, event),
+            DoorStateContext::DefaultStateContext(ref mut ctx) => ctx.exit(scc, event),
+            DoorStateContext::IntactContext(ref mut ctx) => ctx.exit(scc, event),
+            DoorStateContext::LockedContext(ref mut ctx) => ctx.exit(scc, event),
+            DoorStateContext::ClosedContext(ref mut ctx) => ctx.exit(scc, event),
+            DoorStateContext::OpenedContext(ref mut ctx) => ctx.exit(scc, event),
+            DoorStateContext::DestroyedContext(ref mut ctx) => ctx.exit(scc, event),
         }
     }
 }
@@ -92,6 +200,8 @@ impl TransitionContext<Door, DoorEvent> for DoorTransitionContext {
         match self {
             DoorTransitionContext::DefaultTransitionContext(ref mut ctx) => ctx.action(scc, event),
             DoorTransitionContext::BashContext(ref mut ctx) => ctx.action(scc, event),
+            DoorTransitionContext::LockContext(ref mut ctx) => ctx.action(scc, event),
+            DoorTransitionContext::UnlockContext(ref mut ctx) => ctx.action(scc, event),
         }
     }
 
@@ -99,40 +209,54 @@ impl TransitionContext<Door, DoorEvent> for DoorTransitionContext {
         match self {
             DoorTransitionContext::DefaultTransitionContext(ref mut ctx) => ctx.guard(scc, event),
             DoorTransitionContext::BashContext(ref mut ctx) => ctx.guard(scc, event),
+            DoorTransitionContext::LockContext(ref mut ctx) => ctx.guard(scc, event),
+            DoorTransitionContext::UnlockContext(ref mut ctx) => ctx.guard(scc, event),
         }
     }
 }
 
 fn main() -> Result<()> {
-    let door = mk_door()?;
-
-    println!("{}", door.export()?);
+    let _door = mk_door()?;
 
     Ok(())
 }
 
 fn mk_door() -> Result<Statechart<DoorStateContext, DoorTransitionContext, Door, DoorEvent, u32>> {
-    let mut door = Statechart::new("door", Door { hit_points: 100. });
-    let intact = door.add_state(State::new("intact", DoorStateContext::default(), None))?;
+    let mut door = Statechart::new(
+        "door",
+        Door {
+            hit_points: 100.,
+            key: "the right key".to_string(),
+        },
+    );
+    let intact = door.add_state(State::new(
+        "intact",
+        DoorStateContext::IntactContext(IntactContext {}),
+        None,
+    ))?;
     let locked = door.add_state(State::new(
         "locked",
-        DoorStateContext::LockedContext(LockedContext::default()),
+        DoorStateContext::LockedContext(LockedContext {}),
         Some(intact),
     ))?;
     let closed = door.add_state(State::new(
         "closed",
-        DoorStateContext::default(),
+        DoorStateContext::ClosedContext(ClosedContext {}),
         Some(intact),
     ))?;
     let open = door.add_state(State::new(
         "open",
-        DoorStateContext::default(),
+        DoorStateContext::OpenedContext(OpenedContext {}),
         Some(intact),
     ))?;
-    let destroyed = door.add_state(State::new("destroyed", DoorStateContext::default(), None))?;
+    let destroyed = door.add_state(State::new(
+        "destroyed",
+        DoorStateContext::DestroyedContext(DestroyedContext {}),
+        None,
+    ))?;
 
     // make it default to the first added state?
-    door.set_initial(Initial::Initial(intact))?;
+    door.set_initial(intact)?;
     door.get_mut(intact).set_initial(Initial::Initial(locked))?;
 
     door.add_transition(
@@ -145,8 +269,8 @@ fn mk_door() -> Result<Statechart<DoorStateContext, DoorTransitionContext, Door,
     door.add_transition(
         locked,
         closed,
-        DoorEvent::Unlock,
-        DoorTransitionContext::default(),
+        DoorEvent::Unlock(None),
+        DoorTransitionContext::UnlockContext(UnlockContext::default()),
     )?;
 
     door.add_transition(
@@ -166,9 +290,21 @@ fn mk_door() -> Result<Statechart<DoorStateContext, DoorTransitionContext, Door,
     door.add_transition(
         closed,
         locked,
-        DoorEvent::Lock,
-        DoorTransitionContext::default(),
+        DoorEvent::Lock(None),
+        DoorTransitionContext::LockContext(LockContext {}),
     )?;
+
+    println!(
+        "{:?}",
+        door.common_ancestor(locked, destroyed)
+            .map(|i| &door.graph[i].id)
+    );
+
+    println!(
+        "{:?}",
+        door.common_ancestor(locked, intact)
+            .map(|i| &door.graph[i].id)
+    );
 
     Ok(door)
 }

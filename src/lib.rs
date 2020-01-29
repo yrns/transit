@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 //use enum_dispatch::enum_dispatch;
 use lazy_static::lazy_static;
 use petgraph::{
@@ -12,7 +12,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::any::Any;
 use std::boxed::Box;
 use std::collections::btree_map::{BTreeMap, Entry};
-//use std::mem::Discriminant;
+use std::iter::Iterator;
+use std::mem::discriminant;
 use typetag::{
     inventory::{collect, submit},
     DeserializeFn, Registry,
@@ -25,7 +26,7 @@ use typetag::{
 // use a stable graph for editing, maybe switch to DiGraph at runtime
 // has an external map of ids to indexes, GraphMap doesn't serialize
 #[derive(Serialize, Deserialize)]
-pub struct Statechart<Sc, Tc, Scc, E, Ix: IndexType>
+pub struct Statechart<Sc, Tc, Scc: Clone, E, Ix: IndexType>
 // where
 //     Sc: StateContext<Scc, E>,
 //     Tc: TransitionContext<Scc, E>,
@@ -44,7 +45,8 @@ pub struct Statechart<Sc, Tc, Scc, E, Ix: IndexType>
 pub enum Initial<Ix: IndexType> {
     None,
     Initial(NodeIndex<Ix>),
-    History(NodeIndex<Ix>),
+    HistoryShallow(NodeIndex<Ix>),
+    HistoryDeep(NodeIndex<Ix>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -108,7 +110,7 @@ pub struct Transition<Tc, E> {
 // }
 
 //impl<'de, E: Serialize + Deserialize<'de>, Ix: IndexType + Serialize + Deserialize<'de>>
-impl<'de, Sc, Tc, Scc, E, Ix: IndexType + Serialize> Statechart<Sc, Tc, Scc, E, Ix>
+impl<'de, Sc, Tc, Scc: Clone, E, Ix: IndexType + Serialize> Statechart<Sc, Tc, Scc, E, Ix>
 where
     Sc: StateContext<Scc, E> + Serialize + Deserialize<'de>,
     Tc: TransitionContext<Scc, E> + Serialize + Deserialize<'de>,
@@ -141,9 +143,20 @@ where
         Ok(self.graph.add_node(s))
     }
 
-    pub fn set_initial(&mut self, initial: Initial<Ix>) -> Result<()> {
-        self.initial = initial;
+    // the only reason we'd want history at the root of a statechart
+    // is if it's used inside another statechart - TODO:
+    pub fn set_initial(&mut self, idx: NodeIndex<Ix>) -> Result<()> {
+        self.initial = Initial::Initial(idx);
         Ok(())
+    }
+
+    pub fn get_initial(&self, idx: NodeIndex<Ix>) -> Option<NodeIndex<Ix>> {
+        match self.graph[idx].initial {
+            Initial::None => None,
+            Initial::Initial(idx) => self.get_initial(idx),
+            Initial::HistoryShallow(idx) => self.get_initial(idx),
+            Initial::HistoryDeep(idx) => self.get_initial(idx),
+        }
     }
 
     pub fn add_transition(
@@ -157,9 +170,158 @@ where
         Ok(())
     }
 
-    // note: xstate takes the state to transition from
-    pub fn transition(&mut self, _event: E) -> Result<()> {
-        Ok(())
+    pub fn reset(&mut self) -> Result<()> {
+        match self.initial {
+            Initial::None => Err(anyhow!("no initial state set")),
+            Initial::Initial(idx) => {
+                // recursively find the active state
+                self.active_state = Some(self.get_initial(idx).unwrap_or(idx));
+                Ok(())
+            }
+            Initial::HistoryShallow(_) | Initial::HistoryDeep(_) => {
+                // does this make sense at all?
+                Err(anyhow!("invalid initial value (history)"))
+            }
+        }
+    }
+
+    // set initial states and return a channel
+    pub fn run(&mut self) {
+        todo!()
+    }
+
+    // returns an iterator from idx -> root
+    pub fn path_iter<'a>(&'a self, idx: NodeIndex<Ix>) -> PathIter<'a, Sc, Tc, Scc, E, Ix> {
+        PathIter::new(&self, idx)
+    }
+
+    // path from root -> idx as a vec
+    pub fn path(&self, idx: NodeIndex<Ix>) -> Vec<NodeIndex<Ix>> {
+        let mut path = self.path_iter(idx).collect::<Vec<_>>();
+        path.reverse();
+        path
+    }
+
+    pub fn path_str(&self, idx: NodeIndex<Ix>) -> String {
+        self.path(idx)
+            .iter()
+            .map(|i| self.graph[*i].id.clone())
+            .collect::<Vec<String>>()
+            .join("::")
+    }
+
+    pub fn parent(&self, idx: NodeIndex<Ix>) -> Option<NodeIndex<Ix>> {
+        self.graph[idx].parent
+    }
+
+    pub fn common_ancestor(&self, s1: NodeIndex<Ix>, s2: NodeIndex<Ix>) -> Option<NodeIndex<Ix>> {
+        self.path(s1)
+            .iter()
+            .zip(self.path(s2).iter())
+            .find(|(a, b)| a != b)
+            // both states should have the same parent
+            .and_then(|(i, _)| self.parent(*i))
+    }
+
+    // TODO: self-transitions?
+    pub fn transition(&mut self, event: E) -> Result<()> {
+        let d = discriminant(&event);
+        let mut scc = self.context.clone();
+
+        // find a matching transition from the active state
+        if let Some(idx) = self.active_state {
+            let mut next: Option<NodeIndex<Ix>> = None;
+            let mut edges = self.graph.neighbors(idx).detach();
+
+            while let Some((edge, node)) = edges.next(&self.graph) {
+                let t = &mut self.graph[edge];
+                if discriminant(&t.event) == d {
+                    if t.context.guard(&mut scc, &event) {
+                        t.context.action(&mut scc, &event)?;
+                        next = Some(node);
+                        break;
+                    }
+                }
+            }
+
+            // traverse states up to a common ancestor (calling exit
+            // on each) and back down to the next state (calling
+            // entry) - if there is an error here we may be in a weird
+            // state: FIX
+            if let Some(next) = next {
+                let a = self.common_ancestor(idx, next);
+
+                let p1 = self.path_iter(idx).collect::<Vec<_>>();
+                let mut last = idx;
+                let res: Result<Vec<()>> = p1
+                    .iter()
+                    .take_while(|i| a.map_or(true, |a| **i != a))
+                    .map(|i| {
+                        // track history
+                        let s = &mut self.graph[*i];
+                        s.context.exit(&mut scc, &event).and_then(|_| {
+                            match s.initial {
+                                Initial::HistoryShallow(ref mut h) => *h = last,
+                                Initial::HistoryDeep(ref mut h) => *h = idx,
+                                _ => (),
+                            };
+                            // you can't have a history with no child
+                            // states, and we're not checking that
+                            // here - FIX?
+                            last = *i;
+                            Ok(())
+                        })
+                    })
+                    .collect();
+
+                let res: Result<Vec<()>> = res.and_then(|_| {
+                    self.path(next)
+                        .iter()
+                        .take_while(|i| a.map_or(true, |a| **i != a))
+                        .map(|i| self.graph[*i].context.entry(&mut scc, &event))
+                        .collect()
+                });
+
+                res?;
+
+                // copy back mutated state context
+                self.context = scc;
+
+                Ok(())
+            } else {
+                Err(anyhow!("no valid transitions"))
+            }
+        // set active state, recursively work through initial states
+        } else {
+            Err(anyhow!("no active state"))
+        }
+    }
+}
+
+pub struct PathIter<'a, Sc, Tc, Scc: Clone, E, Ix: IndexType> {
+    statechart: &'a Statechart<Sc, Tc, Scc, E, Ix>,
+    idx: Option<NodeIndex<Ix>>,
+}
+
+impl<'a, Sc, Tc, Scc: Clone, E, Ix: IndexType> PathIter<'a, Sc, Tc, Scc, E, Ix> {
+    pub fn new(statechart: &'a Statechart<Sc, Tc, Scc, E, Ix>, idx: NodeIndex<Ix>) -> Self {
+        Self {
+            statechart,
+            idx: Some(idx),
+        }
+    }
+}
+
+impl<'a, Sc, Tc, Scc: Clone, E, Ix: IndexType> Iterator for PathIter<'a, Sc, Tc, Scc, E, Ix> {
+    type Item = NodeIndex<Ix>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(idx) = self.idx {
+            self.idx = self.statechart.graph[idx].parent;
+            Some(idx)
+        } else {
+            None
+        }
     }
 }
 
@@ -187,23 +349,10 @@ impl<Tc, E> Transition<Tc, E> {
 
 #[cfg(test)]
 mod tests {
-    //use petgraph::graphmap::DiGraphMap;
-    use petgraph::graph::UnGraph;
-    //use serde_json;
-    use ron::ser::{to_string_pretty, PrettyConfig};
+    use super::*;
 
     #[test]
     fn it_works() {
-        let g = UnGraph::<i32, ()>::from_edges(&[(1, 2), (2, 3), (3, 4), (1, 4)]);
-
-        //let mut g = DiGraphMap::new();
-        //g.add_edge("x", "y", -1);
-
-        let pretty = PrettyConfig::default();
-        let s = to_string_pretty(&g, pretty).unwrap();
-
-        //let s = serde_json::to_string(&g).unwrap();
-
-        println!("{}", s);
+        println!("w/ macros");
     }
 }
