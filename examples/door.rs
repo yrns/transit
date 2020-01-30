@@ -3,23 +3,24 @@ use anyhow::Result;
 //use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 //use std::mem::discriminant;
+use rustyline::error::ReadlineError;
 use transit::{
     DefaultStateContext, DefaultTransitionContext, Initial, State, StateContext, Statechart,
     TransitionContext,
 };
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct Door {
     hit_points: f32,
     key: String,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct Attack {
     damage: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 enum DoorEvent {
     Lock(Option<String>),
     Unlock(Option<String>),
@@ -32,7 +33,7 @@ enum DoorEvent {
 //     type Event = DoorEvent;
 // }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct IntactContext;
 
 impl StateContext<Door, DoorEvent> for IntactContext {
@@ -42,12 +43,12 @@ impl StateContext<Door, DoorEvent> for IntactContext {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct LockedContext;
 
 impl StateContext<Door, DoorEvent> for LockedContext {}
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct ClosedContext;
 
 impl StateContext<Door, DoorEvent> for ClosedContext {
@@ -57,7 +58,7 @@ impl StateContext<Door, DoorEvent> for ClosedContext {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct OpenedContext;
 
 impl StateContext<Door, DoorEvent> for OpenedContext {
@@ -67,7 +68,7 @@ impl StateContext<Door, DoorEvent> for OpenedContext {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct DestroyedContext;
 
 impl StateContext<Door, DoorEvent> for DestroyedContext {
@@ -79,7 +80,7 @@ impl StateContext<Door, DoorEvent> for DestroyedContext {
 
 // TODO: devise a macro to generate these enums and the impls for contexts
 //#[enum_dispatch(StateContext)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 enum DoorStateContext {
     DefaultStateContext(DefaultStateContext),
     IntactContext(IntactContext),
@@ -89,7 +90,7 @@ enum DoorStateContext {
     DestroyedContext(DestroyedContext),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct BashContext;
 
 impl TransitionContext<Door, DoorEvent> for BashContext {
@@ -108,7 +109,7 @@ impl TransitionContext<Door, DoorEvent> for BashContext {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct LockContext;
 
 impl TransitionContext<Door, DoorEvent> for LockContext {
@@ -127,7 +128,7 @@ impl TransitionContext<Door, DoorEvent> for LockContext {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct UnlockContext {
     attempts: usize,
 }
@@ -150,7 +151,7 @@ impl TransitionContext<Door, DoorEvent> for UnlockContext {
 }
 
 //#[enum_dispatch(StateContext)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 enum DoorTransitionContext {
     DefaultTransitionContext(DefaultTransitionContext),
     BashContext(BashContext),
@@ -216,7 +217,59 @@ impl TransitionContext<Door, DoorEvent> for DoorTransitionContext {
 }
 
 fn main() -> Result<()> {
-    let _door = mk_door()?;
+    let mut door = mk_door()?;
+
+    door.run();
+
+    println!("You are in front of a large wooden door.");
+    println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash or maybe (s)tart over or (q)uit");
+
+    let mut rl = rustyline::Editor::<()>::new();
+
+    loop {
+        println!("the door is: {}", door.active_state());
+        let readline = rl.readline(">> ");
+        match readline {
+            Ok(line) => match line.trim_start().chars().next() {
+                Some(c) => match c {
+                    'o' => match door.transition(DoorEvent::Open) {
+                        Err(_) => println!("That didn't work."),
+                        _ => (),
+                    },
+                    'c' => match door.transition(DoorEvent::Close) {
+                        Err(_) => println!("That didn't work."),
+                        _ => (),
+                    },
+                    'l' => {
+                        match door.transition(DoorEvent::Lock(Some("the right key".to_string()))) {
+                            Err(_) => println!("That didn't work."),
+                            _ => (),
+                        }
+                    }
+                    'u' => match door
+                        .transition(DoorEvent::Unlock(Some("the right key".to_string())))
+                    {
+                        Err(_) => println!("That didn't work."),
+                        _ => (),
+                    },
+                    'b' => match door.transition(DoorEvent::Bash(Attack { damage: 40. })) {
+                        Err(_) => println!("That didn't work."),
+                        _ => (),
+                    },
+                    'q' => break,
+                    _ => println!("Try again."),
+                },
+                _ => println!("Excuse me?"),
+            },
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(e) => println!("Error: {:?}", e),
+        }
+    }
 
     Ok(())
 }
@@ -294,17 +347,11 @@ fn mk_door() -> Result<Statechart<DoorStateContext, DoorTransitionContext, Door,
         DoorTransitionContext::LockContext(LockContext {}),
     )?;
 
-    println!(
-        "{:?}",
-        door.common_ancestor(locked, destroyed)
-            .map(|i| &door.graph[i].id)
-    );
-
-    println!(
-        "{:?}",
-        door.common_ancestor(locked, intact)
-            .map(|i| &door.graph[i].id)
-    );
+    // println!(
+    //     "{:?}",
+    //     door.common_ancestor(locked, destroyed)
+    //         .map(|i| &door.graph[i].id)
+    // );
 
     Ok(door)
 }

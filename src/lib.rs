@@ -12,6 +12,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::any::Any;
 use std::boxed::Box;
 use std::collections::btree_map::{BTreeMap, Entry};
+use std::fmt::Debug;
 use std::iter::Iterator;
 use std::mem::discriminant;
 use typetag::{
@@ -25,7 +26,7 @@ use typetag::{
 
 // use a stable graph for editing, maybe switch to DiGraph at runtime
 // has an external map of ids to indexes, GraphMap doesn't serialize
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Statechart<Sc, Tc, Scc: Clone, E, Ix: IndexType>
 // where
 //     Sc: StateContext<Scc, E>,
@@ -41,7 +42,7 @@ pub struct Statechart<Sc, Tc, Scc: Clone, E, Ix: IndexType>
     pub active_state: Option<NodeIndex<Ix>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Initial<Ix: IndexType> {
     None,
     Initial(NodeIndex<Ix>),
@@ -49,7 +50,7 @@ pub enum Initial<Ix: IndexType> {
     HistoryDeep(NodeIndex<Ix>),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct State<Sc, Ix: IndexType> {
     // force these to be unique among siblings?
     pub id: String,
@@ -74,7 +75,7 @@ pub trait StateContext<Scc, E> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DefaultStateContext;
 
 impl<Scc, E> StateContext<Scc, E> for DefaultStateContext {}
@@ -90,12 +91,12 @@ pub trait TransitionContext<Scc, E> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DefaultTransitionContext;
 
 impl<Scc, E> TransitionContext<Scc, E> for DefaultTransitionContext {}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Transition<Tc, E> {
     // serde doesn't do discriminants
     //pub event: Discriminant<E>,
@@ -112,10 +113,10 @@ pub struct Transition<Tc, E> {
 //impl<'de, E: Serialize + Deserialize<'de>, Ix: IndexType + Serialize + Deserialize<'de>>
 impl<'de, Sc, Tc, Scc: Clone, E, Ix: IndexType + Serialize> Statechart<Sc, Tc, Scc, E, Ix>
 where
-    Sc: StateContext<Scc, E> + Serialize + Deserialize<'de>,
-    Tc: TransitionContext<Scc, E> + Serialize + Deserialize<'de>,
-    Scc: Serialize + Deserialize<'de>,
-    E: Serialize + Deserialize<'de>,
+    Sc: StateContext<Scc, E> + Serialize + Deserialize<'de> + Debug,
+    Tc: TransitionContext<Scc, E> + Serialize + Deserialize<'de> + Debug,
+    Scc: Serialize + Deserialize<'de> + Debug,
+    E: Serialize + Deserialize<'de> + Debug,
 {
     pub fn new(id: &str, context: Scc) -> Self {
         Self {
@@ -152,7 +153,7 @@ where
 
     pub fn get_initial(&self, idx: NodeIndex<Ix>) -> Option<NodeIndex<Ix>> {
         match self.graph[idx].initial {
-            Initial::None => None,
+            Initial::None => Some(idx),
             Initial::Initial(idx) => self.get_initial(idx),
             Initial::HistoryShallow(idx) => self.get_initial(idx),
             Initial::HistoryDeep(idx) => self.get_initial(idx),
@@ -185,9 +186,9 @@ where
         }
     }
 
-    // set initial states and return a channel
+    // set initial states and return a channel?
     pub fn run(&mut self) {
-        todo!()
+        self.reset().unwrap();
     }
 
     // returns an iterator from idx -> root
@@ -221,6 +222,14 @@ where
             .find(|(a, b)| a != b)
             // both states should have the same parent
             .and_then(|(i, _)| self.parent(*i))
+    }
+
+    pub fn active_state(&self) -> &str {
+        if let Some(idx) = self.active_state {
+            &self.graph[idx].id
+        } else {
+            "none"
+        }
     }
 
     // TODO: self-transitions?
@@ -286,6 +295,9 @@ where
 
                 // copy back mutated state context
                 self.context = scc;
+
+                // set active state
+                self.active_state = Some(next);
 
                 Ok(())
             } else {
