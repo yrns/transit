@@ -81,6 +81,8 @@ pub struct State {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Transition {
     event: String,
+    // this only has meaning for self-transitions
+    internal: bool,
     guard: Option<String>,
     action: Option<String>,
 }
@@ -117,9 +119,15 @@ impl Graph {
         Ok(())
     }
 
-    pub fn get_initial(&self, i: Idx) -> Option<Idx> {
+    // return true if a is a child of b
+    pub fn is_child(&self, a: Idx, b: Idx) -> bool {
+        self.path_iter(a).find(|i| *i == b).is_some()
+    }
+
+    pub fn get_initial(&self, i: Idx) -> Idx {
         match self.graph[i].initial {
-            Initial::None => Some(i),
+            // no initial state, return i
+            Initial::None => i,
             Initial::Initial(i) => self.get_initial(i),
             Initial::HistoryShallow(i) => self.get_initial(i),
             Initial::HistoryDeep(i) => self.get_initial(i),
@@ -167,7 +175,7 @@ impl Graph {
 
 impl<C: Context> Statechart<C> {
     pub fn new(graph: Graph, context: C) -> Result<Self> {
-        // TODO: verify bindings
+        // TODO: verify graph? bindings?
         Ok(Self {
             graph,
             context,
@@ -189,7 +197,7 @@ impl<C: Context> Statechart<C> {
             Initial::None => Err(anyhow!("no initial state set")),
             Initial::Initial(i) => {
                 // recursively find the active state
-                self.active = Some(self.graph.get_initial(i).unwrap_or(i));
+                self.active = Some(self.graph.get_initial(i));
                 Ok(())
             }
             Initial::HistoryShallow(_) | Initial::HistoryDeep(_) => {
@@ -204,59 +212,103 @@ impl<C: Context> Statechart<C> {
         self.reset().unwrap();
     }
 
-    // TODO: self-transitions?
+    // should we be passing new and old state to each action? use Cow?
     pub fn transition(&mut self, event: C::Event) -> Result<()> {
         let d = discriminant(&event);
         let mut scc = self.context.clone();
 
         // find a matching transition from the active state
-        if let Some(idx) = self.active {
+        if let Some(active) = self.active {
+            // we start with this index and work through its parents
+            let mut p = active;
             let mut next: Option<Idx> = None;
-            let mut edges = self.graph.graph.neighbors(idx).detach();
+            let mut internal = false;
 
-            while let Some((edge, node)) = edges.next(&self.graph.graph) {
-                let t = &mut self.graph.graph[edge];
-                if C::event(&t.event) == d {
-                    // an error in the guard just means it didn't
-                    // pass, we probably want to log something though
-                    let guard_pass = t
-                        .guard
-                        .as_ref()
-                        .map_or(true, |g| C::action(&g)(&mut scc, &event).is_ok());
-                    if guard_pass {
-                        if let Some(ref action) = t.action {
-                            C::action(action)(&mut scc, &event).with_context(|| {
-                                format!(
-                                    "action failed on {:?} with event: {:?}",
-                                    // better id for transitions?
-                                    edge,
-                                    event
-                                )
-                            })?;
+            // check parents' transitions
+            'find_next: loop {
+                let mut edges = self.graph.graph.neighbors(p).detach();
+
+                while let Some((edge, node)) = edges.next(&self.graph.graph) {
+                    // need a better display for transitions
+                    // println!(
+                    //     "{} -> {:?} -> {}",
+                    //     self.graph.path_str(p),
+                    //     event,
+                    //     self.graph.path_str(node)
+                    // );
+
+                    // guard event mismatch error should be upgraded
+                    // or removed entirely - it's boilerplate for
+                    // something that shouldn't ever happen TODO:
+
+                    let t = &mut self.graph.graph[edge];
+                    if C::event(&t.event) == d {
+                        // FIX: "guard false" is not an error but
+                        // everything else is, and we're ignoring it
+                        let guard_pass = t
+                            .guard
+                            .as_ref()
+                            .map_or(true, |g| C::action(&g)(&mut scc, &event).is_ok());
+
+                        if guard_pass {
+                            if let Some(ref action) = t.action {
+                                C::action(action)(&mut scc, &event).with_context(|| {
+                                    format!(
+                                        "action failed on {:?} with event: {:?}",
+                                        // better id for transitions?
+                                        edge,
+                                        event
+                                    )
+                                })?;
+                            }
+                            next = Some(node);
+                            internal = t.internal;
+                            break 'find_next;
                         }
-                        next = Some(node);
-                        break;
                     }
+                }
+
+                if let Some(i) = self.graph.graph[p].parent {
+                    p = i
+                } else {
+                    break;
                 }
             }
 
-            // traverse states up to a common ancestor (calling exit
-            // on each) and back down to the next state (calling
-            // entry)
             if let Some(next) = next {
-                let a = self.graph.common_ancestor(idx, next);
+                if internal {
+                    // With an internal transition we don't actually
+                    // change states, so we don't do anything else
+                    // except copy the context back below. Should we
+                    // verify the active state is not a compound
+                    // state?
+                    if next != p {
+                        return Err(anyhow!(
+                            "internal transition is not a self-transition: {:?} -> {:?}",
+                            p,
+                            next,
+                        ));
+                    }
+                } else {
+                    // traverse states up to a common ancestor (calling exit
+                    // on each) and back down to the next state (calling
+                    // entry)
 
-                // list of history updates, only applied after the
-                // transition succeeds
-                let mut h: Vec<(Idx, Idx)> = Vec::new();
+                    let a = self.graph.common_ancestor(active, next);
 
-                let p1 = self.graph.path_iter(idx).collect::<Vec<_>>();
-                let mut last = idx;
-                let res: Result<Vec<()>> = p1
-                    .iter()
-                    .take_while(|i| a.map_or(true, |a| **i != a))
-                    .map(|i| {
-                        let s = &mut self.graph.graph[*i];
+                    // list of history updates, only applied after the
+                    // transition succeeds
+                    let mut h: Vec<(Idx, Idx)> = Vec::new();
+
+                    // path from active -> a (minus a)
+                    let p1 = self
+                        .graph
+                        .path_iter(active)
+                        .take_while(|i| a.map_or(true, |a| *i != a));
+
+                    let mut last = active;
+                    p1.map(|i| {
+                        let s = &self.graph.graph[i];
                         if let Some(ref exit) = s.exit {
                             C::action(exit)(&mut scc, &event).with_context(|| {
                                 format!(
@@ -269,71 +321,75 @@ impl<C: Context> Statechart<C> {
                         }
                         // track history when exiting a state
                         match s.initial {
-                            Initial::HistoryShallow(_) => h.push((*i, last)),
-                            Initial::HistoryDeep(_) => h.push((*i, idx)),
+                            Initial::HistoryShallow(_) => h.push((i, last)),
+                            Initial::HistoryDeep(_) => h.push((i, active)),
                             _ => (),
                         };
                         // you can't have a history with no child
                         // states, and we're not checking that
                         // here - FIX?
-                        last = *i;
+                        last = i;
 
                         Ok(())
                     })
-                    .collect();
+                    .collect::<Result<_>>()?;
 
-                let res: Result<Vec<()>> = res.and_then(|_| {
-                    self.graph
-                        .path(next)
-                        .iter()
-                        .take_while(|i| a.map_or(true, |a| **i != a))
-                        .map(|i| {
-                            let s = &mut self.graph.graph[*i];
-                            if let Some(ref entry) = s.entry {
-                                C::action(entry)(&mut scc, &event).with_context(|| {
-                                    format!(
-                                        "entry failed on {:?} with event: {:?}",
-                                        i,
-                                        //self.graph.path_str(*i),
-                                        event
-                                    )
-                                })?
-                            }
-                            Ok(())
-                        })
-                        .collect()
-                });
+                    // let a = vec!["a", "b", "c"];
+                    // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
 
-                res.with_context(|| {
-                    format!(
-                        "transition from {} to {} failed",
-                        self.graph.path_str(idx),
-                        self.graph.path_str(next)
-                    )
-                })?;
+                    // recurse initial states, initial states incur
+                    // actions on transition (not initially)
+                    let initial = self.graph.get_initial(next);
+                    assert!(self.graph.is_child(initial, next));
+                    let next = initial;
+
+                    // path from a -> next (minus a)
+                    let p2 = self
+                        .graph
+                        .path_iter(next)
+                        .take_while(|i| a.map_or(true, |a| *i != a))
+                        // collect so we can reverse
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev();
+
+                    p2.map(|i| {
+                        let s = &self.graph.graph[i];
+                        if let Some(ref entry) = s.entry {
+                            C::action(entry)(&mut scc, &event).with_context(|| {
+                                format!(
+                                    "entry failed on {:?} with event: {:?}",
+                                    i,
+                                    //self.graph.path_str(*i),
+                                    event
+                                )
+                            })?
+                        }
+                        Ok(())
+                    })
+                    .collect::<Result<_>>()?;
+
+                    // apply history
+                    for (idx, prev) in h {
+                        let s = &mut self.graph.graph[idx];
+                        match s.initial {
+                            Initial::HistoryShallow(ref mut i)
+                            | Initial::HistoryDeep(ref mut i) => *i = prev,
+                            _ => (),
+                        }
+                    }
+
+                    // set active state
+                    self.active = Some(next);
+                }
 
                 // copy back mutated state context
                 self.context = scc;
-
-                // apply history
-                for (idx, prev) in h {
-                    let s = &mut self.graph.graph[idx];
-                    match s.initial {
-                        Initial::HistoryShallow(ref mut i) | Initial::HistoryDeep(ref mut i) => {
-                            *i = prev
-                        }
-                        _ => (),
-                    }
-                }
-
-                // set active state
-                self.active = Some(next);
 
                 Ok(())
             } else {
                 Err(anyhow!("no valid transitions"))
             }
-        // set active state, recursively work through initial states
         } else {
             Err(anyhow!("no active state"))
         }
@@ -392,9 +448,16 @@ impl Transition {
     pub fn new(event: &str, guard: Option<&str>, action: Option<&str>) -> Self {
         Self {
             event: event.to_string(),
+            internal: false,
             guard: guard.map(String::from),
             action: action.map(String::from),
         }
+    }
+
+    // TODO: only self-transitions can be internal but we can't check that here
+    pub fn set_internal(mut self, internal: bool) -> Self {
+        self.internal = internal;
+        self
     }
 }
 

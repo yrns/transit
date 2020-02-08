@@ -1,6 +1,5 @@
 ///! this is a door
 use anyhow::{anyhow, Result};
-//use enum_dispatch::enum_dispatch;
 use once_cell::sync::Lazy;
 use rustyline::error::ReadlineError;
 use serde::{Deserialize, Serialize};
@@ -9,8 +8,14 @@ use std::mem::{discriminant, Discriminant};
 use transit::{ActionFn, Context, Graph, Initial, State, Statechart, Transition};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+struct HitPoints {
+    current: f32,
+    max: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct Door {
-    hit_points: f32,
+    hit_points: HitPoints,
     key: String,
     attempts: u32,
 }
@@ -49,6 +54,7 @@ static ACTION_MAP: Lazy<HashMap<&'static str, ActionFn<Door, DoorEvent>>> = Lazy
     m.insert("closed_entry", |c, e| Door::closed_entry(c, e));
     m.insert("opened_entry", |c, e| Door::opened_entry(c, e));
     m.insert("destroyed_entry", |c, e| Door::destroyed_entry(c, e));
+    m.insert("bash_guard_self", |c, e| Door::bash_guard_self(c, e));
     m.insert("bash_guard", |c, e| Door::bash_guard(c, e));
     m.insert("lock_guard", |c, e| Door::lock_guard(c, e));
     m.insert("unlock_guard", |c, e| Door::unlock_guard(c, e));
@@ -84,7 +90,8 @@ impl Door {
     }
 
     fn closed_entry(&mut self, _event: &DoorEvent) -> Result<()> {
-        println!("The door is now closed.");
+        // it only makes sense to print this if we're coming from open
+        //println!("The door is now closed.");
         Ok(())
     }
 
@@ -101,9 +108,36 @@ impl Door {
     // so we need an id for transitions? bash1_bash_guard in case there are multiple?
     fn bash_guard(&mut self, event: &DoorEvent) -> Result<()> {
         if let DoorEvent::Bash(attack) = event {
-            self.hit_points -= attack.damage;
-            if self.hit_points <= 0. {
+            let new_hp = self.hit_points.current - attack.damage;
+
+            if new_hp <= 0. {
                 // destroyed
+                self.hit_points.current = 0.;
+                Ok(())
+            } else {
+                Err(anyhow!("guard false"))
+            }
+        } else {
+            Err(anyhow!("guard event mismatch"))
+        }
+    }
+
+    // If the hp would be reduced to zero, let the other bash_guard
+    // transition work. In general we don't want to mutate state in
+    // guards that don't pass since if no guard passes no state will
+    // be mutated at all, and that might be confusing.
+    fn bash_guard_self(&mut self, event: &DoorEvent) -> Result<()> {
+        if let DoorEvent::Bash(attack) = event {
+            let was_full = self.hit_points.current == self.hit_points.max;
+            let new_hp = self.hit_points.current - attack.damage;
+
+            if new_hp > 0. {
+                self.hit_points.current = new_hp;
+                if was_full {
+                    println!("The door appears to be slightly damaged.");
+                } else {
+                    println!("The door appears to be more damaged.");
+                }
                 Ok(())
             } else {
                 Err(anyhow!("guard false"))
@@ -114,7 +148,7 @@ impl Door {
     }
 
     fn lock_guard(&mut self, event: &DoorEvent) -> Result<()> {
-        if let DoorEvent::Unlock(Some(key)) = event {
+        if let DoorEvent::Lock(Some(key)) = event {
             if key == "the right key" {
                 println!("You lock the door.");
                 Ok(())
@@ -151,43 +185,36 @@ fn main() -> Result<()> {
     println!("You are in front of a large wooden door.");
 
     // TODO: start over
-    println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash or maybe (s)tart over or (q)uit");
+    println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
 
     let mut rl = rustyline::Editor::<()>::new();
 
     loop {
-        println!("the door is: {}", door.active());
+        //println!("the door is: {}", door.active());
         let readline = rl.readline(">> ");
         match readline {
             Ok(line) => match line.trim_start().chars().next() {
-                Some(c) => match c {
-                    'o' => match door.transition(DoorEvent::Open) {
-                        Err(_) => println!("That didn't work."),
-                        _ => (),
-                    },
-                    'c' => match door.transition(DoorEvent::Close) {
-                        Err(_) => println!("That didn't work."),
-                        _ => (),
-                    },
-                    'l' => {
-                        match door.transition(DoorEvent::Lock(Some("the right key".to_string()))) {
-                            Err(_) => println!("That didn't work."),
-                            _ => (),
+                Some(c) => {
+                    let event = match c {
+                        'o' => Some(DoorEvent::Open),
+                        'c' => Some(DoorEvent::Close),
+                        'l' => Some(DoorEvent::Lock(Some("the right key".to_string()))),
+                        'u' => Some(DoorEvent::Unlock(Some("the right key".to_string()))),
+                        'b' => Some(DoorEvent::Bash(Attack { damage: 40. })),
+                        'q' => break,
+                        _ => {
+                            println!("Try again.");
+                            None
+                        }
+                    };
+                    if let Some(event) = event {
+                        let res = door.transition(event);
+                        if let Err(_e) = res {
+                            //dbg!(_e);
+                            println!("That didn't work. The door is {}.", door.active());
                         }
                     }
-                    'u' => match door
-                        .transition(DoorEvent::Unlock(Some("the right key".to_string())))
-                    {
-                        Err(_) => println!("That didn't work."),
-                        _ => (),
-                    },
-                    'b' => match door.transition(DoorEvent::Bash(Attack { damage: 40. })) {
-                        Err(_) => println!("That didn't work."),
-                        _ => (),
-                    },
-                    'q' => break,
-                    _ => println!("Try again."),
-                },
+                }
                 _ => println!("Excuse me?"),
             },
             Err(ReadlineError::Interrupted) => {
@@ -205,7 +232,10 @@ fn main() -> Result<()> {
 
 fn mk_door() -> Result<Statechart<Door>> {
     let door = Door {
-        hit_points: 100.,
+        hit_points: HitPoints {
+            current: 100.,
+            max: 100.,
+        },
         key: "the right key".to_string(),
         attempts: 0,
     };
@@ -231,6 +261,13 @@ fn mk_door() -> Result<Statechart<Door>> {
         intact,
         destroyed,
         Transition::new("bash", Some("bash_guard"), None),
+    )?;
+
+    g.add_transition(
+        intact,
+        intact,
+        // don't trigger entry/exit actions on this self-transition
+        Transition::new("bash", Some("bash_guard_self"), None).set_internal(true),
     )?;
 
     g.add_transition(
