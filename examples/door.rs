@@ -52,7 +52,7 @@ static ACTION_MAP: Lazy<HashMap<&'static str, ActionFn<Door, DoorEvent>>> = Lazy
     let mut m = HashMap::<&'static str, ActionFn<Door, DoorEvent>>::new();
     m.insert("intact_entry", |c, e| Door::intact_entry(c, e));
     m.insert("closed_entry", |c, e| Door::closed_entry(c, e));
-    m.insert("opened_entry", |c, e| Door::opened_entry(c, e));
+    m.insert("open_entry", |c, e| Door::open_entry(c, e));
     m.insert("destroyed_entry", |c, e| Door::destroyed_entry(c, e));
     m.insert("bash_guard_self", |c, e| Door::bash_guard_self(c, e));
     m.insert("bash_guard", |c, e| Door::bash_guard(c, e));
@@ -74,40 +74,40 @@ impl Context for Door {
 
     fn event(event: &str) -> Discriminant<DoorEvent> {
         // TODO: unwrap
-        *EVENT_MAP.get(event).unwrap()
+        *EVENT_MAP.get(event).expect("missing event")
     }
 
     fn action(action: &str) -> &ActionFn<Self, Self::Event> {
         // TODO: unwrap
-        ACTION_MAP.get(action).unwrap()
+        ACTION_MAP.get(action).expect("missing action")
     }
 }
 
 impl Door {
-    fn intact_entry(&mut self, _event: &DoorEvent) -> Result<()> {
-        println!("You see a sturdy door.");
+    fn intact_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
+        println!("You are in front of a large wooden door.");
         Ok(())
     }
 
-    fn closed_entry(&mut self, _event: &DoorEvent) -> Result<()> {
+    fn closed_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
         // it only makes sense to print this if we're coming from open
         //println!("The door is now closed.");
         Ok(())
     }
 
-    fn opened_entry(&mut self, _event: &DoorEvent) -> Result<()> {
+    fn open_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
         println!("The door is now open.");
         Ok(())
     }
 
-    fn destroyed_entry(&mut self, _event: &DoorEvent) -> Result<()> {
+    fn destroyed_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
         println!("The door shatters into many pieces.");
         Ok(())
     }
 
     // so we need an id for transitions? bash1_bash_guard in case there are multiple?
-    fn bash_guard(&mut self, event: &DoorEvent) -> Result<()> {
-        if let DoorEvent::Bash(attack) = event {
+    fn bash_guard(&mut self, event: Option<&DoorEvent>) -> Result<()> {
+        if let Some(DoorEvent::Bash(attack)) = event {
             let new_hp = self.hit_points.current - attack.damage;
 
             if new_hp <= 0. {
@@ -126,8 +126,8 @@ impl Door {
     // transition work. In general we don't want to mutate state in
     // guards that don't pass since if no guard passes no state will
     // be mutated at all, and that might be confusing.
-    fn bash_guard_self(&mut self, event: &DoorEvent) -> Result<()> {
-        if let DoorEvent::Bash(attack) = event {
+    fn bash_guard_self(&mut self, event: Option<&DoorEvent>) -> Result<()> {
+        if let Some(DoorEvent::Bash(attack)) = event {
             let was_full = self.hit_points.current == self.hit_points.max;
             let new_hp = self.hit_points.current - attack.damage;
 
@@ -147,8 +147,8 @@ impl Door {
         }
     }
 
-    fn lock_guard(&mut self, event: &DoorEvent) -> Result<()> {
-        if let DoorEvent::Lock(Some(key)) = event {
+    fn lock_guard(&mut self, event: Option<&DoorEvent>) -> Result<()> {
+        if let Some(DoorEvent::Lock(Some(key))) = event {
             if key == "the right key" {
                 println!("You lock the door.");
                 Ok(())
@@ -161,8 +161,8 @@ impl Door {
         }
     }
 
-    fn unlock_guard(&mut self, event: &DoorEvent) -> Result<()> {
-        if let DoorEvent::Unlock(Some(key)) = event {
+    fn unlock_guard(&mut self, event: Option<&DoorEvent>) -> Result<()> {
+        if let Some(DoorEvent::Unlock(Some(key))) = event {
             if key == "the right key" {
                 println!("You unlock the door.");
                 Ok(())
@@ -180,9 +180,7 @@ impl Door {
 fn main() -> Result<()> {
     let mut door = mk_door()?;
 
-    door.run();
-
-    println!("You are in front of a large wooden door.");
+    door.run()?;
 
     // TODO: start over
     println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
