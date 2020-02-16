@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Context as _, Result};
 use petgraph::{
-    graph::{IndexType, NodeIndex},
+    graph::{EdgeIndex, IndexType, NodeIndex},
     stable_graph::StableDiGraph,
 };
 use ron::ser::{to_string_pretty, PrettyConfig};
@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::iter::Iterator;
 use std::mem::{discriminant, Discriminant};
+use std::sync::Arc;
 
 // TODO: use statecharts as as states, "includes"
 // the statechart needs to implement some interface that makes it behave as a state
@@ -36,16 +37,16 @@ pub struct Statechart<T> {
     pub active: Option<Idx>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Graph {
     pub id: String,
     pub initial: Initial,
     //ids: HashMap, do we need to externally reference by id?
-    pub graph: StableDiGraph<State, Transition, u32>,
+    pub graph: StableDiGraph<Arc<State>, Arc<Transition>, u32>,
     //pub edit_data: EditData,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Initial {
     None,
     Initial(Idx),
@@ -53,30 +54,36 @@ pub enum Initial {
     HistoryDeep(Idx),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+// feature flag edit?
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EditData {
+    // this is origin, size; relative to parent
+    rect: ((f64, f64), (f64, f64)), //Rect,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct State {
-    // TODO: force these to be unique among siblings?
-    pub id: String,
+    id: String,
     pub initial: Initial,
-    // do we need a list of children?
-    //pub states: Vec<Idx>,
-    pub parent: Option<Idx>,
-    //pub edit_data: EditData,
+    parent: Option<Idx>,
     pub entry: Option<String>,
     pub exit: Option<String>,
+    pub edit_data: Option<EditData>,
 }
 
 // newtype event key?
 // enum for both strings and bound version?
 // can't serialize bound version
 // wait on optimizing until macro gen?
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transition {
     event: String,
     // this only has meaning for self-transitions
     internal: bool,
     guard: Option<String>,
     action: Option<String>,
+    // edit data for curve parameters, etc.
+    //edit_data: TransitionEditData?
 }
 
 impl Graph {
@@ -92,16 +99,62 @@ impl Graph {
         Ok(to_string_pretty(&self, PrettyConfig::default())?)
     }
 
+    // impl Index/Mut instead? what about transitions
     pub fn get(&self, i: Idx) -> &State {
         &self.graph[i]
     }
 
     pub fn get_mut(&mut self, i: Idx) -> &mut State {
-        &mut self.graph[i]
+        Arc::make_mut(&mut self.graph[i])
     }
 
-    pub fn add_state(&mut self, s: State) -> Result<Idx> {
-        Ok(self.graph.add_node(s))
+    pub fn add_state<T: Into<State>>(&mut self, s: T) -> Result<Idx> {
+        let s = s.into();
+        if self.unique_id(s.parent, &s.id) {
+            Ok(self.graph.add_node(Arc::new(s)))
+        } else {
+            // this is a dupe error
+            Err(anyhow!("id must be unique among siblings"))
+        }
+    }
+
+    pub fn remove_state(&mut self, _i: Idx) -> State {
+        // TODO: clean up transitions? move transitions to parent?
+        todo!()
+    }
+
+    // iter mut? over State verses Idx?
+    pub fn children(&self, p: Option<Idx>) -> impl Iterator<Item = Idx> + '_ {
+        self.graph
+            .node_indices()
+            .filter(move |i| self.graph[*i].parent == p)
+    }
+
+    pub fn set_id(&mut self, i: Option<Idx>, id: &str) -> Result<()> {
+        if let Some(i) = i {
+            // make sure the id is unique among siblings
+            if !self.unique_id(self.graph[i].parent, id) {
+                Err(anyhow!("id must be unique among siblings"))
+            } else {
+                Arc::make_mut(&mut self.graph[i]).id = id.to_string();
+                Ok(())
+            }
+        } else {
+            // set graph id
+            self.id = id.to_string();
+            Ok(())
+        }
+    }
+
+    pub fn unique_id(&self, p: Option<Idx>, id: &str) -> bool {
+        self.children(p)
+            .map(|i| &self.graph[i].id)
+            .all(|id2| id2 != id)
+    }
+
+    // move state, check id for uniqueness
+    pub fn set_parent(&mut self, _p: Idx, _i: Idx) -> Result<()> {
+        todo!()
     }
 
     // the only reason we'd want history at the root of a statechart
@@ -128,8 +181,12 @@ impl Graph {
     }
 
     pub fn add_transition(&mut self, a: Idx, b: Idx, t: Transition) -> Result<()> {
-        self.graph.add_edge(a, b, t);
+        self.graph.add_edge(a, b, Arc::new(t));
         Ok(())
+    }
+
+    pub fn remove_transition(&mut self, _i: EdgeIndex<u32>) -> Transition {
+        todo!()
     }
 
     // returns an iterator from idx -> root
@@ -297,6 +354,7 @@ impl<C: Context> Statechart<C> {
     }
 
     // should we be passing new and old state to each action? use Cow?
+    // this mutates history when exiting states
     pub fn transition_to(&mut self, ctx: &mut C, next: Idx, event: Option<C::Event>) -> Result<()> {
         // list of history updates, only applied after the transition
         // succeeds
@@ -386,7 +444,7 @@ impl<C: Context> Statechart<C> {
 
         // apply history
         for (idx, prev) in h {
-            let s = &mut self.graph.graph[idx];
+            let s = Arc::make_mut(&mut self.graph.graph[idx]);
             match s.initial {
                 Initial::HistoryShallow(ref mut i) | Initial::HistoryDeep(ref mut i) => *i = prev,
                 _ => (),
@@ -439,12 +497,24 @@ impl State {
             parent,
             entry: entry.map(String::from),
             exit: exit.map(String::from),
+            edit_data: None,
         }
     }
 
     pub fn set_initial(&mut self, initial: Initial) -> Result<()> {
         self.initial = initial;
         Ok(())
+    }
+
+    // use set_id in Graph to change this
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl From<&str> for State {
+    fn from(id: &str) -> Self {
+        State::new(id, None, None, None)
     }
 }
 
@@ -469,8 +539,13 @@ impl Transition {
 mod tests {
     use super::*;
 
+    // make this work with any graph TODO:
+    //struct TestContext;
+
     #[test]
-    fn it_works() {
-        println!("w/ macros");
+    fn set_id() {
+        let mut g = Graph::new("test");
+        assert!(g.add_state("child1").is_ok());
+        assert!(g.add_state("child1").is_err());
     }
 }
