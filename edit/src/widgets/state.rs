@@ -1,95 +1,127 @@
+use crate::widgets::{Drag, Root};
+use crate::{EditData, GrabData, STATE_ADDED};
 use druid::kurbo::BezPath;
-use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
-
 use druid::kurbo::RoundedRect;
+use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::theme;
 use druid::widget::{Align, Flex, Label, LabelText, Padding, SizedBox, WidgetExt};
 use druid::{
-    Affine, AppLauncher, BoxConstraints, Color, Data, Env, Event, EventCtx, LayoutCtx, LifeCycle,
-    LifeCycleCtx, LinearGradient, LocalizedString, PaintCtx, Point, Rect, RenderContext, Size,
-    UnitPoint, UpdateCtx, Widget, WindowDesc,
+    Affine, AppLauncher, BoxConstraints, Color, Command, Data, Env, Event, EventCtx, LayoutCtx,
+    LifeCycle, LifeCycleCtx, LinearGradient, LocalizedString, MouseButton, MouseEvent, PaintCtx,
+    Point, Rect, RenderContext, Size, UnitPoint, UpdateCtx, Widget, WidgetId, WindowDesc,
 };
+use transit::{Graph, Idx, State as TransitState, Transition};
 
 // each state contains a label and child states
-pub struct State<T: Data> {
-    flex: Flex<T>,
-    //label: Label<T>,
+pub struct State {
+    id: WidgetId,
+    pub sid: Idx,
+    inner: Drag<EditData, Flex<EditData>>,
+    //history: History,
+    //root: Root, // children
 }
 
-impl<T: Data + 'static> State<T> {
-    pub fn new(text: impl Into<LabelText<T>>) -> Self {
-        let flex = Flex::column()
-            .with_child(
-                Flex::row().with_child(
-                    //SizedBox::new(
-                    Label::new(text).text_align(UnitPoint::LEFT).padding(2.0),
-                    //).height(20.0),
-                    1.0,
-                ),
-                0.0,
-            )
-            // empty row for child states
-            .with_child(Flex::row(), 1.0);
+impl State {
+    pub fn new(sid: Idx) -> Self {
+        // we set our own id so we can pass it to the drag widget
+        let id = WidgetId::next();
+        let inner = Drag::new(
+            Flex::column()
+                .with_child(
+                    Flex::row().with_child(
+                        // replace this with a state label that is editable:
+                        Label::new(move |data: &EditData, _env: &_| {
+                            format!("{}", data.graph.graph.graph[sid].id())
+                        })
+                        .text_align(UnitPoint::LEFT)
+                        .padding(2.0),
+                        1.0,
+                    ),
+                    // with_child action handlers here
+                    0.0,
+                )
+                // horizontal rule that only draws when this state has children
+                //.with_child(Sep::new(), 0.0);
+                // empty row for child states
+                .with_child(Root::new(Some(sid)), 1.0),
+            id,
+        );
 
-        Self { flex }
+        dbg!(inner.id());
+
+        Self { id, sid, inner }
     }
 }
 
-impl<T: Data + 'static> Widget<T> for State<T> {
-    fn event(&mut self, ctx: &mut EventCtx, event: &Event, _data: &mut T, _env: &Env) {
+impl Widget<EditData> for State {
+    fn id(&self) -> Option<WidgetId> {
+        Some(self.id)
+    }
+
+    fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
         match event {
-            Event::MouseDown(_) => {
-                //ctx.set_active(true);
-                //ctx.invalidate();
+            Event::MouseDown(MouseEvent {
+                pos: _,
+                button: MouseButton::Left,
+                ..
+            }) => {
+                dbg!(ctx.widget_id());
+                // if !ctx.is_handled() && data.graph.grab.is_none() {
+                //     ctx.set_active(true);
+                //     data.graph.grab = Some(GrabData::new(*pos, Rect::ZERO, ctx.widget_id()));
+                //     ctx.set_handled();
+                //     ctx.request_paint();
+                // }
             }
             Event::MouseUp(_) => {
                 if ctx.is_active() {
                     ctx.set_active(false);
-                    ctx.invalidate();
-                    if ctx.is_hot() {
-                        //(self.action)(ctx, data, env);
-                    }
+                    ctx.request_paint();
                 }
             }
+            //Event::MouseMoved(MouseEvent { pos, .. }) => {}
             _ => (),
         }
+
+        self.inner.event(ctx, event, data, env);
     }
 
-    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, _data: &T, _env: &Env) {
+    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &EditData, env: &Env) {
         match event {
+            LifeCycle::WidgetAdded => {
+                ctx.submit_command(Command::new(STATE_ADDED, (ctx.widget_id(), self.sid)), None);
+            }
             LifeCycle::HotChanged(_) => {
-                ctx.invalidate();
+                ctx.request_paint();
             }
             _ => (),
         }
+
+        self.inner.lifecycle(ctx, event, data, env);
     }
 
-    fn update(&mut self, ctx: &mut UpdateCtx, old_data: &T, data: &T, env: &Env) {
-        self.flex.update(ctx, old_data, data, env)
+    fn update(&mut self, ctx: &mut UpdateCtx, old_data: &EditData, data: &EditData, env: &Env) {
+        self.inner.update(ctx, old_data, data, env)
     }
 
     fn layout(
         &mut self,
         layout_ctx: &mut LayoutCtx,
         bc: &BoxConstraints,
-        data: &T,
+        data: &EditData,
         env: &Env,
     ) -> Size {
-        //bc.constrain(Size::new(200.0, 60.0))
-        self.flex.layout(layout_ctx, bc, data, env)
-        //bc.max()
+        self.inner.layout(layout_ctx, bc, data, env)
     }
 
-    fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &T, env: &Env) {
-        // paint_ctx.clear(Color::WHITE);
-
+    fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &EditData, env: &Env) {
         //let is_active = paint_ctx.is_active();
         let is_hot = paint_ctx.is_hot();
 
         let rounded_rect =
             RoundedRect::from_origin_size(Point::ORIGIN, paint_ctx.size().to_vec2(), 4.);
 
-        let border_color = env.get(theme::BORDER);
+        let border_color = env.get(theme::BORDER_LIGHT);
 
         let border_size = if is_hot { 5.0 } else { 4.0 };
 
@@ -97,6 +129,6 @@ impl<T: Data + 'static> Widget<T> for State<T> {
 
         paint_ctx.fill(rounded_rect, &Color::WHITE);
 
-        self.flex.paint(paint_ctx, data, env);
+        self.inner.paint(paint_ctx, data, env);
     }
 }

@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
 use anyhow::{anyhow, Context as _, Result};
+use kurbo::{Point, Rect, Size};
 use petgraph::{
     graph::{EdgeIndex, IndexType, NodeIndex},
     stable_graph::StableDiGraph,
@@ -54,11 +55,24 @@ pub enum Initial {
     HistoryDeep(Idx),
 }
 
-// feature flag edit?
+// feature flag edit? rename StateEditData?
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EditData {
-    // this is origin, size; relative to parent
-    rect: ((f64, f64), (f64, f64)), //Rect,
+    // relative to parent
+    #[serde(with = "serde_rect")]
+    pub rect: Rect,
+}
+
+impl EditData {
+    pub fn new() -> Self {
+        Self {
+            rect: Rect::from_origin_size(Point::new(20., 20.), Size::new(100., 40.)),
+        }
+    }
+
+    pub fn set_rect(&mut self, rect: Rect) {
+        self.rect = rect;
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -68,7 +82,7 @@ pub struct State {
     parent: Option<Idx>,
     pub entry: Option<String>,
     pub exit: Option<String>,
-    pub edit_data: Option<EditData>,
+    pub edit_data: EditData,
 }
 
 // newtype event key?
@@ -497,7 +511,7 @@ impl State {
             parent,
             entry: entry.map(String::from),
             exit: exit.map(String::from),
-            edit_data: None,
+            edit_data: EditData::new(),
         }
     }
 
@@ -532,6 +546,70 @@ impl Transition {
     pub fn set_internal(mut self, internal: bool) -> Self {
         self.internal = internal;
         self
+    }
+}
+
+mod serde_rect {
+    use kurbo::Rect;
+    use serde::de::{self, Deserializer, SeqAccess, Visitor};
+    use serde::ser::{SerializeSeq, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S>(rect: &Rect, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(4))?;
+        seq.serialize_element(&rect.x0)?;
+        seq.serialize_element(&rect.y0)?;
+        seq.serialize_element(&rect.x1)?;
+        seq.serialize_element(&rect.y1)?;
+        seq.end()
+    }
+
+    struct RectVisitor;
+
+    impl<'de> Visitor<'de> for RectVisitor {
+        type Value = Rect;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            write!(formatter, "a sequence of 4 f64")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut rect = Rect::ZERO;
+            rect.x0 = seq.next_element()?.ok_or(de::Error::custom("missing x0"))?;
+            rect.y0 = seq.next_element()?.ok_or(de::Error::custom("missing y0"))?;
+            rect.x1 = seq.next_element()?.ok_or(de::Error::custom("missing x1"))?;
+            rect.y1 = seq.next_element()?.ok_or(de::Error::custom("missing y1"))?;
+            Ok(rect)
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Rect, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(RectVisitor)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use crate::EditData;
+        use kurbo::Rect;
+        use ron::{de::from_str, ser::to_string};
+
+        #[test]
+        fn serde_rect() {
+            let rect = Rect::new(1., 2., 3., 4.);
+            let data = EditData { rect };
+            let a = to_string(&data).unwrap();
+            // Rect doesn't have Eq or PartialEq
+            assert!(from_str::<EditData>(&a).is_ok());
+        }
     }
 }
 

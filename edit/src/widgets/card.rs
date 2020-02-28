@@ -8,6 +8,18 @@ use druid::{
 };
 use std::sync::Arc;
 
+// Grab is a widget that can be mouse dragged around and dropped. It issues a command when dropped so it can be moved around inside a parent container or transferred to another.
+
+// Bag is a widget that accepts Grab widgets.
+// Card is a layout widget that can show any number of widgets as cards in a pile. They can overlap.
+// How do I "pick" a widget to drop on. How do I make sure only one widget accepts the drop?
+// Need an "inside me but not inside any of my containing widgets" function.
+// If you can only drag via the state label, and the labels never overlap?
+// set_handled
+
+// sharing rect w/ layout_rect
+// set_layout_rect() / layout_rect()
+
 pub struct Card<T: Data> {
     pub children: Vec<(Rect, WidgetPod<T, Box<dyn Widget<T>>>)>,
     pub active_child: Option<(Rect, Point, WidgetId, bool)>,
@@ -29,6 +41,7 @@ impl<T: Data> Widget<T> for Card<T> {
             Event::MouseDown(mouse) => {
                 for (rect, child) in &mut self.children {
                     if rect.contains(mouse.pos) {
+                        // resize should be a direction, not a bool
                         let inset = rect.inset(-20.);
                         //let resize = (rect.x1 - mouse.pos.x) < 10. && (rect.y1 - mouse.pos.y) < 10.;
                         let resize = !inset.contains(mouse.pos);
@@ -42,12 +55,12 @@ impl<T: Data> Widget<T> for Card<T> {
                 }
 
                 ctx.set_active(true);
-                ctx.invalidate();
+                ctx.request_paint();
             }
             Event::MouseUp(_) => {
                 // if ctx.is_active() {
                 //     ctx.set_active(false);
-                //     ctx.invalidate();
+                //     ctx.request_paint();
                 //     if ctx.is_hot() {
                 //         (self.action)(ctx, data, env);
                 //     }
@@ -66,7 +79,7 @@ impl<T: Data> Widget<T> for Card<T> {
                                 let origin = rect0.origin() + (mouse.pos - mouse_pos0);
                                 *rect = rect.with_origin(origin);
                             }
-                            ctx.invalidate();
+                            ctx.request_paint();
                             break;
                         }
                     }
@@ -83,7 +96,7 @@ impl<T: Data> Widget<T> for Card<T> {
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &T, env: &Env) {
         match event {
             LifeCycle::HotChanged(_) => {
-                ctx.invalidate();
+                ctx.request_paint();
             }
             _ => (),
         }
