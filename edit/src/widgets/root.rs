@@ -1,5 +1,5 @@
 use crate::widgets::{DragData, State, DRAG_END, DRAG_START};
-use crate::{EditData, GrabData};
+use crate::EditData;
 use druid::kurbo::RoundedRect;
 use druid::kurbo::{BezPath, Shape};
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
@@ -250,9 +250,6 @@ impl Widget<EditData> for Root {
     fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &EditData, env: &Env) {
         // we want to draw something on hover to show drag target TODO:
         for state in &mut self.states {
-            // if let Some(GrabData { p0, p1, rect, id }) = data.graph.grab {
-            //     if state.id() == id {}
-            // }
             state.paint_with_offset(paint_ctx, data, env)
         }
     }

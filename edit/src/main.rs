@@ -34,7 +34,6 @@ struct GraphData {
     graph: Arc<Graph>,
     // path to file on disk
     //path: Option<Path>
-    grab: Option<GrabData>,
     // the state widgets store a state index, but we can't access the
     // widgets directly - this gives us widget id -> state index
     #[druid(ignore)]
@@ -47,7 +46,6 @@ impl GraphData {
     pub fn new() -> Self {
         Self {
             graph: Arc::new(Graph::new("untitled")),
-            grab: None,
             wids: HashMap::new(),
         }
     }
@@ -82,21 +80,6 @@ impl GraphData {
         g.set_id(Some(i), id.as_str());
         g.set_parent(i, p);
         Ok(())
-    }
-}
-
-#[derive(Clone, Data, Debug)]
-struct GrabData {
-    p0: Point,  // original mouse down
-    p1: Point,  // current mouse position
-    rect: Rect, // ??
-    #[druid(same_fn = "PartialEq::eq")]
-    id: WidgetId,
-}
-
-impl GrabData {
-    pub fn new(p0: Point, p1: Point, rect: Rect, id: WidgetId) -> Self {
-        Self { p0, p1, rect, id }
     }
 }
 
