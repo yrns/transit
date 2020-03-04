@@ -70,6 +70,10 @@ impl EditData {
         }
     }
 
+    pub fn rect(&self) -> Rect {
+        self.rect
+    }
+
     pub fn set_rect(&mut self, rect: Rect) {
         self.rect = rect;
     }
@@ -77,9 +81,9 @@ impl EditData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct State {
-    id: String,
+    pub id: String,
     pub initial: Initial,
-    parent: Option<Idx>,
+    pub parent: Option<Idx>,
     pub entry: Option<String>,
     pub exit: Option<String>,
     pub edit_data: EditData,
@@ -122,14 +126,9 @@ impl Graph {
         Arc::make_mut(&mut self.graph[i])
     }
 
-    pub fn add_state<T: Into<State>>(&mut self, s: T) -> Result<Idx> {
+    pub fn add_state<T: Into<State>>(&mut self, s: T) -> Idx {
         let s = s.into();
-        if self.unique_id(s.parent, &s.id) {
-            Ok(self.graph.add_node(Arc::new(s)))
-        } else {
-            // this is a dupe error
-            Err(anyhow!("id must be unique among siblings"))
-        }
+        self.graph.add_node(Arc::new(s))
     }
 
     pub fn remove_state(&mut self, _i: Idx) -> State {
@@ -144,31 +143,24 @@ impl Graph {
             .filter(move |i| self.graph[*i].parent == p)
     }
 
-    pub fn set_id(&mut self, i: Option<Idx>, id: &str) -> Result<()> {
+    pub fn set_id(&mut self, i: Option<Idx>, id: &str) {
         if let Some(i) = i {
-            // make sure the id is unique among siblings
-            if !self.unique_id(self.graph[i].parent, id) {
-                Err(anyhow!("id must be unique among siblings"))
-            } else {
-                Arc::make_mut(&mut self.graph[i]).id = id.to_string();
-                Ok(())
-            }
+            Arc::make_mut(&mut self.graph[i]).id = id.to_string();
         } else {
             // set graph id
             self.id = id.to_string();
-            Ok(())
         }
     }
 
-    pub fn unique_id(&self, p: Option<Idx>, id: &str) -> bool {
+    pub fn is_unique_id(&self, p: Option<Idx>, id: &str) -> bool {
         self.children(p)
             .map(|i| &self.graph[i].id)
             .all(|id2| id2 != id)
     }
 
-    // move state, check id for uniqueness
-    pub fn set_parent(&mut self, _p: Idx, _i: Idx) -> Result<()> {
-        todo!()
+    // move state, check id for uniqueness among new siblings?
+    pub fn set_parent(&mut self, i: Idx, p: Option<Idx>) {
+        Arc::make_mut(&mut self.graph[i]).parent = p;
     }
 
     // the only reason we'd want history at the root of a statechart
@@ -504,9 +496,14 @@ impl State {
     // if we use path, moving the state requires renaming functions
     // if we only use id then all ids must be globally unique
     // TODO:
-    pub fn new(id: &str, parent: Option<Idx>, entry: Option<&str>, exit: Option<&str>) -> Self {
+    pub fn new<S: Into<String>>(
+        id: S,
+        parent: Option<Idx>,
+        entry: Option<&str>,
+        exit: Option<&str>,
+    ) -> Self {
         Self {
-            id: id.to_string(),
+            id: id.into(),
             initial: Initial::None,
             parent,
             entry: entry.map(String::from),
@@ -620,10 +617,10 @@ mod tests {
     // make this work with any graph TODO:
     //struct TestContext;
 
-    #[test]
-    fn set_id() {
-        let mut g = Graph::new("test");
-        assert!(g.add_state("child1").is_ok());
-        assert!(g.add_state("child1").is_err());
-    }
+    // #[test]
+    // fn set_id() {
+    //     let mut g = Graph::new("test");
+    //     assert!(g.add_state("child1").is_ok());
+    //     assert!(g.add_state("child1").is_err());
+    // }
 }

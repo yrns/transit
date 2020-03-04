@@ -31,30 +31,38 @@ impl Root {
             states: Vec::new(),
         }
     }
+
+    pub fn is_root(&self) -> bool {
+        self.sid.is_none()
+    }
 }
 
 impl Widget<EditData> for Root {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
+        // recurse first, with special cases:
         match event {
             Event::Command(cmd) if cmd.selector == STATE_ADDED => {
                 let (id, sid) = cmd.get_object::<(WidgetId, Idx)>().unwrap().clone();
                 data.graph.wids.insert(id, sid);
+                return;
             }
-            // transform drag end event for children, like WidgetPod does
-            // for mouse events
+            // transform drag end event for children, like WidgetPod
+            // does for mouse events
             Event::Command(cmd) if cmd.selector == DRAG_END => {
                 let drag = cmd.get_object::<DragData>().unwrap().clone();
 
                 // reverse so states on top handle the event first
                 for state in &mut self.states.iter_mut().rev() {
-                    let mouse_pos = drag.rect1.origin() + drag.p0.to_vec2();
-                    let rect = state.layout_rect();
-                    if rect.winding(mouse_pos) != 0 {
-                        let mut drag = drag.clone();
-                        let origin = drag.rect1.origin() - rect.origin().to_vec2();
-                        drag.rect1 = drag.rect1.with_origin(origin);
-                        let event = Event::Command(Command::new(DRAG_END, drag));
-                        state.event(ctx, &event, data, env);
+                    // can't move a state inside itself
+                    if state.id() != drag.id {
+                        let rect = state.layout_rect();
+                        if rect.winding(drag.rect1.origin() + drag.p0.to_vec2()) != 0 {
+                            let mut drag = drag.clone();
+                            let origin = drag.rect1.origin() - rect.origin().to_vec2();
+                            drag.rect1 = drag.rect1.with_origin(origin);
+                            let event = Event::Command(Command::new(DRAG_END, drag));
+                            state.event(ctx, &event, data, env);
+                        }
                     }
                 }
             }
@@ -73,7 +81,7 @@ impl Widget<EditData> for Root {
             Event::WindowConnected => {
                 // the root widget initially has focus, this may need
                 // to change if we have multiple graphs open
-                if self.sid.is_none() {
+                if self.is_root() {
                     ctx.request_focus();
                 }
             }
@@ -82,44 +90,23 @@ impl Widget<EditData> for Root {
                 let sid = data.graph.wids[&drag.id];
                 let graph = Arc::make_mut(&mut data.graph.graph);
                 let state = graph.get_mut(sid);
-                state.edit_data.set_rect(drag.rect1);
+                //let rect0 = state.edit_data.rect();
+                let rect1 = drag.rect1;
+                // the drag rect is relative to the dragged widget, so
+                // offset from the original origin
+                state.edit_data.set_rect(rect1);
+                //rect1.with_origin(rect0.origin() + rect1.origin().to_vec2()));
+
+                if state.parent != self.sid {
+                    graph.set_parent(sid, self.sid)
+                }
                 ctx.set_handled();
                 ctx.request_layout();
             }
 
-            Event::MouseDown(mouse) => {
-                // start drag, start at the end of the list since
-                // those states draw last
-                for state in self.states.iter().rev() {
-                    let rect = state.layout_rect();
-                    if rect.contains(mouse.pos) {
-                        // let drag = DragData {
-                        //     p0: mouse.pos,
-                        //     rect0: rect,
-                        //     rect1: rect,
-                        //     id: state.id(),
-                        //     resize: false,
-                        // };
-                        // // always target the drag space? pass its id around?
-                        // ctx.submit_command(Command::new(DRAG_START, drag), None);
-                        // ctx.set_handled();
-                        break;
-                    }
-                }
-
+            Event::MouseDown(_mouse) => {
+                // ??
                 ctx.request_focus();
-            }
-            Event::MouseUp(_) => {
-                // if ctx.is_active() {
-                //     ctx.set_active(false);
-                //     ctx.request_paint();
-                //     if ctx.is_hot() {
-                //         //(self.action)(ctx, data, env);
-                //     }
-                // }
-            }
-            Event::MouseMoved(_mouse) => {
-                // if we are the parent of the widget, mousebutton
             }
             Event::KeyDown(key_event) => {
                 match key_event {
@@ -141,21 +128,11 @@ impl Widget<EditData> for Root {
                         ctx.focus_prev()
                     }
                     k_e if HotKey::new(None, "n").matches(k_e) => {
-                        //ctx.submit_command(NEW_STATE, ctx.widget_id());
-                        // TODO: unique or use short guid?
-                        let g = Arc::make_mut(&mut data.graph.graph);
-                        if g.add_state("untitled").is_err() {
-                            for n in 1..10 {
-                                let id = format!("untitled-{}", n);
-                                if g.add_state(id.as_str()).is_ok() {
-                                    break;
-                                }
-                            }
-                        }
+                        data.graph.add_state("untitled", self.sid).unwrap();
                     }
 
                     _ => {
-                        dbg!("unhandled key in root: {:?}", key_event);
+                        //dbg!("unhandled key in root: {:?}", key_event);
                     }
                 }
             }
@@ -187,7 +164,7 @@ impl Widget<EditData> for Root {
         // sync Vec<State> with this state's children
         // if the state stored the child list we might be able to lens over just the state
         let mut changed = false;
-        let mut max = 0;
+        let mut n = 0;
         let children = data.graph.graph.children(self.sid).enumerate();
         for (index, sid) in children {
             if index + 1 > self.states.len() {
@@ -208,14 +185,11 @@ impl Widget<EditData> for Root {
                     }
                 }
             }
-            max = index;
+            n = index + 1;
         }
 
-        let len = self.states.len();
-        if len > 0 && max < len - 1 {
-            // the last state got re/moved
-            self.states.truncate(max + 1);
-        }
+        // remove excess states (if the last state was removed)
+        self.states.truncate(n);
 
         if changed {
             ctx.children_changed();
@@ -223,7 +197,6 @@ impl Widget<EditData> for Root {
             ctx.request_paint();
         }
 
-        //dbg!(old_data, data);
         // FIX: put this in the loop above? how do we tell if an update is needed?
         for state in &mut self.states {
             state.update(ctx, data, env);

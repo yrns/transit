@@ -2,7 +2,8 @@
 
 mod widgets;
 
-pub use crate::widgets::*;
+pub use crate::widgets::Root;
+use anyhow::{anyhow, Result};
 use druid::lens::{self, LensExt};
 use druid::theme;
 use druid::widget::{
@@ -12,9 +13,10 @@ use druid::{
     AppLauncher, Color, Data, Lens, LocalizedString, Point, Rect, UnitPoint, Widget, WidgetId,
     WidgetPod, WindowDesc,
 };
+use log;
 use std::collections::HashMap;
 use std::sync::Arc;
-use transit::{Graph, Idx, State as TransitState, Transition};
+use transit::{Graph, Idx, State, Transition};
 
 #[derive(Clone, Data)]
 struct EditData {
@@ -50,9 +52,36 @@ impl GraphData {
         }
     }
 
-    pub fn abs_rect(&self, _i: Idx) -> Rect {
-        let rect = Rect::ZERO;
-        rect
+    // make an id unique
+    fn unique_id(&self, id: String, parent: Option<Idx>) -> Result<String> {
+        if self.graph.is_unique_id(parent, &id) {
+            Ok(id)
+        } else {
+            for n in 1..10 {
+                let id = format!("{}-{}", id, n);
+                if self.graph.is_unique_id(parent, id.as_str()) {
+                    return Ok(id);
+                }
+            }
+            Err(anyhow!("failed to make unique id"))
+        }
+    }
+
+    pub fn add_state(&mut self, id: &str, parent: Option<Idx>) -> Result<()> {
+        let id = self.unique_id(id.into(), parent)?;
+        let g = Arc::make_mut(&mut self.graph);
+        g.add_state(State::new(id, parent, None, None));
+        Ok(())
+    }
+
+    // there is way too much cloning happening here for an id that's
+    // probably not changing FIX:
+    pub fn set_parent(&mut self, i: Idx, p: Option<Idx>) -> Result<()> {
+        let id = self.unique_id(self.graph.get(i).id.clone(), p)?;
+        let g = Arc::make_mut(&mut self.graph);
+        g.set_id(Some(i), id.as_str());
+        g.set_parent(i, p);
+        Ok(())
     }
 }
 
@@ -112,7 +141,7 @@ fn ui_builder() -> impl Widget<EditData> {
     //let solid = Color::rgb8(0xfe, 0xee, 0xee);
 
     Flex::column()
-        .with_child(Scroll::new(DragZone::new(Root::new(None))), 1.0)
+        .with_child(Scroll::new(Root::new(None)), 1.0)
         .with_child(
             // show path to hovered state, key commands, etc.
             Label::new(|data: &EditData, _env: &_| format!("{}", data.graph.graph.id))

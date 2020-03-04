@@ -1,5 +1,5 @@
-use crate::widgets::{Drag, Root};
-use crate::{EditData, GrabData, STATE_ADDED};
+use crate::widgets::{Drag, Root, STATE_ADDED};
+use crate::EditData;
 use druid::kurbo::BezPath;
 use druid::kurbo::RoundedRect;
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
@@ -10,6 +10,7 @@ use druid::{
     LifeCycle, LifeCycleCtx, LinearGradient, LocalizedString, MouseButton, MouseEvent, PaintCtx,
     Point, Rect, RenderContext, Size, UnitPoint, UpdateCtx, Widget, WidgetId, WindowDesc,
 };
+use std::fmt;
 use transit::{Graph, Idx, State as TransitState, Transition};
 
 // each state contains a label and child states
@@ -47,9 +48,13 @@ impl State {
             id,
         );
 
-        dbg!(inner.id());
-
         Self { id, sid, inner }
+    }
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "State {{ id: {:?}, sid: {:?} }}", self.id, self.sid)
     }
 }
 
@@ -59,30 +64,6 @@ impl Widget<EditData> for State {
     }
 
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
-        match event {
-            Event::MouseDown(MouseEvent {
-                pos: _,
-                button: MouseButton::Left,
-                ..
-            }) => {
-                dbg!(ctx.widget_id());
-                // if !ctx.is_handled() && data.graph.grab.is_none() {
-                //     ctx.set_active(true);
-                //     data.graph.grab = Some(GrabData::new(*pos, Rect::ZERO, ctx.widget_id()));
-                //     ctx.set_handled();
-                //     ctx.request_paint();
-                // }
-            }
-            Event::MouseUp(_) => {
-                if ctx.is_active() {
-                    ctx.set_active(false);
-                    ctx.request_paint();
-                }
-            }
-            //Event::MouseMoved(MouseEvent { pos, .. }) => {}
-            _ => (),
-        }
-
         self.inner.event(ctx, event, data, env);
     }
 
@@ -115,7 +96,6 @@ impl Widget<EditData> for State {
     }
 
     fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &EditData, env: &Env) {
-        //let is_active = paint_ctx.is_active();
         let is_hot = paint_ctx.is_hot();
 
         let rounded_rect =

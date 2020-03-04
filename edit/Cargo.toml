@@ -10,3 +10,5 @@ edition = "2018"
 transit = { path = ".." }
 #druid = "0.4.0"
 druid = { path = "../../druid/druid" }
+anyhow = "1.0.26"
+log = "0.4.8"
