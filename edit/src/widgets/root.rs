@@ -49,18 +49,15 @@ impl Widget<EditData> for Root {
             // transform drag end event for children, like WidgetPod
             // does for mouse events
             Event::Command(cmd) if cmd.selector == DRAG_END => {
-                let drag = cmd.get_object::<DragData>().unwrap().clone();
+                let drag = cmd.get_object::<DragData>().unwrap();
 
                 // reverse so states on top handle the event first
                 for state in &mut self.states.iter_mut().rev() {
                     // can't move a state inside itself
                     if state.id() != drag.id {
                         let rect = state.layout_rect();
-                        if rect.winding(drag.rect1.origin() + drag.p0.to_vec2()) != 0 {
-                            let mut drag = drag.clone();
-                            let origin = drag.rect1.origin() - rect.origin().to_vec2();
-                            drag.rect1 = drag.rect1.with_origin(origin);
-                            let event = Event::Command(Command::new(DRAG_END, drag));
+                        if rect.winding(drag.anchor()) != 0 {
+                            let event = drag.offset(rect.origin().to_vec2()).to_event();
                             state.event(ctx, &event, data, env);
                         }
                     }
@@ -105,34 +102,38 @@ impl Widget<EditData> for Root {
             }
 
             Event::MouseDown(_mouse) => {
-                // ??
+                // we only get this in the root widget because drag intercepts all other mouse downs
+                log::info!("request_focus for {:?}", ctx.widget_id());
                 ctx.request_focus();
             }
             Event::KeyDown(key_event) => {
-                match key_event {
-                    // Select all states
-                    k_e if (HotKey::new(SysMods::Cmd, "a")).matches(k_e) => {
-                        // TODO:
-                    }
-                    // Backspace focuses parent?
-                    k_e if (HotKey::new(None, KeyCode::Backspace)).matches(k_e) => {
-                        // TODO:
-                    }
-                    // Delete this state
-                    k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
-                        // TODO:
-                    }
-                    // Tab and shift+tab change focus to child states
-                    k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
-                    k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => {
-                        ctx.focus_prev()
-                    }
-                    k_e if HotKey::new(None, "n").matches(k_e) => {
-                        data.graph.add_state("untitled", self.sid).unwrap();
-                    }
+                if ctx.has_focus() {
+                    match key_event {
+                        // Select all states
+                        k_e if (HotKey::new(SysMods::Cmd, "a")).matches(k_e) => {
+                            // TODO:
+                        }
+                        // Backspace focuses parent?
+                        k_e if (HotKey::new(None, KeyCode::Backspace)).matches(k_e) => {
+                            // TODO:
+                        }
+                        // Delete this state
+                        k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
+                            // TODO:
+                        }
+                        // Tab and shift+tab change focus to child states
+                        k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
+                        k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => {
+                            ctx.focus_prev()
+                        }
+                        k_e if HotKey::new(None, "n").matches(k_e) => {
+                            data.graph.add_state("untitled", self.sid).unwrap();
+                            ctx.set_handled();
+                        }
 
-                    _ => {
-                        //dbg!("unhandled key in root: {:?}", key_event);
+                        _ => {
+                            //dbg!("unhandled key in root: {:?}", key_event);
+                        }
                     }
                 }
             }
@@ -151,7 +152,12 @@ impl Widget<EditData> for Root {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
-            LifeCycle::FocusChanged(_) => {}
+            LifeCycle::FocusChanged(focus) => {
+                log::info!("focus for {:?}: {}", ctx.widget_id(), focus);
+            }
+            LifeCycle::RouteFocusChanged { old, new } => {
+                log::info!("old: {:?}, new: {:?}", old, new);
+            }
             _ => (),
         }
 
@@ -160,6 +166,7 @@ impl Widget<EditData> for Root {
         }
     }
 
+    // TODO: figure out z, put selected state on top
     fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &EditData, data: &EditData, env: &Env) {
         // sync Vec<State> with this state's children
         // if the state stored the child list we might be able to lens over just the state
@@ -240,17 +247,42 @@ impl Widget<EditData> for Root {
         //bc.constrain(min_rect.size())
 
         // return zero if we are not the root state and have no states
-        if self.sid.is_some() && self.states.is_empty() {
-            Size::ZERO
-        } else {
-            bc.max()
-        }
+        // if self.sid.is_some() && self.states.is_empty() {
+        //     Size::ZERO
+        // } else {
+        //     bc.max()
+        // }
+        bc.max()
     }
 
-    fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &EditData, env: &Env) {
+    // TODO: don't paint outside the root and/or crop
+    // TODO: we need to fit states inside the root on resize
+    fn paint(&mut self, ctx: &mut PaintCtx, data: &EditData, env: &Env) {
+        // TODO: we have to paint the focus here since has_focus is
+        // false for ancestors (in paint) - add a flag in state that
+        // tracks that the root has focus, or directly access it
+        // outside the flex
+        let has_focus = ctx.has_focus();
+        let is_hot = ctx.is_hot();
+
+        // the size is infinite for the root since it's in a scroll widget
+        if !self.is_root() && (has_focus || is_hot) {
+            let rect = Rect::from_origin_size(Point::ORIGIN, ctx.size()).inset(-1.);
+            let rounded_rect = RoundedRect::from_rect(rect, 4.);
+
+            let color = if has_focus {
+                env.get(theme::PRIMARY_LIGHT)
+            } else {
+                env.get(theme::BORDER_LIGHT)
+            };
+            let size = 2.0;
+
+            ctx.stroke(rounded_rect, &color, size);
+        }
+
         // we want to draw something on hover to show drag target TODO:
         for state in &mut self.states {
-            state.paint_with_offset(paint_ctx, data, env)
+            state.paint_with_offset(ctx, data, env)
         }
     }
 }

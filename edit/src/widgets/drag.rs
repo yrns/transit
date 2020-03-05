@@ -10,6 +10,9 @@ use druid::{
 
 pub const DRAG_START: Selector = Selector::new("transit.edit.drag-start");
 pub const DRAG_END: Selector = Selector::new("transit.edit.drag-end");
+// TODO: ??
+//pub const DRAG_OVER: Selector = Selector::new("transit.edit.drag-end");
+
 // pub const RESIZE_START: Selector = Selector::new("transit.edit.resize-start");
 // pub const RESIZE_END: Selector = Selector::new("transit.edit.resize-end");
 
@@ -35,6 +38,23 @@ impl DragData {
             resize,
         }
     }
+
+    // this is where the mouse is inside the mirror
+    pub fn anchor(&self) -> Point {
+        self.rect1.origin() + self.p0.to_vec2()
+    }
+
+    pub fn offset(&self, v: Vec2) -> Self {
+        let mut drag = self.clone();
+        let origin = drag.rect1.origin() - v;
+        drag.rect1 = drag.rect1.with_origin(origin);
+        drag
+    }
+
+    // wrap into an event
+    pub fn to_event(self) -> Event {
+        Event::Command(Command::new(DRAG_END, self))
+    }
 }
 
 // we have to know the widget id to drag on creation
@@ -57,6 +77,7 @@ impl<T: Data, W: Widget<T>> Drag<T, W> {
     }
 }
 
+// TODO: add a minimum drag distance so we're not interpreting every click as a drag?
 impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut T, env: &Env) {
         // resize takes precedence

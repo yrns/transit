@@ -17,6 +17,7 @@ use transit::{Graph, Idx, State as TransitState, Transition};
 pub struct State {
     id: WidgetId,
     pub sid: Idx,
+    //header: Flex<EditData>,
     inner: Drag<EditData, Flex<EditData>>,
     //history: History,
     //root: Root, // children
@@ -75,6 +76,10 @@ impl Widget<EditData> for State {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
+            LifeCycle::FocusChanged(focus) => {
+                dbg!(focus);
+                ctx.request_paint();
+            }
             _ => (),
         }
 
@@ -97,13 +102,19 @@ impl Widget<EditData> for State {
 
     fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &EditData, env: &Env) {
         let is_hot = paint_ctx.is_hot();
+        // FIX: never has focus
+        let has_focus = paint_ctx.has_focus();
 
         let rounded_rect =
             RoundedRect::from_origin_size(Point::ORIGIN, paint_ctx.size().to_vec2(), 4.);
 
-        let border_color = env.get(theme::BORDER_LIGHT);
+        let border_color = if has_focus {
+            env.get(theme::PRIMARY_LIGHT)
+        } else {
+            env.get(theme::BORDER_LIGHT)
+        };
 
-        let border_size = if is_hot { 5.0 } else { 4.0 };
+        let border_size = if is_hot { 4.0 } else { 2.0 };
 
         paint_ctx.stroke(rounded_rect, &border_color, border_size);
 
