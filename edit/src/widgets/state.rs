@@ -33,7 +33,7 @@ impl State {
                     Flex::row().with_child(
                         // replace this with a state label that is editable:
                         Label::new(move |data: &EditData, _env: &_| {
-                            format!("{}", data.graph.graph.graph[sid].id())
+                            format!("{}", data.graph1.graph.graph[sid].id())
                         })
                         .text_align(UnitPoint::LEFT)
                         .padding(2.0),

@@ -20,7 +20,8 @@ use transit::{Graph, Idx, State, Transition};
 
 #[derive(Clone, Data)]
 struct EditData {
-    graph: GraphData,
+    // we only have one graph editable at a time for now
+    graph1: GraphData,
     // command to run when editing an action (emacsclient, etc.)
     #[druid(ignore)]
     edit_action: Option<String>,
@@ -46,19 +47,21 @@ impl GraphData {
     pub fn new() -> Self {
         Self {
             graph: Arc::new(Graph::new("untitled")),
+            // we're only doing this since we aren't storing state ids
+            // in DragData, maybe make the state id a type parameter? TODO:
             wids: HashMap::new(),
         }
     }
 
-    // make an id unique
-    fn unique_id(&self, id: String, parent: Option<Idx>) -> Result<String> {
+    // make a unique id
+    fn unique_id(&self, id: &str, parent: Option<Idx>) -> Result<Option<String>> {
         if self.graph.is_unique_id(parent, &id) {
-            Ok(id)
+            Ok(None)
         } else {
             for n in 1..10 {
                 let id = format!("{}-{}", id, n);
-                if self.graph.is_unique_id(parent, id.as_str()) {
-                    return Ok(id);
+                if self.graph.is_unique_id(parent, &id) {
+                    return Ok(Some(id));
                 }
             }
             Err(anyhow!("failed to make unique id"))
@@ -66,19 +69,35 @@ impl GraphData {
     }
 
     pub fn add_state(&mut self, id: &str, parent: Option<Idx>) -> Result<()> {
-        let id = self.unique_id(id.into(), parent)?;
+        let uid = self.unique_id(id, parent)?;
         let g = Arc::make_mut(&mut self.graph);
-        g.add_state(State::new(id, parent, None, None));
+        g.add_state(State::new(
+            uid.unwrap_or_else(|| id.to_string()),
+            parent,
+            None,
+            None,
+        ));
         Ok(())
     }
 
-    // there is way too much cloning happening here for an id that's
-    // probably not changing FIX:
-    pub fn set_parent(&mut self, i: Idx, p: Option<Idx>) -> Result<()> {
-        let id = self.unique_id(self.graph.get(i).id.clone(), p)?;
-        let g = Arc::make_mut(&mut self.graph);
-        g.set_id(Some(i), id.as_str());
-        g.set_parent(i, p);
+    pub fn move_state(&mut self, parent: Option<Idx>, i: Idx, rect: Rect) -> Result<()> {
+        let p0 = self.graph.get(i).parent;
+        // we only want a new id if it's a new parent and the current
+        // id won't be unique
+        let id = {
+            if p0 != parent {
+                let id = &self.graph.get(i).id;
+                self.unique_id(id, parent)?
+            } else {
+                None
+            }
+        };
+        let s = Arc::make_mut(&mut self.graph).get_mut(i);
+        s.parent = parent;
+        if let Some(id) = id {
+            s.id = id;
+        }
+        s.edit_data.set_rect(rect);
         Ok(())
     }
 }
@@ -88,7 +107,7 @@ fn main() {
 
     // start with a blank graph
     let data = EditData {
-        graph: GraphData::new(),
+        graph1: GraphData::new(),
         edit_action: None,
         rename_action: None,
     };
@@ -127,7 +146,7 @@ fn ui_builder() -> impl Widget<EditData> {
         .with_child(Scroll::new(Root::new(None)), 1.0)
         .with_child(
             // show path to hovered state, key commands, etc.
-            Label::new(|data: &EditData, _env: &_| format!("{}", data.graph.graph.id))
+            Label::new(|data: &EditData, _env: &_| format!("{}", data.graph1.graph.id))
                 .fix_height(40.),
             0.0,
         )

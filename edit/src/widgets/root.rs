@@ -43,7 +43,7 @@ impl Widget<EditData> for Root {
         match event {
             Event::Command(cmd) if cmd.selector == STATE_ADDED => {
                 let (id, sid) = cmd.get_object::<(WidgetId, Idx)>().unwrap().clone();
-                data.graph.wids.insert(id, sid);
+                data.graph1.wids.insert(id, sid);
                 return;
             }
             // transform drag end event for children, like WidgetPod
@@ -83,19 +83,10 @@ impl Widget<EditData> for Root {
                 }
             }
             Event::Command(cmd) if cmd.selector == DRAG_END => {
-                let drag = cmd.get_object::<DragData>().unwrap().clone();
-                let sid = data.graph.wids[&drag.id];
-                let graph = Arc::make_mut(&mut data.graph.graph);
-                let state = graph.get_mut(sid);
-                //let rect0 = state.edit_data.rect();
-                let rect1 = drag.rect1;
-                // the drag rect is relative to the dragged widget, so
-                // offset from the original origin
-                state.edit_data.set_rect(rect1);
-                //rect1.with_origin(rect0.origin() + rect1.origin().to_vec2()));
-
-                if state.parent != self.sid {
-                    graph.set_parent(sid, self.sid)
+                let drag = cmd.get_object::<DragData>().unwrap();
+                let sid = data.graph1.wids[&drag.id];
+                if let Err(err) = data.graph1.move_state(self.sid, sid, drag.rect1) {
+                    log::error!("error on drag: {}", err);
                 }
                 ctx.set_handled();
                 ctx.request_layout();
@@ -127,7 +118,9 @@ impl Widget<EditData> for Root {
                             ctx.focus_prev()
                         }
                         k_e if HotKey::new(None, "n").matches(k_e) => {
-                            data.graph.add_state("untitled", self.sid).unwrap();
+                            if let Err(err) = data.graph1.add_state("untitled", self.sid) {
+                                log::error!("error on adding state: {}", err);
+                            }
                             ctx.set_handled();
                         }
 
@@ -172,7 +165,7 @@ impl Widget<EditData> for Root {
         // if the state stored the child list we might be able to lens over just the state
         let mut changed = false;
         let mut n = 0;
-        let children = data.graph.graph.children(self.sid).enumerate();
+        let children = data.graph1.graph.children(self.sid).enumerate();
         for (index, sid) in children {
             if index + 1 > self.states.len() {
                 // new state
@@ -234,7 +227,7 @@ impl Widget<EditData> for Root {
             //     rect = Rect::from_origin_size(p, default_size);
             //     state.set_layout_rect(rect);
             // }
-            let rect = data.graph.graph.graph[state.widget().sid].edit_data.rect;
+            let rect = data.graph1.graph.graph[state.widget().sid].edit_data.rect;
             state.set_layout_rect(rect);
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're
@@ -246,12 +239,7 @@ impl Widget<EditData> for Root {
         // is this even used? no we always return the max
         //bc.constrain(min_rect.size())
 
-        // return zero if we are not the root state and have no states
-        // if self.sid.is_some() && self.states.is_empty() {
-        //     Size::ZERO
-        // } else {
-        //     bc.max()
-        // }
+        // we always want the root maxed so we can drag to it
         bc.max()
     }
 
