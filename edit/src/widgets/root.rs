@@ -253,6 +253,8 @@ impl Widget<EditData> for Root {
         let has_focus = ctx.has_focus();
         let is_hot = ctx.is_hot();
 
+        // we want to draw something on hover to show drag target TODO:
+
         // the size is infinite for the root since it's in a scroll widget
         if !self.is_root() && (has_focus || is_hot) {
             let rect = Rect::from_origin_size(Point::ORIGIN, ctx.size()).inset(-1.);
@@ -268,9 +270,31 @@ impl Widget<EditData> for Root {
             ctx.stroke(rounded_rect, &color, size);
         }
 
-        // we want to draw something on hover to show drag target TODO:
+        // don't clip if we are the root widget (since our size is
+        // infinite) or if we are dragging (which draws outside the
+        // paint region)
+        let clip = !(self.is_root() || self.states.iter().any(|s| s.has_active()));
+
+        // we are ensuring that the origin of each child state is
+        // inside our paint region, but not the extents, so we need to
+        // set a clip region
+        if clip {
+            if let Err(e) = ctx.save() {
+                log::error!("saving render context failed: {:?}", e);
+                return;
+            }
+            let clip_rect = Rect::from_origin_size(Point::ORIGIN, ctx.size());
+            ctx.clip(clip_rect);
+        }
+
         for state in &mut self.states {
             state.paint_with_offset(ctx, data, env)
+        }
+
+        if clip {
+            if let Err(e) = ctx.restore() {
+                log::error!("restoring render context failed: {:?}", e);
+            }
         }
     }
 }

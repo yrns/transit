@@ -16,6 +16,7 @@ use transit::{Graph, Idx, State as TransitState, Transition};
 // each state contains a label and child states
 pub struct State {
     id: WidgetId,
+    // should be state index? sidx? si?
     pub sid: Idx,
     //header: Flex<EditData>,
     inner: Drag<EditData, Flex<EditData>>,

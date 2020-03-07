@@ -81,10 +81,16 @@ impl GraphData {
     }
 
     pub fn move_state(&mut self, parent: Option<Idx>, i: Idx, rect: Rect) -> Result<()> {
-        let p0 = self.graph.get(i).parent;
+        let rect = if let Some(p) = parent {
+            fit_rect(self.graph.get(p).edit_data.rect, rect)
+        } else {
+            rect
+        };
+
         // we only want a new id if it's a new parent and the current
         // id won't be unique
         let id = {
+            let p0 = self.graph.get(i).parent;
             if p0 != parent {
                 let id = &self.graph.get(i).id;
                 self.unique_id(id, parent)?
@@ -100,6 +106,15 @@ impl GraphData {
         s.edit_data.set_rect(rect);
         Ok(())
     }
+}
+
+// fit rect b into a
+fn fit_rect(a: Rect, b: Rect) -> Rect {
+    dbg!(a, b, b.x0, a.x1 - b.width());
+    b.with_origin(Point::new(
+        b.x0.min(a.width() - b.width()).max(0.),
+        b.y0.min(a.height() - b.height()).max(0.),
+    ))
 }
 
 fn main() {
