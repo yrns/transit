@@ -243,33 +243,8 @@ impl Widget<EditData> for Root {
         bc.max()
     }
 
-    // TODO: don't paint outside the root and/or crop
     // TODO: we need to fit states inside the root on resize
     fn paint(&mut self, ctx: &mut PaintCtx, data: &EditData, env: &Env) {
-        // TODO: we have to paint the focus here since has_focus is
-        // false for ancestors (in paint) - add a flag in state that
-        // tracks that the root has focus, or directly access it
-        // outside the flex
-        let has_focus = ctx.has_focus();
-        let is_hot = ctx.is_hot();
-
-        // we want to draw something on hover to show drag target TODO:
-
-        // the size is infinite for the root since it's in a scroll widget
-        if !self.is_root() && (has_focus || is_hot) {
-            let rect = Rect::from_origin_size(Point::ORIGIN, ctx.size()).inset(-1.);
-            let rounded_rect = RoundedRect::from_rect(rect, 4.);
-
-            let color = if has_focus {
-                env.get(theme::PRIMARY_LIGHT)
-            } else {
-                env.get(theme::BORDER_LIGHT)
-            };
-            let size = 2.0;
-
-            ctx.stroke(rounded_rect, &color, size);
-        }
-
         // don't clip if we are the root widget (since our size is
         // infinite) or if we are dragging (which draws outside the
         // paint region)

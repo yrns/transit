@@ -135,7 +135,8 @@ fn main() {
             env.set(theme::WINDOW_BACKGROUND_COLOR, Color::WHITE);
             env.set(theme::LABEL_COLOR, Color::BLACK);
             env.set(theme::CURSOR_COLOR, Color::rgb8(0xFF, 0x33, 0x33));
-            env.set(theme::BACKGROUND_LIGHT, Color::rgb8(230, 230, 230));
+            env.set(theme::BACKGROUND_LIGHT, Color::WHITE);
+            env.set(theme::BACKGROUND_DARK, Color::rgb8(230, 230, 230));
         })
         //.debug_paint_layout()
         .use_simple_logger()

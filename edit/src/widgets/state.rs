@@ -18,8 +18,10 @@ pub struct State {
     id: WidgetId,
     // should be state index? sidx? si?
     pub sid: Idx,
-    //header: Flex<EditData>,
-    inner: Drag<EditData, Flex<EditData>>,
+    header: Flex<EditData>,
+    // having the drag on the inner means the header will take
+    // precedence over the resize - FIX:?
+    inner: Drag<EditData, Root>,
     //history: History,
     //root: Root, // children
 }
@@ -28,29 +30,34 @@ impl State {
     pub fn new(sid: Idx) -> Self {
         // we set our own id so we can pass it to the drag widget
         let id = WidgetId::next();
-        let inner = Drag::new(
-            Flex::column()
-                .with_child(
-                    Flex::row().with_child(
+
+        let header = Flex::column()
+            .with_child(
+                Flex::row()
+                    .with_child(
                         // replace this with a state label that is editable:
                         Label::new(move |data: &EditData, _env: &_| {
                             format!("{}", data.graph1.graph.graph[sid].id())
                         })
                         .text_align(UnitPoint::LEFT)
-                        .padding(2.0),
-                        1.0,
-                    ),
-                    // with_child action handlers here
-                    0.0,
-                )
-                // horizontal rule that only draws when this state has children
-                //.with_child(Sep::new(), 0.0);
-                // empty row for child states
-                .with_child(Root::new(Some(sid)), 1.0),
-            id,
-        );
+                        .padding(2.),
+                        0.0,
+                    )
+                    // can't read the env here
+                    .background(Color::WHITE)
+                    .padding(4.),
+                0.0,
+            )
+            .with_child(SizedBox::empty(), 1.0);
 
-        Self { id, sid, inner }
+        let inner = Drag::new(Root::new(Some(sid)), id);
+
+        Self {
+            id,
+            sid,
+            header,
+            inner,
+        }
     }
 }
 
@@ -66,6 +73,7 @@ impl Widget<EditData> for State {
     }
 
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
+        self.header.event(ctx, event, data, env);
         self.inner.event(ctx, event, data, env);
     }
 
@@ -84,11 +92,13 @@ impl Widget<EditData> for State {
             _ => (),
         }
 
+        self.header.lifecycle(ctx, event, data, env);
         self.inner.lifecycle(ctx, event, data, env);
     }
 
     fn update(&mut self, ctx: &mut UpdateCtx, old_data: &EditData, data: &EditData, env: &Env) {
-        self.inner.update(ctx, old_data, data, env)
+        self.header.update(ctx, old_data, data, env);
+        self.inner.update(ctx, old_data, data, env);
     }
 
     fn layout(
@@ -98,12 +108,18 @@ impl Widget<EditData> for State {
         data: &EditData,
         env: &Env,
     ) -> Size {
+        // it's at the origin - we don't need to set the layout rect?
+        let _header_size = self.header.layout(layout_ctx, bc, data, env);
+
         self.inner.layout(layout_ctx, bc, data, env)
     }
 
     fn paint(&mut self, paint_ctx: &mut PaintCtx, data: &EditData, env: &Env) {
         let is_hot = paint_ctx.is_hot();
-        // FIX: never has focus
+
+        // neither drag nor root are in a WidgetPod, so requesting
+        // focus in the root gives us focus, this seems weird but it
+        // works
         let has_focus = paint_ctx.has_focus();
 
         let rounded_rect =
@@ -118,9 +134,9 @@ impl Widget<EditData> for State {
         let border_size = if is_hot { 4.0 } else { 2.0 };
 
         paint_ctx.stroke(rounded_rect, &border_color, border_size);
-
-        paint_ctx.fill(rounded_rect, &Color::WHITE);
+        paint_ctx.fill(rounded_rect, &env.get(theme::BACKGROUND_LIGHT));
 
         self.inner.paint(paint_ctx, data, env);
+        self.header.paint(paint_ctx, data, env);
     }
 }
