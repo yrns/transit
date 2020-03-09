@@ -6,6 +6,7 @@ use petgraph::{
     graph::{EdgeIndex, IndexType, NodeIndex},
     stable_graph::StableDiGraph,
 };
+use ron::de::from_reader;
 use ron::ser::{to_string_pretty, PrettyConfig};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -13,8 +14,11 @@ use std::boxed::Box;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs::File;
+use std::io::prelude::*;
 use std::iter::Iterator;
 use std::mem::{discriminant, Discriminant};
+use std::path::Path;
 use std::sync::Arc;
 
 // TODO: use statecharts as as states, "includes"
@@ -115,6 +119,16 @@ impl Graph {
 
     pub fn export(&self) -> Result<String> {
         Ok(to_string_pretty(&self, PrettyConfig::default())?)
+    }
+
+    pub fn export_to_file(&self, path: &Path) -> Result<()> {
+        let mut file = File::create(path)?;
+        file.write_all(self.export()?.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn import_from_file(&self, path: &Path) -> Result<Self> {
+        Ok(from_reader(File::open(path)?)?)
     }
 
     // impl Index/Mut instead? what about transitions

@@ -1,5 +1,5 @@
 use crate::widgets::{DragData, State, DRAG_END, DRAG_START};
-use crate::EditData;
+use crate::{EditData, RESET};
 use druid::kurbo::RoundedRect;
 use druid::kurbo::{BezPath, Shape};
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
@@ -41,6 +41,12 @@ impl Widget<EditData> for Root {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
         // recurse first, with special cases:
         match event {
+            Event::Command(cmd) if cmd.selector == RESET => {
+                data.reset();
+                ctx.children_changed();
+                ctx.request_paint();
+                return;
+            }
             Event::Command(cmd) if cmd.selector == STATE_ADDED => {
                 let (id, sid) = cmd.get_object::<(WidgetId, Idx)>().unwrap().clone();
                 data.graph1.wids.insert(id, sid);

@@ -10,13 +10,19 @@ use druid::widget::{
     Align, Button, Container, Flex, Label, List, Padding, Scroll, SizedBox, WidgetExt,
 };
 use druid::{
-    AppLauncher, Color, Data, Lens, LocalizedString, Point, Rect, UnitPoint, Widget, WidgetId,
-    WidgetPod, WindowDesc,
+    AppDelegate, AppLauncher, Color, Command, Data, DelegateCtx, Env, Event, FileInfo, Lens,
+    LocalizedString, MenuDesc, Point, Rect, Selector, UnitPoint, Widget, WidgetId, WidgetPod,
+    WindowDesc,
 };
 use log;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 use transit::{Graph, Idx, State, Transition};
+
+const RESET: Selector = Selector::new("transit-reset");
 
 #[derive(Clone, Data)]
 struct EditData {
@@ -34,11 +40,31 @@ struct EditData {
 struct GraphData {
     graph: Arc<Graph>,
     // path to file on disk
-    //path: Option<Path>
+    #[druid(ignore)]
+    path: Option<PathBuf>,
     // the state widgets store a state index, but we can't access the
     // widgets directly - this gives us widget id -> state index
     #[druid(ignore)]
     wids: HashMap<WidgetId, Idx>,
+}
+
+impl Default for EditData {
+    fn default() -> Self {
+        EditData {
+            graph1: GraphData::new(),
+            edit_action: None,
+            rename_action: None,
+        }
+    }
+}
+
+impl EditData {
+    fn reset(&mut self) {
+        self.graph1 = GraphData::new();
+        // TODO: Default
+        self.edit_action = None;
+        self.rename_action = None;
+    }
 }
 
 // we need to do layout in the data here so that layout in the widget can just read the data
@@ -47,6 +73,7 @@ impl GraphData {
     pub fn new() -> Self {
         Self {
             graph: Arc::new(Graph::new("untitled")),
+            path: None,
             // we're only doing this since we aren't storing state ids
             // in DragData, maybe make the state id a type parameter? TODO:
             wids: HashMap::new(),
@@ -110,7 +137,6 @@ impl GraphData {
 
 // fit rect b into a
 fn fit_rect(a: Rect, b: Rect) -> Rect {
-    dbg!(a, b, b.x0, a.x1 - b.width());
     b.with_origin(Point::new(
         b.x0.min(a.width() - b.width()).max(0.),
         b.y0.min(a.height() - b.height()).max(0.),
@@ -118,7 +144,7 @@ fn fit_rect(a: Rect, b: Rect) -> Rect {
 }
 
 fn main() {
-    let main_window = WindowDesc::new(ui_builder);
+    let main_window = WindowDesc::new(ui_builder).menu(make_menu(&EditData::default()));
 
     // start with a blank graph
     let data = EditData {
@@ -140,24 +166,12 @@ fn main() {
         })
         //.debug_paint_layout()
         .use_simple_logger()
+        .delegate(Delegate)
         .launch(data)
         .expect("launch failed");
 }
 
 fn ui_builder() -> impl Widget<EditData> {
-    //let text = LocalizedString::new("state-name").with_placeholder("state1".to_string());
-    //let state1 = State::new("state1").padding(10.0);
-    //let state2 = State::new("state2").padding(10.0);
-    //let state3 = State::new("state3").padding(10.0);
-
-    // let mut card = Card::new();
-    // card.children.push((
-    //     Rect::from_origin_size((20.0, 20.0), (100.0, 100.0)),
-    //     WidgetPod::new(Box::new(state1)),
-    // ));
-
-    //let solid = Color::rgb8(0xfe, 0xee, 0xee);
-
     Flex::column()
         .with_child(Scroll::new(Root::new(None)), 1.0)
         .with_child(
@@ -166,4 +180,83 @@ fn ui_builder() -> impl Widget<EditData> {
                 .fix_height(40.),
             0.0,
         )
+}
+
+struct Delegate;
+
+impl AppDelegate<EditData> for Delegate {
+    fn event(
+        &mut self,
+        event: Event,
+        data: &mut EditData,
+        _env: &Env,
+        ctx: &mut DelegateCtx,
+    ) -> Option<Event> {
+        match event {
+            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::NEW_FILE => {
+                // TODO: save unsaved changes?
+                ctx.submit_command(RESET, None);
+                None
+            }
+            Event::TargetedCommand(_, ref cmd)
+                if cmd.selector == druid::commands::SHOW_OPEN_PANEL =>
+            {
+                dbg!("show_open_panel");
+                None
+            }
+            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::OPEN_FILE => {
+                dbg!("open_file");
+                None
+            }
+            Event::TargetedCommand(_, ref cmd)
+                if cmd.selector == druid::commands::SHOW_SAVE_PANEL =>
+            {
+                dbg!("show_save_panel");
+                None
+            }
+            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::SAVE_FILE => {
+                // the command contains the path from the "save as" panel
+                let path = match cmd.get_object::<FileInfo>() {
+                    Ok(f) => {
+                        data.graph1.path = Some(f.path().to_path_buf());
+                        f.path()
+                    }
+                    // else use the path stored in the edit data
+                    Err(_) => {
+                        if let Some(ref path) = data.graph1.path {
+                            path
+                        } else {
+                            // else present the save panel
+                            ctx.submit_command(druid::commands::SHOW_SAVE_PANEL, None);
+                            return None;
+                        }
+                    }
+                };
+
+                if let Err(e) = data.graph1.graph.export_to_file(path) {
+                    log::error!("failed to export graph: {:?}", e);
+                }
+
+                None
+            }
+            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::UNDO => None,
+            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::REDO => None,
+            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::QUIT_APP => None,
+            other => Some(other),
+        }
+    }
+}
+
+#[allow(unused_assignments)]
+fn make_menu<T: Data>(_data: &EditData) -> MenuDesc<T> {
+    let mut base = MenuDesc::empty();
+    #[cfg(target_os = "macos")]
+    {
+        base = druid::platform_menus::mac::menu_bar();
+    }
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        base = base.append(druid::platform_menus::win::file::default());
+    }
+    base
 }
