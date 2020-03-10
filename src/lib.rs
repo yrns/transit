@@ -127,7 +127,7 @@ impl Graph {
         Ok(())
     }
 
-    pub fn import_from_file(&self, path: &Path) -> Result<Self> {
+    pub fn import_from_file(path: &Path) -> Result<Self> {
         Ok(from_reader(File::open(path)?)?)
     }
 

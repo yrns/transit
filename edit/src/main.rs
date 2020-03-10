@@ -11,8 +11,8 @@ use druid::widget::{
 };
 use druid::{
     AppDelegate, AppLauncher, Color, Command, Data, DelegateCtx, Env, Event, FileInfo, Lens,
-    LocalizedString, MenuDesc, Point, Rect, Selector, UnitPoint, Widget, WidgetId, WidgetPod,
-    WindowDesc,
+    LocalizedString, MenuDesc, Point, Rect, Selector, Target, UnitPoint, Widget, WidgetId,
+    WidgetPod, WindowDesc, WindowId,
 };
 use log;
 use std::collections::HashMap;
@@ -76,6 +76,14 @@ impl GraphData {
             path: None,
             // we're only doing this since we aren't storing state ids
             // in DragData, maybe make the state id a type parameter? TODO:
+            wids: HashMap::new(),
+        }
+    }
+
+    pub fn from_graph(graph: Graph) -> Self {
+        Self {
+            graph: Arc::new(graph),
+            path: None,
             wids: HashMap::new(),
         }
     }
@@ -144,7 +152,10 @@ fn fit_rect(a: Rect, b: Rect) -> Rect {
 }
 
 fn main() {
-    let main_window = WindowDesc::new(ui_builder).menu(make_menu(&EditData::default()));
+    let main_window = WindowDesc::new(ui_builder)
+        .menu(make_menu(&EditData::default()))
+        // TODO update with graph name and file path
+        .title(LocalizedString::new("transit-window-title").with_placeholder("transit"));
 
     // start with a blank graph
     let data = EditData {
@@ -187,34 +198,48 @@ struct Delegate;
 impl AppDelegate<EditData> for Delegate {
     fn event(
         &mut self,
+        _ctx: &mut DelegateCtx,
+        _window_id: WindowId,
         event: Event,
+        _data: &mut EditData,
+        _env: &Env,
+    ) -> Option<Event> {
+        Some(event)
+    }
+
+    fn command(
+        &mut self,
+        ctx: &mut DelegateCtx,
+        target: &Target,
+        cmd: &Command,
         data: &mut EditData,
         _env: &Env,
-        ctx: &mut DelegateCtx,
-    ) -> Option<Event> {
-        match event {
-            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::NEW_FILE => {
-                // TODO: save unsaved changes?
+    ) -> bool {
+        match &cmd.selector {
+            &druid::commands::NEW_FILE => {
+                // TODO: save unsaved changes? no modals
+                data.reset();
                 ctx.submit_command(RESET, None);
-                None
+                false
             }
-            Event::TargetedCommand(_, ref cmd)
-                if cmd.selector == druid::commands::SHOW_OPEN_PANEL =>
-            {
-                dbg!("show_open_panel");
-                None
+            &druid::commands::OPEN_FILE => {
+                // the command contains the path from the open panel
+                match cmd.get_object::<FileInfo>() {
+                    Ok(f) => match Graph::import_from_file(f.path()) {
+                        Ok(g) => {
+                            data.graph1 = GraphData::from_graph(g);
+                            data.graph1.path = Some(f.path().to_path_buf());
+                            ctx.submit_command(RESET, None);
+                        }
+                        Err(e) => log::error!("failed to export graph: {:?}", e),
+                    },
+                    Err(_) => {
+                        ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, *target);
+                    }
+                };
+                false
             }
-            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::OPEN_FILE => {
-                dbg!("open_file");
-                None
-            }
-            Event::TargetedCommand(_, ref cmd)
-                if cmd.selector == druid::commands::SHOW_SAVE_PANEL =>
-            {
-                dbg!("show_save_panel");
-                None
-            }
-            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::SAVE_FILE => {
+            &druid::commands::SAVE_FILE => {
                 // the command contains the path from the "save as" panel
                 let path = match cmd.get_object::<FileInfo>() {
                     Ok(f) => {
@@ -227,8 +252,8 @@ impl AppDelegate<EditData> for Delegate {
                             path
                         } else {
                             // else present the save panel
-                            ctx.submit_command(druid::commands::SHOW_SAVE_PANEL, None);
-                            return None;
+                            ctx.submit_command(druid::commands::SHOW_SAVE_PANEL, *target);
+                            return false;
                         }
                     }
                 };
@@ -237,12 +262,12 @@ impl AppDelegate<EditData> for Delegate {
                     log::error!("failed to export graph: {:?}", e);
                 }
 
-                None
+                false
             }
-            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::UNDO => None,
-            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::REDO => None,
-            Event::TargetedCommand(_, ref cmd) if cmd.selector == druid::commands::QUIT_APP => None,
-            other => Some(other),
+            // TODO:
+            &druid::commands::UNDO => false,
+            &druid::commands::REDO => false,
+            _ => true,
         }
     }
 }

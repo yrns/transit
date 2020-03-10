@@ -85,8 +85,7 @@ impl Widget<EditData> for State {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
-            LifeCycle::FocusChanged(focus) => {
-                dbg!(focus);
+            LifeCycle::FocusChanged(_) => {
                 ctx.request_paint();
             }
             _ => (),

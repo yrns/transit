@@ -42,13 +42,16 @@ impl Widget<EditData> for Root {
         // recurse first, with special cases:
         match event {
             Event::Command(cmd) if cmd.selector == RESET => {
-                data.reset();
+                //data.reset();
+                self.states.truncate(0);
                 ctx.children_changed();
-                ctx.request_paint();
+                // this does nothing FIX:?
+                //ctx.request_paint();
                 return;
             }
             Event::Command(cmd) if cmd.selector == STATE_ADDED => {
                 let (id, sid) = cmd.get_object::<(WidgetId, Idx)>().unwrap().clone();
+                log::info!("state_added {:?} {:?}", id, sid);
                 data.graph1.wids.insert(id, sid);
                 return;
             }
@@ -90,9 +93,13 @@ impl Widget<EditData> for Root {
             }
             Event::Command(cmd) if cmd.selector == DRAG_END => {
                 let drag = cmd.get_object::<DragData>().unwrap();
-                let sid = data.graph1.wids[&drag.id];
-                if let Err(err) = data.graph1.move_state(self.sid, sid, drag.rect1) {
-                    log::error!("error on drag: {}", err);
+                if let Some(sid) = data.graph1.wids.get(&drag.id) {
+                    let sid = *sid;
+                    if let Err(err) = data.graph1.move_state(self.sid, sid, drag.rect1) {
+                        log::error!("error on drag: {}", err);
+                    }
+                } else {
+                    log::error!("no state index for widget: {:?}", drag.id);
                 }
                 ctx.set_handled();
                 ctx.request_layout();
@@ -142,7 +149,9 @@ impl Widget<EditData> for Root {
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &EditData, env: &Env) {
         match event {
-            LifeCycle::WidgetAdded => {
+            // since we aren't a WidgetPod (except the root) we have
+            // to accept the route event
+            LifeCycle::WidgetAdded | LifeCycle::RouteWidgetAdded => {
                 ctx.register_for_focus();
 
                 // the list widget syncs data and children here too,
@@ -172,6 +181,7 @@ impl Widget<EditData> for Root {
         let mut changed = false;
         let mut n = 0;
         let children = data.graph1.graph.children(self.sid).enumerate();
+
         for (index, sid) in children {
             if index + 1 > self.states.len() {
                 // new state
@@ -180,7 +190,11 @@ impl Widget<EditData> for Root {
                 changed = true;
             } else {
                 match sid.cmp(&self.states[index].widget().sid) {
-                    Ordering::Equal => (),
+                    Ordering::Equal => {
+                        // put the update recursion here so we are not
+                        // calling update on new or removed states
+                        &self.states[index].update(ctx, data, env);
+                    }
                     Ordering::Greater => {
                         // state got re/moved
                         self.states.remove(index);
@@ -188,11 +202,15 @@ impl Widget<EditData> for Root {
                     Ordering::Less => {
                         // stated added
                         self.states.insert(index, WidgetPod::new(State::new(sid)));
+                        changed = true;
                     }
                 }
             }
             n = index + 1;
         }
+
+        // TODO: we want to actually move widgets with deep
+        // hierarchies rather than recreate them?
 
         // remove excess states (if the last state was removed)
         self.states.truncate(n);
@@ -201,11 +219,6 @@ impl Widget<EditData> for Root {
             ctx.children_changed();
             // why? seems like the above should repaint, the list widget does not do this
             ctx.request_paint();
-        }
-
-        // FIX: put this in the loop above? how do we tell if an update is needed?
-        for state in &mut self.states {
-            state.update(ctx, data, env);
         }
     }
 
