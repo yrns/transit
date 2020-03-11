@@ -24,11 +24,12 @@ use transit::{Graph, Idx, State, Transition};
 
 const RESET: Selector = Selector::new("transit-reset");
 
-#[derive(Clone, Data)]
+#[derive(Clone, Data, Lens)]
 struct EditData {
     // we only have one graph editable at a time for now
     graph1: GraphData,
     // command to run when editing an action (emacsclient, etc.)
+    graph1_str: String,
     #[druid(ignore)]
     edit_action: Option<String>,
     // command to run when renaming an action
@@ -36,7 +37,7 @@ struct EditData {
     rename_action: Option<String>,
 }
 
-#[derive(Clone, Data)]
+#[derive(Clone, Data, Lens)]
 struct GraphData {
     graph: Arc<Graph>,
     // path to file on disk
@@ -52,6 +53,7 @@ impl Default for EditData {
     fn default() -> Self {
         EditData {
             graph1: GraphData::new(),
+            graph1_str: "this is a test".to_string(),
             edit_action: None,
             rename_action: None,
         }
@@ -158,11 +160,7 @@ fn main() {
         .title(LocalizedString::new("transit-window-title").with_placeholder("transit"));
 
     // start with a blank graph
-    let data = EditData {
-        graph1: GraphData::new(),
-        edit_action: None,
-        rename_action: None,
-    };
+    let data = EditData::default();
 
     AppLauncher::with_window(main_window)
         // black on white

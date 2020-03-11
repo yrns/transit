@@ -1,14 +1,15 @@
 use crate::widgets::{Drag, Root, STATE_ADDED};
-use crate::EditData;
+use crate::{EditData, GraphData};
 use druid::kurbo::BezPath;
 use druid::kurbo::RoundedRect;
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::theme;
-use druid::widget::{Align, Flex, Label, LabelText, Padding, SizedBox, WidgetExt};
+use druid::widget::{Align, Flex, Label, LabelText, Padding, SizedBox, TextBox, WidgetExt};
 use druid::{
-    Affine, AppLauncher, BoxConstraints, Color, Command, Data, Env, Event, EventCtx, LayoutCtx,
-    LifeCycle, LifeCycleCtx, LinearGradient, LocalizedString, MouseButton, MouseEvent, PaintCtx,
-    Point, Rect, RenderContext, Size, UnitPoint, UpdateCtx, Widget, WidgetId, WindowDesc,
+    lens::Field, Affine, AppLauncher, BoxConstraints, Color, Command, Data, Env, Event, EventCtx,
+    LayoutCtx, LensExt, LifeCycle, LifeCycleCtx, LinearGradient, LocalizedString, MouseButton,
+    MouseEvent, PaintCtx, Point, Rect, RenderContext, Size, UnitPoint, UpdateCtx, Widget, WidgetId,
+    WindowDesc,
 };
 use std::fmt;
 use transit::{Graph, Idx, State as TransitState, Transition};
@@ -31,16 +32,25 @@ impl State {
         // we set our own id so we can pass it to the drag widget
         let id = WidgetId::next();
 
+        // let graph_id = Field::new(|a: &Graph| &a.id, |a| &mut a.id);
+
+        // let lens = EditData::graph1
+        //     .then(GraphData::graph)
+        //     .in_arc()
+        //     .then(graph_id);
+
         let header = Flex::column()
             .with_child(
                 Flex::row()
                     .with_child(
                         // replace this with a state label that is editable:
-                        Label::new(move |data: &EditData, _env: &_| {
-                            format!("{}", data.graph1.graph.graph[sid].id())
-                        })
-                        .text_align(UnitPoint::LEFT)
-                        .padding(2.),
+                        // Label::new(move |data: &EditData, _env: &_| {
+                        //     format!("{}", data.graph1.graph.graph[sid].id())
+                        // })
+                        TextBox::new()
+                            .lens(EditData::graph1_str)
+                            //.text_align(UnitPoint::LEFT)
+                            .padding(2.),
                         0.0,
                     )
                     // can't read the env here
