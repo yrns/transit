@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
 use anyhow::{anyhow, Context as _, Result};
+#[cfg(feature = "editor")]
 use druid::Data;
 use kurbo::{Point, Rect, Size};
 use petgraph::{
@@ -55,6 +56,7 @@ pub struct Graph {
     //pub edit_data: EditData,
 }
 
+#[cfg(feature = "editor")]
 impl Data for Graph {
     fn same(&self, other: &Self) -> bool {
         if self.id == other.id
@@ -89,13 +91,15 @@ pub enum Initial {
     HistoryDeep(Idx),
 }
 
+#[cfg(feature = "editor")]
 impl Data for Initial {
     fn same(&self, other: &Self) -> bool {
         self == other
     }
 }
 
-// feature flag edit? rename StateEditData?
+// rename StateEditData?
+#[cfg(feature = "editor")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EditData {
     // relative to parent
@@ -103,6 +107,7 @@ pub struct EditData {
     pub rect: Rect,
 }
 
+#[cfg(feature = "editor")]
 impl Data for EditData {
     fn same(&self, other: &Self) -> bool {
         self.rect.x0.same(&other.rect.x0)
@@ -112,6 +117,7 @@ impl Data for EditData {
     }
 }
 
+#[cfg(feature = "editor")]
 impl EditData {
     pub fn new() -> Self {
         Self {
@@ -135,9 +141,11 @@ pub struct State {
     pub parent: Option<Idx>,
     pub entry: Option<String>,
     pub exit: Option<String>,
+    #[cfg(feature = "editor")]
     pub edit_data: EditData,
 }
 
+#[cfg(feature = "editor")]
 impl Data for State {
     fn same(&self, other: &Self) -> bool {
         self.id == other.id
@@ -153,7 +161,8 @@ impl Data for State {
 // enum for both strings and bound version?
 // can't serialize bound version
 // wait on optimizing until macro gen?
-#[derive(Serialize, Deserialize, Debug, Clone, Data)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "editor", derive(Data))]
 pub struct Transition {
     event: String,
     // this only has meaning for self-transitions
@@ -608,6 +617,7 @@ impl State {
             parent,
             entry: entry.map(String::from),
             exit: exit.map(String::from),
+            #[cfg(feature = "editor")]
             edit_data: EditData::new(),
         }
     }
@@ -646,6 +656,7 @@ impl Transition {
     }
 }
 
+#[cfg(feature = "editor")]
 mod serde_rect {
     use kurbo::Rect;
     use serde::de::{self, Deserializer, SeqAccess, Visitor};
@@ -695,12 +706,13 @@ mod serde_rect {
 
     #[cfg(test)]
     mod tests {
-        use crate::EditData;
-        use kurbo::Rect;
         use ron::{de::from_str, ser::to_string};
 
+        #[cfg(feature = "editor")]
         #[test]
         fn serde_rect() {
+            use crate::EditData;
+            use kurbo::Rect;
             let rect = Rect::new(1., 2., 3., 4.);
             let data = EditData { rect };
             let a = to_string(&data).unwrap();
