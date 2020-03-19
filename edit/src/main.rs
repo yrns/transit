@@ -4,7 +4,9 @@ mod widgets;
 
 pub use crate::widgets::Root;
 use anyhow::{anyhow, Result};
-use druid::lens::{self, LensExt};
+//use druid::lens;
+use druid::lens;
+use druid::lens::LensExt;
 use druid::theme;
 use druid::widget::{
     Align, Button, Container, Flex, Label, List, Padding, Scroll, SizedBox, WidgetExt,
@@ -180,12 +182,28 @@ fn main() {
         .expect("launch failed");
 }
 
+pub(crate) fn graph_id_lens() -> impl Lens<EditData, String> {
+    lens!(EditData, graph1).then(lens!(GraphData, graph).then(lens!(Graph, id).in_arc()))
+}
+
+pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<State>> {
+    // FIX: why doesn't this work in a single statement?
+    let lens = lens!(EditData, graph1).then(lens!(GraphData, graph));
+    let lens2 = lens::Id.index(i).in_arc();
+    lens.then(lens2)
+}
+
+pub(crate) fn state_id_lens(i: Idx) -> impl Lens<EditData, String> {
+    state_lens(i).then(lens!(State, id).in_arc())
+}
+
 fn ui_builder() -> impl Widget<EditData> {
     Flex::column()
         .with_child(Scroll::new(Root::new(None)), 1.0)
         .with_child(
             // show path to hovered state, key commands, etc.
-            Label::new(|data: &EditData, _env: &_| format!("{}", data.graph1.graph.id))
+            Label::new(|id: &String, _env: &_| format!("{}", id))
+                .lens(graph_id_lens())
                 .fix_height(40.),
             0.0,
         )
@@ -282,4 +300,87 @@ fn make_menu<T: Data>(_data: &EditData) -> MenuDesc<T> {
         base = base.append(druid::platform_menus::win::file::default());
     }
     base
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use druid::*;
+    use std::sync::Arc;
+    use transit::*;
+
+    #[derive(Clone, Data)]
+    struct A {
+        b: usize,
+    }
+
+    struct L;
+    impl Lens<A, f64> for L {
+        fn with<V, F: FnOnce(&f64) -> V>(&self, data: &A, f: F) -> V {
+            f(&(data.b as f64))
+        }
+
+        fn with_mut<V, F: FnOnce(&mut f64) -> V>(&self, data: &mut A, f: F) -> V {
+            f(&mut (data.b as f64))
+        }
+    }
+
+    #[test]
+    fn test_lens() {
+        let a = A { b: 42 };
+        assert_eq!(lens!(A, b).get(&a), 42);
+
+        assert_eq!(L {}.get(&a), 42.);
+    }
+
+    #[test]
+    fn test_arc() {
+        let lens = lens::Id.index(2).in_arc();
+        let mut x = Arc::new(vec![0, 1, 2, 3]);
+        let original = x.clone();
+        assert_eq!(lens.get(&x), 2);
+
+        lens.put(&mut x, 2);
+        assert!(
+            Arc::ptr_eq(&original, &x),
+            "no-op writes don't cause a deep copy"
+        );
+        lens.put(&mut x, 42);
+        assert_eq!(&*x, &[0, 1, 42, 3]);
+    }
+
+    #[test]
+    fn test_arc2() {
+        use druid::lens::Field;
+
+        let tuple0 = Field::new(|a: &(usize, usize)| &a.0, |a| &mut a.0);
+        let lens = lens::Id.index(2).in_arc().then(tuple0);
+        let mut x = Arc::new(vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let original = x.clone();
+        assert_eq!(lens.get(&x), 2);
+
+        lens.put(&mut x, 2);
+        assert!(
+            Arc::ptr_eq(&original, &x),
+            "no-op writes don't cause a deep copy"
+        );
+        lens.put(&mut x, 42);
+        assert_eq!(&x[2], &(42, 0));
+    }
+
+    #[test]
+    fn test_graph_index() {
+        let mut g = Graph::new("untitled");
+        let id = g.add_state("child1");
+        let mut g = Arc::new(g);
+        let original = g.clone();
+        let lens = lens::Id.index(id).in_arc().then(lens!(State, id).in_arc());
+        assert_eq!(lens.get(&g), "child1");
+
+        lens.put(&mut g, "child1".to_string());
+        assert!(Arc::ptr_eq(&original, &g), "no-op, graph");
+        assert!(Arc::ptr_eq(&original[id], &g[id]), "no-op, state");
+        lens.put(&mut g, "child2".to_string());
+        assert_eq!(lens.get(&g), "child2");
+    }
 }

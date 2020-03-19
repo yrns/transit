@@ -1,17 +1,19 @@
 use crate::widgets::{Drag, Root, STATE_ADDED};
-use crate::{EditData, GraphData};
+use crate::{state_id_lens, EditData, GraphData};
 use druid::kurbo::BezPath;
 use druid::kurbo::RoundedRect;
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::theme;
 use druid::widget::{Align, Flex, Label, LabelText, Padding, SizedBox, TextBox, WidgetExt};
 use druid::{
-    lens::Field, Affine, AppLauncher, BoxConstraints, Color, Command, Data, Env, Event, EventCtx,
-    LayoutCtx, LensExt, LifeCycle, LifeCycleCtx, LinearGradient, LocalizedString, MouseButton,
-    MouseEvent, PaintCtx, Point, Rect, RenderContext, Size, UnitPoint, UpdateCtx, Widget, WidgetId,
-    WindowDesc,
+    lens,
+    lens::{Field, InArc, Lens, Then},
+    Affine, AppLauncher, BoxConstraints, Color, Command, Data, Env, Event, EventCtx, LayoutCtx,
+    LensExt, LifeCycle, LifeCycleCtx, LinearGradient, LocalizedString, MouseButton, MouseEvent,
+    PaintCtx, Point, Rect, RenderContext, Size, UnitPoint, UpdateCtx, Widget, WidgetId, WindowDesc,
 };
 use std::fmt;
+use std::sync::Arc;
 use transit::{Graph, Idx, State as TransitState, Transition};
 
 // each state contains a label and child states
@@ -32,13 +34,6 @@ impl State {
         // we set our own id so we can pass it to the drag widget
         let id = WidgetId::next();
 
-        // let graph_id = Field::new(|a: &Graph| &a.id, |a| &mut a.id);
-
-        // let lens = EditData::graph1
-        //     .then(GraphData::graph)
-        //     .in_arc()
-        //     .then(graph_id);
-
         let header = Flex::column()
             .with_child(
                 Flex::row()
@@ -48,7 +43,7 @@ impl State {
                         //     format!("{}", data.graph1.graph.graph[sid].id())
                         // })
                         TextBox::new()
-                            .lens(EditData::graph1_str)
+                            .lens(state_id_lens(sid))
                             //.text_align(UnitPoint::LEFT)
                             .padding(2.),
                         0.0,

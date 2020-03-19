@@ -246,7 +246,7 @@ impl Widget<EditData> for Root {
             //     rect = Rect::from_origin_size(p, default_size);
             //     state.set_layout_rect(rect);
             // }
-            let rect = data.graph1.graph.graph[state.widget().sid].edit_data.rect;
+            let rect = data.graph1.graph[state.widget().sid].edit_data.rect;
             state.set_layout_rect(rect);
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're

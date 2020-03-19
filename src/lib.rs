@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
 use anyhow::{anyhow, Context as _, Result};
+use druid::Data;
 use kurbo::{Point, Rect, Size};
 use petgraph::{
     graph::{EdgeIndex, IndexType, NodeIndex},
@@ -18,6 +19,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::iter::Iterator;
 use std::mem::{discriminant, Discriminant};
+//use std::ops::Deref;
+use std::ops::{Index, IndexMut};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -25,6 +28,7 @@ use std::sync::Arc;
 // the statechart needs to implement some interface that makes it behave as a state
 
 pub type Idx = NodeIndex<u32>;
+pub type TransIdx = EdgeIndex<u32>;
 
 pub type ActionFn<C, E> = fn(&mut C, Option<&E>) -> Result<()>;
 
@@ -47,16 +51,48 @@ pub struct Graph {
     pub id: String,
     pub initial: Initial,
     //ids: HashMap, do we need to externally reference by id?
-    pub graph: StableDiGraph<Arc<State>, Arc<Transition>, u32>,
+    graph: StableDiGraph<Arc<State>, Arc<Transition>, u32>,
     //pub edit_data: EditData,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+impl Data for Graph {
+    fn same(&self, other: &Self) -> bool {
+        if self.id == other.id
+            && self.initial == other.initial
+            && self.graph.node_count() == other.graph.node_count()
+            && self.graph.edge_count() == other.graph.edge_count()
+        {
+            // compare every state, there is no iterator for this
+            for i in self.graph.node_indices() {
+                if !self.graph[i].same(&other.graph[i]) {
+                    return false;
+                }
+            }
+
+            // compare every transition
+            for i in self.graph.edge_indices() {
+                if !self.graph[i].same(&other.graph[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Initial {
     None,
     Initial(Idx),
     HistoryShallow(Idx),
     HistoryDeep(Idx),
+}
+
+impl Data for Initial {
+    fn same(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
 // feature flag edit? rename StateEditData?
@@ -65,6 +101,15 @@ pub struct EditData {
     // relative to parent
     #[serde(with = "serde_rect")]
     pub rect: Rect,
+}
+
+impl Data for EditData {
+    fn same(&self, other: &Self) -> bool {
+        self.rect.x0.same(&other.rect.x0)
+            && self.rect.y0.same(&other.rect.y0)
+            && self.rect.x1.same(&other.rect.x1)
+            && self.rect.y1.same(&other.rect.y1)
+    }
 }
 
 impl EditData {
@@ -93,11 +138,22 @@ pub struct State {
     pub edit_data: EditData,
 }
 
+impl Data for State {
+    fn same(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.initial == other.initial
+            && self.parent == other.parent
+            && self.entry == other.entry
+            && self.exit == other.exit
+            && self.edit_data.same(&other.edit_data)
+    }
+}
+
 // newtype event key?
 // enum for both strings and bound version?
 // can't serialize bound version
 // wait on optimizing until macro gen?
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Data)]
 pub struct Transition {
     event: String,
     // this only has meaning for self-transitions
@@ -106,6 +162,36 @@ pub struct Transition {
     action: Option<String>,
     // edit data for curve parameters, etc.
     //edit_data: TransitionEditData?
+}
+
+// implementing index traits allows us to circumvent being unable to
+// impl Data on StableGraph
+impl Index<Idx> for Graph {
+    type Output = Arc<State>;
+
+    fn index(&self, i: Idx) -> &Self::Output {
+        &self.graph[i]
+    }
+}
+
+impl IndexMut<Idx> for Graph {
+    fn index_mut(&mut self, i: Idx) -> &mut Self::Output {
+        &mut self.graph[i]
+    }
+}
+
+impl Index<TransIdx> for Graph {
+    type Output = Arc<Transition>;
+
+    fn index(&self, i: TransIdx) -> &Self::Output {
+        &self.graph[i]
+    }
+}
+
+impl IndexMut<TransIdx> for Graph {
+    fn index_mut(&mut self, i: TransIdx) -> &mut Self::Output {
+        &mut self.graph[i]
+    }
 }
 
 impl Graph {
