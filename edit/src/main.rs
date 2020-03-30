@@ -12,9 +12,9 @@ use druid::widget::{
     Align, Button, Container, Flex, Label, List, Padding, Scroll, SizedBox, WidgetExt,
 };
 use druid::{
-    AppDelegate, AppLauncher, Color, Command, Data, DelegateCtx, Env, Event, FileInfo, Lens,
-    LocalizedString, MenuDesc, Point, Rect, Selector, Target, UnitPoint, Widget, WidgetId,
-    WidgetPod, WindowDesc, WindowId,
+    AppDelegate, AppLauncher, Color, Command, Data, DelegateCtx, Env, Event, EventCtx, FileInfo,
+    HotKey, KeyCode, KeyEvent, Lens, LocalizedString, MenuDesc, Point, RawMods, Rect, Selector,
+    SysMods, Target, UnitPoint, Widget, WidgetId, WidgetPod, WindowDesc, WindowId,
 };
 use log;
 use std::collections::HashMap;
@@ -175,7 +175,6 @@ fn main() {
             env.set(theme::BACKGROUND_LIGHT, Color::WHITE);
             env.set(theme::BACKGROUND_DARK, Color::rgb8(230, 230, 230));
         })
-        //.debug_paint_layout()
         .use_simple_logger()
         .delegate(Delegate)
         .launch(data)
@@ -199,13 +198,15 @@ pub(crate) fn state_id_lens(i: Idx) -> impl Lens<EditData, String> {
 
 fn ui_builder() -> impl Widget<EditData> {
     Flex::column()
-        .with_child(Scroll::new(Root::new(None)), 1.0)
+        .with_flex_child(Scroll::new(Root::new(None)), 1.0)
         .with_child(
             // show path to hovered state, key commands, etc.
-            Label::new(|id: &String, _env: &_| format!("{}", id))
-                .lens(graph_id_lens())
-                .fix_height(40.),
-            0.0,
+            Flex::row()
+                .with_flex_child(
+                    Label::new(|id: &String, _env: &_| format!("{}", id)).lens(graph_id_lens()),
+                    1.0,
+                )
+                .background(Color::rgb8(0xEF, 0xEF, 0xEF)), //.debug_paint_layout(),
         )
 }
 
@@ -284,6 +285,41 @@ impl AppDelegate<EditData> for Delegate {
             &druid::commands::UNDO => false,
             &druid::commands::REDO => false,
             _ => true,
+        }
+    }
+}
+
+pub(crate) fn handle_key(
+    ctx: &mut EventCtx,
+    event: &KeyEvent,
+    data: &mut EditData,
+    idx: Option<Idx>,
+) {
+    match event {
+        // Select all states
+        k_e if (HotKey::new(SysMods::Cmd, "a")).matches(k_e) => {
+            // TODO:
+        }
+        // Backspace focuses parent?
+        k_e if (HotKey::new(None, KeyCode::Backspace)).matches(k_e) => {
+            // TODO:
+        }
+        // Delete this state
+        k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
+            // TODO:
+        }
+        // Tab and shift+tab change focus to child states
+        k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
+        k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => ctx.focus_prev(),
+        k_e if HotKey::new(None, "n").matches(k_e) => {
+            if let Err(err) = data.graph1.add_state("untitled", idx) {
+                log::error!("error on adding state: {}", err);
+            }
+            ctx.set_handled();
+        }
+
+        _ => {
+            dbg!("unhandled key: {:?}", event);
         }
     }
 }

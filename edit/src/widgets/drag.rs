@@ -3,9 +3,9 @@ use druid::{
     kurbo::{BezPath, Point, Rect, RoundedRect, Size, Vec2},
     theme,
     widget::Align,
-    Affine, BoxConstraints, BoxedWidget, Command, Cursor, Data, Env, Event, EventCtx, LayoutCtx,
-    LifeCycle, LifeCycleCtx, MouseButton, MouseEvent, PaintCtx, RenderContext, Selector, UnitPoint,
-    UpdateCtx, Widget, WidgetId, WidgetPod,
+    Affine, BoxConstraints, Command, Cursor, Data, Env, Event, EventCtx, LayoutCtx, LifeCycle,
+    LifeCycleCtx, MouseButton, MouseEvent, PaintCtx, RenderContext, Selector, UnitPoint, UpdateCtx,
+    Widget, WidgetId, WidgetPod,
 };
 
 pub const DRAG_START: Selector = Selector::new("transit.edit.drag-start");
@@ -58,27 +58,30 @@ impl DragData {
 }
 
 // we have to know the widget id to drag on creation
-pub struct Drag<T, W> {
+pub struct Drag<T> {
     drag_id: WidgetId,
     drag: Option<DragData>,
-    inner: W,
-    // make the resizer optional?
+    inner: WidgetPod<T, Box<dyn Widget<T>>>,
     resizer: Align<T>,
 }
 
-impl<T: Data, W: Widget<T>> Drag<T, W> {
-    pub fn new(inner: W, drag_id: WidgetId) -> Self {
+impl<T: Data> Drag<T> {
+    pub fn new(inner: impl Widget<T> + 'static, drag_id: WidgetId) -> Self {
         Self {
             drag_id,
             drag: None,
-            inner,
+            inner: WidgetPod::new(inner).boxed(),
             resizer: Align::new(UnitPoint::BOTTOM_RIGHT, Resizer::new(drag_id)),
         }
+    }
+
+    pub fn has_active(&self) -> bool {
+        self.inner.has_active()
     }
 }
 
 // TODO: add a minimum drag distance so we're not interpreting every click as a drag?
-impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
+impl<T: Data> Widget<T> for Drag<T> {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut T, env: &Env) {
         // resize takes precedence
         self.resizer.event(ctx, event, data, env);
@@ -99,14 +102,15 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
             self.inner.event(ctx, event, data, env);
         }
 
-        if !ctx.is_handled() {
+        if !(ctx.is_handled() || self.inner.has_active()) {
             match event {
                 Event::MouseDown(mouse) => {
                     let drag = DragData::new(mouse, ctx.size(), self.drag_id, false);
                     //ctx.submit_command(Command::new(DRAG_START, drag), None);
                     self.drag = Some(drag);
                     ctx.set_active(true);
-                    ctx.set_handled();
+                    // let the state handle this so it can give itself focus
+                    //ctx.set_handled();
                     ctx.request_paint();
                 }
                 _ => {}
@@ -154,12 +158,17 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
 
     fn update(&mut self, ctx: &mut UpdateCtx, old_data: &T, data: &T, env: &Env) {
         self.resizer.update(ctx, old_data, data, env);
-        self.inner.update(ctx, old_data, data, env);
+        self.inner.update(ctx, data, env);
     }
 
     fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
         self.resizer.layout(ctx, bc, data, env);
-        self.inner.layout(ctx, bc, data, env)
+        let size = self.inner.layout(ctx, bc, data, env);
+        // should there be a warning on zero-size widgets? I always
+        // forget this part when changing Widget -> WidgetPod
+        self.inner
+            .set_layout_rect(Rect::from_origin_size(Point::ORIGIN, size));
+        size
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &T, env: &Env) {

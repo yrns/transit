@@ -121,7 +121,7 @@ impl Data for EditData {
 impl EditData {
     pub fn new() -> Self {
         Self {
-            rect: Rect::from_origin_size(Point::new(20., 20.), Size::new(100., 40.)),
+            rect: Rect::from_origin_size(Point::new(20., 20.), Size::new(120., 40.)),
         }
     }
 

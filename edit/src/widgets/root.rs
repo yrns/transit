@@ -1,5 +1,5 @@
 use crate::widgets::{DragData, State, DRAG_END, DRAG_START};
-use crate::{EditData, RESET};
+use crate::{handle_key, EditData, RESET};
 use druid::kurbo::RoundedRect;
 use druid::kurbo::{BezPath, Shape};
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
@@ -39,6 +39,8 @@ impl Root {
 
 impl Widget<EditData> for Root {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
+        let mut has_active = false;
+
         // recurse first, with special cases:
         match event {
             Event::Command(cmd) if cmd.selector == RESET => {
@@ -75,6 +77,7 @@ impl Widget<EditData> for Root {
             _ => {
                 for state in &mut self.states.iter_mut().rev() {
                     state.event(ctx, event, data, env);
+                    has_active |= state.has_active();
                 }
             }
         }
@@ -106,41 +109,15 @@ impl Widget<EditData> for Root {
             }
 
             Event::MouseDown(_mouse) => {
-                // we only get this in the root widget because drag intercepts all other mouse downs
-                log::info!("request_focus for {:?}", ctx.widget_id());
-                ctx.request_focus();
+                // we have no visual indicator for the root having focus FIX?
+                if self.is_root() && !has_active && !ctx.is_focused() {
+                    ctx.request_focus();
+                }
             }
-            Event::KeyDown(key_event) => {
-                if ctx.has_focus() {
-                    match key_event {
-                        // Select all states
-                        k_e if (HotKey::new(SysMods::Cmd, "a")).matches(k_e) => {
-                            // TODO:
-                        }
-                        // Backspace focuses parent?
-                        k_e if (HotKey::new(None, KeyCode::Backspace)).matches(k_e) => {
-                            // TODO:
-                        }
-                        // Delete this state
-                        k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
-                            // TODO:
-                        }
-                        // Tab and shift+tab change focus to child states
-                        k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
-                        k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => {
-                            ctx.focus_prev()
-                        }
-                        k_e if HotKey::new(None, "n").matches(k_e) => {
-                            if let Err(err) = data.graph1.add_state("untitled", self.sid) {
-                                log::error!("error on adding state: {}", err);
-                            }
-                            ctx.set_handled();
-                        }
-
-                        _ => {
-                            //dbg!("unhandled key in root: {:?}", key_event);
-                        }
-                    }
+            Event::KeyDown(e) => {
+                // state handles other keys
+                if self.is_root() && ctx.is_focused() {
+                    handle_key(ctx, e, data, self.sid);
                 }
             }
             _ => (),
@@ -151,8 +128,11 @@ impl Widget<EditData> for Root {
         match event {
             // since we aren't a WidgetPod (except the root) we have
             // to accept the route event
-            LifeCycle::WidgetAdded | LifeCycle::RouteWidgetAdded => {
-                ctx.register_for_focus();
+            LifeCycle::WidgetAdded => {
+                //| LifeCycle::RouteWidgetAdded => {
+                if self.is_root() {
+                    ctx.register_for_focus();
+                }
 
                 // the list widget syncs data and children here too,
                 // but isn't update called initially? TODO:
@@ -160,12 +140,22 @@ impl Widget<EditData> for Root {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
-            LifeCycle::FocusChanged(focus) => {
-                log::info!("focus for {:?}: {}", ctx.widget_id(), focus);
-            }
-            LifeCycle::RouteFocusChanged { old, new } => {
-                log::info!("old: {:?}, new: {:?}", old, new);
-            }
+            // LifeCycle::FocusChanged(focus) => {
+            //     log::info!("focus for {:?}: {}", ctx.widget_id(), focus);
+            //     if *focus && !self.is_root() {
+            //         log::warn!("non-root root has focus!");
+            //     }
+            // }
+            // LifeCycle::RouteFocusChanged { old, new } => {
+            //     // only the root root gets focus
+            //     log::info!(
+            //         "route focus me: {:?} old: {:?}, new: {:?}",
+            //         ctx.widget_id(),
+            //         old,
+            //         new
+            //     );
+            //     self.is_focused = &Some(ctx.widget_id()) == new;
+            // }
             _ => (),
         }
 
