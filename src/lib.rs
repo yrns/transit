@@ -91,6 +91,15 @@ pub enum Initial {
     HistoryDeep(Idx),
 }
 
+impl Initial {
+    pub fn idx(&self) -> Option<Idx> {
+        match *self {
+            Initial::Initial(i) | Initial::HistoryShallow(i) | Initial::HistoryDeep(i) => Some(i),
+            Initial::None => None,
+        }
+    }
+}
+
 #[cfg(feature = "editor")]
 impl Data for Initial {
     fn same(&self, other: &Self) -> bool {
@@ -237,7 +246,14 @@ impl Graph {
 
     pub fn add_state<T: Into<State>>(&mut self, s: T) -> Idx {
         let s = s.into();
-        self.graph.add_node(Arc::new(s))
+        let p = s.parent;
+        let a = self.graph.add_node(Arc::new(s));
+        // the first added node becomes initial for the root
+        // TODO: validation?
+        if p.is_none() && self.initial == Initial::None {
+            self.initial = Initial::Initial(a);
+        }
+        a
     }
 
     pub fn remove_state(&mut self, _i: Idx) -> State {
@@ -295,6 +311,14 @@ impl Graph {
         }
     }
 
+    pub fn initial_idx(&self, a: Option<Idx>) -> Option<Idx> {
+        if let Some(a) = a {
+            self[a].initial.idx()
+        } else {
+            self.initial.idx()
+        }
+    }
+
     pub fn add_transition(&mut self, a: Idx, b: Idx, t: Transition) -> Result<()> {
         self.graph.add_edge(a, b, Arc::new(t));
         Ok(())
@@ -335,6 +359,23 @@ impl Graph {
             .find(|(a, b)| a != b)
             // both states should have the same parent
             .and_then(|(i, _)| self.parent(*i))
+    }
+
+    /// Find the absolute position of a state in the graph.
+    #[cfg(feature = "editor")]
+    pub fn abs_pos(&self, a: Idx) -> Point {
+        self.path_iter(a)
+            .map(|i| self[i].edit_data.rect.origin())
+            .fold(Point::ZERO, |p0, p| p0 + p.to_vec2())
+    }
+
+    /// Find the position of one state relative to another using
+    /// EditData. Used to draw transitions and such between any two
+    /// states in the graph.
+    #[cfg(feature = "editor")]
+    pub fn rel_pos(&self, a: Option<Idx>, b: Idx) -> Point {
+        let b = self.abs_pos(b);
+        a.map(|a| b - self.abs_pos(a).to_vec2()).unwrap_or(b)
     }
 }
 

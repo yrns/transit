@@ -1,7 +1,7 @@
-use crate::widgets::{DragData, State, DRAG_END, DRAG_START};
+use crate::widgets::{DragData, Initial, State, DRAG_END, DRAG_START};
 use crate::{handle_key, EditData, RESET};
 use druid::kurbo::RoundedRect;
-use druid::kurbo::{BezPath, Shape};
+use druid::kurbo::{BezPath, Line, Shape};
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::theme;
 use druid::widget::{Align, Flex, Label, LabelText, Padding, SizedBox, WidgetExt};
@@ -21,6 +21,7 @@ pub const STATE_REMOVED: Selector = Selector::new("transit.edit.state-removed");
 
 pub struct Root {
     sid: Option<Idx>,
+    initial: WidgetPod<EditData, Initial>,
     states: Vec<WidgetPod<EditData, State>>,
 }
 
@@ -28,6 +29,7 @@ impl Root {
     pub fn new(sid: Option<Idx>) -> Self {
         Self {
             sid,
+            initial: WidgetPod::new(Initial::new(sid)),
             states: Vec::new(),
         }
     }
@@ -75,6 +77,9 @@ impl Widget<EditData> for Root {
                 }
             }
             _ => {
+                self.initial.event(ctx, event, data, env);
+                has_active |= self.initial.has_active();
+
                 for state in &mut self.states.iter_mut().rev() {
                     state.event(ctx, event, data, env);
                     has_active |= state.has_active();
@@ -159,6 +164,8 @@ impl Widget<EditData> for Root {
             _ => (),
         }
 
+        self.initial.lifecycle(ctx, event, data, env);
+
         for state in &mut self.states {
             state.lifecycle(ctx, event, data, env);
         }
@@ -166,6 +173,8 @@ impl Widget<EditData> for Root {
 
     // TODO: figure out z, put selected state on top
     fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &EditData, data: &EditData, env: &Env) {
+        self.initial.update(ctx, data, env);
+
         // sync Vec<State> with this state's children
         // if the state stored the child list we might be able to lens over just the state
         let mut changed = false;
@@ -217,11 +226,16 @@ impl Widget<EditData> for Root {
     // any adjustments, only assigning the default rect for new states
     fn layout(
         &mut self,
-        layout_ctx: &mut LayoutCtx,
+        ctx: &mut LayoutCtx,
         bc: &BoxConstraints,
         data: &EditData,
         env: &Env,
     ) -> Size {
+        let initial_size = self.initial.layout(ctx, bc, data, env);
+        // put it under the label
+        self.initial
+            .set_layout_rect(Rect::from_origin_size(Point::new(20., 40.), initial_size));
+
         //let mut min_rect = Rect::ZERO;
 
         // we can't modify the rects here, so do all the layout elsewhere?
@@ -241,15 +255,21 @@ impl Widget<EditData> for Root {
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're
             // not anymore
-            let _child_size = state.layout(layout_ctx, &child_bc, data, env);
+            let _child_size = state.layout(ctx, &child_bc, data, env);
             //min_rect = min_rect.union(rect);
         }
 
         // is this even used? no we always return the max
         //bc.constrain(min_rect.size())
 
-        // we always want the root maxed so we can drag to it
-        bc.max()
+        if self.is_root() {
+            // for the root we want a big area to play in, but not infinite
+            let max = 2.0_f64.powi(12);
+            Size::new(max, max)
+        } else {
+            // we want the root maxed so we can drag to it
+            bc.max()
+        }
     }
 
     // TODO: we need to fit states inside the root on resize
@@ -270,6 +290,19 @@ impl Widget<EditData> for Root {
             let clip_rect = Rect::from_origin_size(Point::ORIGIN, ctx.size());
             ctx.clip(clip_rect);
         }
+
+        // we have to draw the initial arrow here since only we know
+        // the position of the widget
+        let g = &data.graph1.graph;
+        if let Some(a) = g.initial_idx(self.sid) {
+            let b = g.rel_pos(self.sid, a);
+            ctx.stroke(
+                Line::new(self.initial.layout_rect().center(), b),
+                &env.get(&theme::LABEL_COLOR),
+                1.5,
+            )
+        }
+        self.initial.paint_with_offset(ctx, data, env);
 
         for state in &mut self.states {
             state.paint_with_offset(ctx, data, env)
