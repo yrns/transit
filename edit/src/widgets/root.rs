@@ -1,7 +1,7 @@
 use crate::widgets::{DragData, Initial, State, DRAG_END, DRAG_START};
 use crate::{handle_key, EditData, RESET};
 use druid::kurbo::RoundedRect;
-use druid::kurbo::{BezPath, Line, Shape};
+use druid::kurbo::{BezPath, Line, Shape, Vec2};
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::theme;
 use druid::widget::{Align, Flex, Label, LabelText, Padding, SizedBox, WidgetExt};
@@ -12,6 +12,7 @@ use druid::{
     WidgetPod, WindowDesc,
 };
 use std::cmp::Ordering;
+use std::f64::consts::PI;
 use std::sync::Arc;
 use transit::{Graph, Idx, State as TransitState, Transition};
 
@@ -293,14 +294,23 @@ impl Widget<EditData> for Root {
 
         // we have to draw the initial arrow here since only we know
         // the position of the widget
+        let color = env.get(&theme::LABEL_COLOR);
         let g = &data.graph1.graph;
-        if let Some(a) = g.initial_idx(self.sid) {
-            let b = g.rel_pos(self.sid, a);
-            ctx.stroke(
-                Line::new(self.initial.layout_rect().center(), b),
-                &env.get(&theme::LABEL_COLOR),
-                1.5,
-            )
+        if let Some(initial) = g.initial_idx(self.sid) {
+            let a = self.initial.layout_rect().center();
+            let b = g.rel_pos(self.sid, initial);
+            ctx.stroke(Line::new(a, b), &color, 1.5);
+            let b = b.to_vec2();
+            let affine = Affine::translate(b);
+            let up = Vec2::new(0., -1.);
+            let mut th = (b - a.to_vec2()).normalize().dot(up).acos();
+            if b.x < a.x {
+                th = -th;
+            }
+            let affine = affine * Affine::rotate(th);
+            let mut arrow = arrow(8.0, 12.0);
+            arrow.apply_affine(affine);
+            ctx.fill(arrow, &color);
         }
         self.initial.paint_with_offset(ctx, data, env);
 
@@ -314,4 +324,13 @@ impl Widget<EditData> for Root {
             }
         }
     }
+}
+
+pub fn arrow(width: f64, height: f64) -> BezPath {
+    let mut a = BezPath::new();
+    a.move_to(Point::new(0., 0.));
+    a.line_to(Point::new(width / 2., height));
+    a.line_to(Point::new(-width / 2., height));
+    a.close_path();
+    a
 }
