@@ -14,7 +14,7 @@ use druid::widget::{
 use druid::{
     AppDelegate, AppLauncher, Color, Command, Data, DelegateCtx, Env, Event, EventCtx, FileInfo,
     HotKey, KeyCode, KeyEvent, Lens, LocalizedString, MenuDesc, Point, RawMods, Rect, Selector,
-    SysMods, Target, UnitPoint, Widget, WidgetId, WidgetPod, WindowDesc, WindowId,
+    Size, SysMods, Target, UnitPoint, Widget, WidgetId, WidgetPod, WindowDesc, WindowId,
 };
 use log;
 use std::collections::HashMap;
@@ -121,7 +121,10 @@ impl GraphData {
 
     pub fn move_state(&mut self, parent: Option<Idx>, i: Idx, rect: Rect) -> Result<()> {
         let rect = if let Some(p) = parent {
-            fit_rect(self.graph.get(p).edit_data.rect, rect)
+            // we want the new rect relative to the parent, so when
+            // fitting we only use the parent size
+            let a = self.graph.get(p).edit_data.rect.with_origin(Point::ZERO);
+            fit_rect(a, rect)
         } else {
             rect
         };
@@ -147,12 +150,18 @@ impl GraphData {
     }
 }
 
-// fit rect b into a
+// fit rect b into a, keep a small border when fitting so the child
+// state is distinct from the parent - we should really have a
+// distinction for overlapping states, too; a slight shadow?
 fn fit_rect(a: Rect, b: Rect) -> Rect {
-    b.with_origin(Point::new(
-        b.x0.min(a.width() - b.width()).max(0.),
-        b.y0.min(a.height() - b.height()).max(0.),
-    ))
+    // method 1 - just move it so the origin fits, do not resize
+    // b.with_origin(Point::new(
+    //     b.x0.min(a.width() - b.width()).max(10.),
+    //     b.y0.min(a.height() - b.height()).max(10.),
+    // ))
+
+    // method 2 - fit b into a with a small border
+    a.inset(-10.).intersect(b)
 }
 
 fn main() {
