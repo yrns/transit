@@ -1,4 +1,4 @@
-use crate::widgets::{DragData, Initial, State, DRAG_END, DRAG_START};
+use crate::widgets::{Drag, DragData, DragType, Initial, State, DRAG_END, DRAG_START};
 use crate::{handle_key, EditData, RESET};
 use druid::kurbo::RoundedRect;
 use druid::kurbo::{BezPath, Line, Shape, Vec2};
@@ -22,8 +22,10 @@ pub const STATE_REMOVED: Selector = Selector::new("transit.edit.state-removed");
 
 pub struct Root {
     sid: Option<Idx>,
+    // make this an option? we don't need it at all unless there are
+    // child states TODO:
     initial: WidgetPod<EditData, Initial>,
-    states: Vec<WidgetPod<EditData, State>>,
+    states: Vec<WidgetPod<EditData, Drag<EditData, State>>>,
 }
 
 impl Root {
@@ -66,7 +68,7 @@ impl Widget<EditData> for Root {
                 let drag = cmd.get_object::<DragData>().unwrap();
 
                 // reverse so states on top handle the event first
-                for state in &mut self.states.iter_mut().rev() {
+                for state in self.states.iter_mut().rev() {
                     // can't move a state inside itself
                     if state.id() != drag.id {
                         let rect = state.layout_rect();
@@ -101,14 +103,23 @@ impl Widget<EditData> for Root {
                 }
             }
             Event::Command(cmd) if cmd.selector == DRAG_END => {
+                // we are inside the deepest root widget that will
+                // accept this drag
                 let drag = cmd.get_object::<DragData>().unwrap();
-                if let Some(sid) = data.graph1.wids.get(&drag.id) {
-                    let sid = *sid;
-                    if let Err(err) = data.graph1.move_state(self.sid, sid, drag.rect1) {
-                        log::error!("error on drag: {}", err);
+                match drag.ty {
+                    DragType::MoveState(idx) => {
+                        if let Err(err) = data.graph1.move_state(self.sid, idx, drag.rect1) {
+                            log::error!("error on drag: {}", err);
+                        }
                     }
-                } else {
-                    log::error!("no state index for widget: {:?}", drag.id);
+                    DragType::ResizeState(idx) => {
+                        // just set rect for resizes, use same parent
+                        let p = data.graph1.graph[idx].parent;
+                        if let Err(err) = data.graph1.move_state(p, idx, drag.rect1) {
+                            log::error!("error on drag: {}", err);
+                        }
+                    }
+                    _ => log::error!("invalid drag type: {:?}", drag),
                 }
                 ctx.set_handled();
                 ctx.request_layout();
@@ -182,14 +193,24 @@ impl Widget<EditData> for Root {
         let mut n = 0;
         let children = data.graph1.graph.children(self.sid).enumerate();
 
+        let new_state = |sid| {
+            WidgetPod::new(Drag::new(
+                State::new(sid),
+                DragType::MoveState(sid),
+                Some(DragType::ResizeState(sid)),
+            ))
+        };
+
         for (index, sid) in children {
             if index + 1 > self.states.len() {
                 // new state
-                let state = WidgetPod::new(State::new(sid));
+                let state = new_state(sid);
                 self.states.push(state);
                 changed = true;
             } else {
-                match sid.cmp(&self.states[index].widget().sid) {
+                // this is ugly, accessing child struct data inside
+                // layers of widgets
+                match sid.cmp(&self.states[index].widget().inner().sid) {
                     Ordering::Equal => {
                         // put the update recursion here so we are not
                         // calling update on new or removed states
@@ -201,7 +222,7 @@ impl Widget<EditData> for Root {
                     }
                     Ordering::Less => {
                         // stated added
-                        self.states.insert(index, WidgetPod::new(State::new(sid)));
+                        self.states.insert(index, new_state(sid));
                         changed = true;
                     }
                 }
@@ -233,9 +254,9 @@ impl Widget<EditData> for Root {
         env: &Env,
     ) -> Size {
         let initial_size = self.initial.layout(ctx, bc, data, env);
-        // put it under the label
+        // put it below the label
         self.initial
-            .set_layout_rect(Rect::from_origin_size(Point::new(20., 40.), initial_size));
+            .set_layout_rect(Rect::from_origin_size(Point::new(30., 30.), initial_size));
 
         //let mut min_rect = Rect::ZERO;
 
@@ -251,7 +272,7 @@ impl Widget<EditData> for Root {
             //     rect = Rect::from_origin_size(p, default_size);
             //     state.set_layout_rect(rect);
             // }
-            let rect = data.graph1.graph[state.widget().sid].edit_data.rect;
+            let rect = data.graph1.graph[state.widget().inner().sid].edit_data.rect;
             state.set_layout_rect(rect);
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're
@@ -263,6 +284,7 @@ impl Widget<EditData> for Root {
         // is this even used? no we always return the max
         //bc.constrain(min_rect.size())
 
+        // TODO: make root area dynamically sized to fit all states
         if self.is_root() {
             // for the root we want a big area to play in, but not infinite
             let max = 2.0_f64.powi(12);
@@ -297,6 +319,7 @@ impl Widget<EditData> for Root {
         let color = env.get(&theme::LABEL_COLOR);
         let g = &data.graph1.graph;
         if let Some(initial) = g.initial_idx(self.sid) {
+            // TODO: make this a quadratic curve
             let a = self.initial.layout_rect().center();
             let b = g.rel_pos(self.sid, initial);
             ctx.stroke(Line::new(a, b), &color, 1.5);

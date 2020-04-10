@@ -21,7 +21,7 @@ pub struct State {
     id: WidgetId,
     // should be state index? sidx? si?
     pub sid: Idx,
-    layers: Drag<EditData>,
+    layers: Layers<EditData>,
     //header: WidgetPod<EditData, Flex<EditData>>,
     //header: Flex<EditData>,
     // having the drag on the inner means the header will take
@@ -36,19 +36,16 @@ impl State {
         // we set our own id so we can pass it to the drag widget
         let id = WidgetId::next();
 
-        let layers = Drag::new(
-            Layers::new()
-                .add_layer(
-                    // align top left in the layer
-                    Flex::row()
-                        .cross_axis_alignment(CrossAxisAlignment::Start)
-                        .with_child(TextBox::new().lens(state_id_lens(sid)))
-                        .padding(4.),
-                    None,
-                )
-                .add_layer(Root::new(Some(sid)), None),
-            id,
-        );
+        let layers = Layers::new()
+            .add_layer(
+                // align top left in the layer
+                Flex::row()
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .with_child(TextBox::new().lens(state_id_lens(sid)))
+                    .padding(4.),
+                None,
+            )
+            .add_layer(Root::new(Some(sid)), None);
 
         Self {
             id,
@@ -85,9 +82,9 @@ impl Widget<EditData> for State {
                 // already
                 if !self.layers.has_active() {
                     if !ctx.is_focused() {
+                        // don't set handled, we still want to drag
                         ctx.request_focus();
                     }
-                    ctx.set_handled();
                 }
             }
             Event::KeyDown(e) => {
