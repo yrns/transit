@@ -170,11 +170,27 @@ impl GraphData {
         }
     }
 
+    pub fn rect(&self, i: Idx) -> Rect {
+        let rect = self.graph[i].edit_data.rect;
+        Rect::from_origin_size(rect.0, rect.1)
+    }
+
+    // checking containment isn't really needed since anything outside
+    // the state in question will either be a setting a new initial
+    // state or invalid, remove this?
     pub fn move_initial(&mut self, a: Option<Idx>, p: Point) {
-        let g = Arc::make_mut(&mut self.graph);
-        match a {
-            Some(a) => g.get_mut(a).edit_data.initial = p.into(),
-            None => g.edit_data.initial = p.into(),
+        let contains = match a {
+            Some(a) => self.rect(a).with_origin(Point::ZERO).contains(p),
+            None => true,
+        };
+        if contains {
+            let g = Arc::make_mut(&mut self.graph);
+            match a {
+                Some(a) => g.get_mut(a).edit_data.initial = p.into(),
+                None => g.edit_data.initial = p.into(),
+            }
+        } else {
+            log::warn!("can't drag initial outside rect bounds");
         }
     }
 }
