@@ -4,8 +4,8 @@ use druid::{
     theme,
     widget::Align,
     Affine, BoxConstraints, Command, Cursor, Data, Env, Event, EventCtx, LayoutCtx, LifeCycle,
-    LifeCycleCtx, MouseButton, MouseEvent, PaintCtx, RenderContext, Selector, UnitPoint, UpdateCtx,
-    Widget, WidgetId, WidgetPod,
+    LifeCycleCtx, MouseButton, MouseEvent, PaintCtx, RenderContext, Selector, Target, UnitPoint,
+    UpdateCtx, Widget, WidgetId, WidgetPod,
 };
 use transit::Idx;
 
@@ -30,7 +30,7 @@ pub enum DragType {
     MoveState(Idx),
     // resize direction for edge drag?
     ResizeState(Idx),
-    MoveInitial(Idx),
+    MoveInitial(Option<Idx>),
     CreateTransition(Idx),
 }
 
@@ -157,9 +157,15 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
                 if let Some(mut drag) = self.drag.take() {
                     // put the drag data into window coords
                     let d = mouse.window_pos - mouse.pos;
-                    //drag.p0 += d;
                     drag.rect1 = drag.rect1.with_origin(drag.rect1.origin() + d);
-                    ctx.submit_command(Command::new(DRAG_END, drag), None);
+                    let target = match drag.ty {
+                        // initial can only be moved within the
+                        // current state, but the widget id is wrong
+                        // from here, so handle this in root.
+                        //DragType::MoveInitial(_) => Target::Widget(ctx.widget_id()),
+                        _ => Target::Global,
+                    };
+                    ctx.submit_command(Command::new(DRAG_END, drag), target);
                     ctx.set_active(false);
                     ctx.request_paint();
                 }

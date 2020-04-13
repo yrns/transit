@@ -24,7 +24,7 @@ pub struct Root {
     sid: Option<Idx>,
     // make this an option? we don't need it at all unless there are
     // child states TODO:
-    initial: WidgetPod<EditData, Initial>,
+    initial: WidgetPod<EditData, Drag<EditData, Initial>>,
     states: Vec<WidgetPod<EditData, Drag<EditData, State>>>,
 }
 
@@ -32,7 +32,11 @@ impl Root {
     pub fn new(sid: Option<Idx>) -> Self {
         Self {
             sid,
-            initial: WidgetPod::new(Initial::new(sid)),
+            initial: WidgetPod::new(Drag::new(
+                Initial::new(sid),
+                DragType::MoveInitial(sid),
+                None,
+            )),
             states: Vec::new(),
         }
     }
@@ -40,6 +44,10 @@ impl Root {
     pub fn is_root(&self) -> bool {
         self.sid.is_none()
     }
+}
+
+fn to_rect(rect: ((f64, f64), (f64, f64))) -> Rect {
+    Rect::from_origin_size(rect.0, rect.1)
 }
 
 impl Widget<EditData> for Root {
@@ -117,6 +125,22 @@ impl Widget<EditData> for Root {
                         let p = data.graph1.graph[idx].parent;
                         if let Err(err) = data.graph1.move_state(p, idx, drag.rect1) {
                             log::error!("error on drag: {}", err);
+                        }
+                    }
+                    DragType::MoveInitial(idx) => {
+                        // if the drag id is our initial widget id, we are moving the widget
+                        if self.initial.id() == drag.id {
+                            data.graph1.move_initial(idx, drag.rect1.origin());
+                        } else {
+                            // otherwise we are setting the initial index
+                            match self.sid {
+                                Some(b) => {
+                                    if let Err(err) = data.graph1.set_initial(idx, b) {
+                                        log::error!("error setting initial: {:?}", err);
+                                    }
+                                }
+                                None => log::error!("can't set initial to root"),
+                            }
                         }
                     }
                     _ => log::error!("invalid drag type: {:?}", drag),
@@ -253,10 +277,14 @@ impl Widget<EditData> for Root {
         data: &EditData,
         env: &Env,
     ) -> Size {
+        let g = &data.graph1.graph;
         let initial_size = self.initial.layout(ctx, bc, data, env);
-        // put it below the label
+        let p = match self.sid {
+            Some(idx) => g[idx].edit_data.initial,
+            None => g.edit_data.initial,
+        };
         self.initial
-            .set_layout_rect(Rect::from_origin_size(Point::new(30., 30.), initial_size));
+            .set_layout_rect(Rect::from_origin_size(p, initial_size));
 
         //let mut min_rect = Rect::ZERO;
 
@@ -272,7 +300,8 @@ impl Widget<EditData> for Root {
             //     rect = Rect::from_origin_size(p, default_size);
             //     state.set_layout_rect(rect);
             // }
-            let rect = data.graph1.graph[state.widget().inner().sid].edit_data.rect;
+            // tuple -> Rect
+            let rect = to_rect(g[state.widget().inner().sid].edit_data.rect);
             state.set_layout_rect(rect);
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're
@@ -314,8 +343,13 @@ impl Widget<EditData> for Root {
             ctx.clip(clip_rect);
         }
 
+        for state in &mut self.states {
+            state.paint_with_offset(ctx, data, env)
+        }
+
         // we have to draw the initial arrow here since only we know
-        // the position of the widget
+        // the position of the widget; draw after states so we can
+        // connect to children of children
         let color = env.get(&theme::LABEL_COLOR);
         let g = &data.graph1.graph;
         if let Some(initial) = g.initial_idx(self.sid) {
@@ -323,7 +357,7 @@ impl Widget<EditData> for Root {
             let a = self.initial.layout_rect().center();
             let b = g.rel_pos(self.sid, initial);
             ctx.stroke(Line::new(a, b), &color, 1.5);
-            let b = b.to_vec2();
+            let b: Vec2 = b.into();
             let affine = Affine::translate(b);
             let up = Vec2::new(0., -1.);
             let mut th = (b - a.to_vec2()).normalize().dot(up).acos();
@@ -336,10 +370,6 @@ impl Widget<EditData> for Root {
             ctx.fill(arrow, &color);
         }
         self.initial.paint_with_offset(ctx, data, env);
-
-        for state in &mut self.states {
-            state.paint_with_offset(ctx, data, env)
-        }
 
         if clip {
             if let Err(e) = ctx.restore() {

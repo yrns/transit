@@ -3,7 +3,6 @@
 use anyhow::{anyhow, Context as _, Result};
 #[cfg(feature = "editor")]
 use druid::Data;
-use kurbo::{Point, Rect, Size};
 use petgraph::{
     graph::{EdgeIndex, IndexType, NodeIndex},
     stable_graph::StableDiGraph,
@@ -47,13 +46,38 @@ pub struct Statechart<T> {
     pub active: Option<Idx>,
 }
 
+#[cfg(feature = "editor")]
+type Point = (f64, f64);
+
+#[cfg(feature = "editor")]
+type Size = (f64, f64);
+
+#[cfg(feature = "editor")]
+type Rect = (Point, Size);
+
+#[cfg(feature = "editor")]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GraphEditData {
+    pub initial: Point,
+}
+
+#[cfg(feature = "editor")]
+impl GraphEditData {
+    pub fn new() -> Self {
+        Self {
+            initial: (20., 20.),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Graph {
     pub id: String,
     pub initial: Initial,
     //ids: HashMap, do we need to externally reference by id?
     graph: StableDiGraph<Arc<State>, Arc<Transition>, u32>,
-    //pub edit_data: EditData,
+    #[cfg(feature = "editor")]
+    pub edit_data: GraphEditData,
 }
 
 #[cfg(feature = "editor")]
@@ -109,37 +133,22 @@ impl Data for Initial {
 
 // rename StateEditData?
 #[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Data)]
 pub struct EditData {
     // relative to parent
-    #[serde(with = "serde_rect")]
     pub rect: Rect,
-}
-
-#[cfg(feature = "editor")]
-impl Data for EditData {
-    fn same(&self, other: &Self) -> bool {
-        self.rect.x0.same(&other.rect.x0)
-            && self.rect.y0.same(&other.rect.y0)
-            && self.rect.x1.same(&other.rect.x1)
-            && self.rect.y1.same(&other.rect.y1)
-    }
+    pub initial: Point,
 }
 
 #[cfg(feature = "editor")]
 impl EditData {
     pub fn new() -> Self {
         Self {
-            rect: Rect::from_origin_size(Point::new(20., 20.), Size::new(120., 40.)),
+            rect: ((20., 20.), (120., 40.)),
+            // set this only after initial is set, so we can match the
+            // position to the state which is the initial?
+            initial: (30., 30.),
         }
-    }
-
-    pub fn rect(&self) -> Rect {
-        self.rect
-    }
-
-    pub fn set_rect(&mut self, rect: Rect) {
-        self.rect = rect;
     }
 }
 
@@ -218,6 +227,8 @@ impl Graph {
             id: id.to_string(),
             initial: Initial::None,
             graph: StableDiGraph::default(),
+            #[cfg(feature = "editor")]
+            edit_data: GraphEditData::new(),
         }
     }
 
@@ -290,15 +301,14 @@ impl Graph {
 
     // the only reason we'd want history at the root of a statechart
     // is if it's used inside another statechart - TODO:
-    pub fn set_initial(&mut self, i: Idx) -> Result<()> {
+    pub fn set_initial(&mut self, i: Idx) {
         assert!(self.graph.contains_node(i));
         self.initial = Initial::Initial(i);
-        Ok(())
     }
 
-    // return true if a is a child of b
+    // return true if b is a child of a
     pub fn is_child(&self, a: Idx, b: Idx) -> bool {
-        self.path_iter(a).find(|i| *i == b).is_some()
+        self.path_iter(b).find(|i| *i == a).is_some()
     }
 
     pub fn get_initial(&self, i: Idx) -> Idx {
@@ -365,8 +375,8 @@ impl Graph {
     #[cfg(feature = "editor")]
     pub fn abs_pos(&self, a: Idx) -> Point {
         self.path_iter(a)
-            .map(|i| self[i].edit_data.rect.origin())
-            .fold(Point::ZERO, |p0, p| p0 + p.to_vec2())
+            .map(|i| self[i].edit_data.rect.0)
+            .fold((0., 0.), add)
     }
 
     /// Find the position of one state relative to another using
@@ -375,8 +385,16 @@ impl Graph {
     #[cfg(feature = "editor")]
     pub fn rel_pos(&self, a: Option<Idx>, b: Idx) -> Point {
         let b = self.abs_pos(b);
-        a.map(|a| b - self.abs_pos(a).to_vec2()).unwrap_or(b)
+        a.map(|a| sub(b, self.abs_pos(a))).unwrap_or(b)
     }
+}
+
+fn add(a: Point, b: Point) -> Point {
+    (a.0 + b.0, a.1 + b.1)
+}
+
+fn sub(a: Point, b: Point) -> Point {
+    (a.0 - b.0, a.1 - b.1)
 }
 
 impl<C: Context> Statechart<C> {
@@ -568,7 +586,7 @@ impl<C: Context> Statechart<C> {
             // recurse initial states, if the active state is None
             // we've already done this, so we can skip it
             let initial = self.graph.get_initial(next);
-            assert!(self.graph.is_child(initial, next));
+            assert!(self.graph.is_child(next, initial));
             next = initial;
         }
 
@@ -663,9 +681,18 @@ impl State {
         }
     }
 
-    pub fn set_initial(&mut self, initial: Initial) -> Result<()> {
+    pub fn set_initial(&mut self, initial: Initial) {
         self.initial = initial;
-        Ok(())
+    }
+
+    // TODO: validate initial is child
+    pub fn set_initial_idx(&mut self, i: Idx) {
+        self.initial = match self.initial {
+            Initial::None => Initial::Initial(i),
+            Initial::Initial(_) => Initial::Initial(i),
+            Initial::HistoryDeep(_) => Initial::HistoryDeep(i),
+            Initial::HistoryShallow(_) => Initial::HistoryShallow(i),
+        };
     }
 
     // use set_id in Graph to change this
@@ -694,72 +721,6 @@ impl Transition {
     pub fn set_internal(mut self, internal: bool) -> Self {
         self.internal = internal;
         self
-    }
-}
-
-#[cfg(feature = "editor")]
-mod serde_rect {
-    use kurbo::Rect;
-    use serde::de::{self, Deserializer, SeqAccess, Visitor};
-    use serde::ser::{SerializeSeq, Serializer};
-    use std::fmt;
-
-    pub fn serialize<S>(rect: &Rect, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut seq = serializer.serialize_seq(Some(4))?;
-        seq.serialize_element(&rect.x0)?;
-        seq.serialize_element(&rect.y0)?;
-        seq.serialize_element(&rect.x1)?;
-        seq.serialize_element(&rect.y1)?;
-        seq.end()
-    }
-
-    struct RectVisitor;
-
-    impl<'de> Visitor<'de> for RectVisitor {
-        type Value = Rect;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            write!(formatter, "a sequence of 4 f64")
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            let mut rect = Rect::ZERO;
-            rect.x0 = seq.next_element()?.ok_or(de::Error::custom("missing x0"))?;
-            rect.y0 = seq.next_element()?.ok_or(de::Error::custom("missing y0"))?;
-            rect.x1 = seq.next_element()?.ok_or(de::Error::custom("missing x1"))?;
-            rect.y1 = seq.next_element()?.ok_or(de::Error::custom("missing y1"))?;
-            Ok(rect)
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Rect, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(RectVisitor)
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use ron::{de::from_str, ser::to_string};
-
-        #[cfg(feature = "editor")]
-        #[test]
-        fn serde_rect() {
-            use crate::EditData;
-            use kurbo::Rect;
-            let rect = Rect::new(1., 2., 3., 4.);
-            let data = EditData { rect };
-            let a = to_string(&data).unwrap();
-            // Rect doesn't have Eq or PartialEq
-            assert!(from_str::<EditData>(&a).is_ok());
-        }
     }
 }
 

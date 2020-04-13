@@ -22,7 +22,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
-use transit::{Graph, Idx, State, Transition};
+use transit::{Graph, Idx, Initial, State, Transition};
 
 const RESET: Selector = Selector::new("transit-reset");
 
@@ -47,6 +47,7 @@ struct GraphData {
     path: Option<PathBuf>,
     // the state widgets store a state index, but we can't access the
     // widgets directly - this gives us widget id -> state index
+    // TODO: remove this? we don't need it for dragging anymore
     #[druid(ignore)]
     wids: HashMap<WidgetId, Idx>,
 }
@@ -123,7 +124,7 @@ impl GraphData {
         let rect = if let Some(p) = parent {
             // we want the new rect relative to the parent, so when
             // fitting we only use the parent size
-            let a = self.graph.get(p).edit_data.rect.with_origin(Point::ZERO);
+            let a = Rect::from_origin_size(Point::ZERO, self.graph.get(p).edit_data.rect.1);
             fit_rect(a, rect)
         } else {
             rect
@@ -145,8 +146,36 @@ impl GraphData {
         if let Some(id) = id {
             s.id = id;
         }
-        s.edit_data.set_rect(rect);
+        s.edit_data.rect = (rect.origin().into(), rect.size().into());
         Ok(())
+    }
+
+    // TODO: unset initial with delete key?
+    pub fn set_initial(&mut self, a: Option<Idx>, b: Idx) -> Result<()> {
+        match a {
+            Some(a) => {
+                if self.graph.is_child(a, b) {
+                    let s = Arc::make_mut(&mut self.graph).get_mut(a);
+                    s.set_initial_idx(b);
+                    Ok(())
+                } else {
+                    Err(anyhow!("invalid initial state: {:?}", b))
+                }
+            }
+            None => {
+                // set graph initial
+                Arc::make_mut(&mut self.graph).set_initial(b);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn move_initial(&mut self, a: Option<Idx>, p: Point) {
+        let g = Arc::make_mut(&mut self.graph);
+        match a {
+            Some(a) => g.get_mut(a).edit_data.initial = p.into(),
+            None => g.edit_data.initial = p.into(),
+        }
     }
 }
 
