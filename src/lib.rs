@@ -122,6 +122,17 @@ impl Initial {
             Initial::None => None,
         }
     }
+
+    pub fn step(self) -> Self {
+        match self {
+            // can't step from none
+            Initial::None => self,
+            Initial::Initial(i) => Initial::HistoryShallow(i),
+            Initial::HistoryShallow(i) => Initial::HistoryDeep(i),
+            // can't step to none? how do we unset?
+            Initial::HistoryDeep(i) => Initial::Initial(i),
+        }
+    }
 }
 
 #[cfg(feature = "editor")]

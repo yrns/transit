@@ -27,7 +27,7 @@ use transit::{Graph, Idx, Initial, State, Transition};
 const RESET: Selector = Selector::new("transit-reset");
 
 #[derive(Clone, Data, Lens)]
-struct EditData {
+pub struct EditData {
     // we only have one graph editable at a time for now
     graph1: GraphData,
     // command to run when editing an action (emacsclient, etc.)
@@ -37,6 +37,12 @@ struct EditData {
     // command to run when renaming an action
     #[druid(ignore)]
     rename_action: Option<String>,
+}
+
+#[derive(Clone)]
+struct History {
+    graph: Arc<Graph>,
+    hint: &'static str,
 }
 
 #[derive(Clone, Data, Lens)]
@@ -50,6 +56,8 @@ struct GraphData {
     // TODO: remove this? we don't need it for dragging anymore
     #[druid(ignore)]
     wids: HashMap<WidgetId, Idx>,
+    #[druid(ignore)]
+    history: Vec<History>,
 }
 
 impl Default for EditData {
@@ -82,6 +90,7 @@ impl GraphData {
             // we're only doing this since we aren't storing state ids
             // in DragData, maybe make the state id a type parameter? TODO:
             wids: HashMap::new(),
+            history: Vec::new(),
         }
     }
 
@@ -90,8 +99,25 @@ impl GraphData {
             graph: Arc::new(graph),
             path: None,
             wids: HashMap::new(),
+            history: Vec::new(),
         }
     }
+
+    // similar to lens; clone graph, pass to closure, check if
+    // different - if so, append to history and update arc
+    pub fn with_undo<F: Fn(&mut Graph)>(&mut self, f: F, hint: &'static str) {
+        let g0 = self.graph.clone();
+        let g = Arc::make_mut(&mut self.graph);
+        f(g);
+        if !g0.same(&self.graph) {
+            // TODO: limit this?
+            self.history.push(History { graph: g0, hint });
+        } else {
+            log::warn!("no change for {}!", hint);
+        }
+    }
+
+    //pub fn with_undo_idx()
 
     // make a unique id
     fn unique_id(&self, id: &str, parent: Option<Idx>) -> Result<Option<String>> {
@@ -170,6 +196,21 @@ impl GraphData {
         }
     }
 
+    pub fn step_initial(&mut self, a: Option<Idx>) {
+        match a {
+            Some(idx) => {
+                self.with_undo(
+                    |g| {
+                        let s = g.get_mut(idx);
+                        s.initial = s.initial.clone().step();
+                    },
+                    "step initial",
+                );
+            }
+            None => self.with_undo(|g| g.initial = g.initial.clone().step(), "step initial"),
+        }
+    }
+
     pub fn rect(&self, i: Idx) -> Rect {
         let rect = self.graph[i].edit_data.rect;
         Rect::from_origin_size(rect.0, rect.1)
@@ -235,8 +276,12 @@ fn main() {
         .expect("launch failed");
 }
 
+pub fn graph_lens() -> impl Lens<EditData, Arc<Graph>> {
+    lens!(EditData, graph1).then(lens!(GraphData, graph))
+}
+
 pub(crate) fn graph_id_lens() -> impl Lens<EditData, String> {
-    lens!(EditData, graph1).then(lens!(GraphData, graph).then(lens!(Graph, id).in_arc()))
+    graph_lens().then(lens!(Graph, id).in_arc())
 }
 
 pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<State>> {
@@ -248,6 +293,14 @@ pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<State>> {
 
 pub(crate) fn state_id_lens(i: Idx) -> impl Lens<EditData, String> {
     state_lens(i).then(lens!(State, id).in_arc())
+}
+
+pub fn state_initial_lens(i: Idx) -> impl Lens<EditData, Initial> {
+    state_lens(i).then(lens!(State, initial).in_arc())
+}
+
+pub fn graph_initial_lens() -> impl Lens<EditData, Initial> {
+    graph_lens().then(lens!(Graph, initial).in_arc())
 }
 
 fn ui_builder() -> impl Widget<EditData> {
@@ -370,6 +423,15 @@ pub(crate) fn handle_key(
                 log::error!("error on adding state: {}", err);
             }
             ctx.set_handled();
+        }
+        // step initial type
+        k_e if HotKey::new(None, "i").matches(k_e) => {
+            if idx.is_some() {
+                data.graph1.step_initial(idx);
+                ctx.set_handled();
+            } else {
+                log::warn!("can't step initial for root (yet?)");
+            }
         }
 
         _ => {

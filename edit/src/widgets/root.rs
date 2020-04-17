@@ -1,5 +1,5 @@
 use crate::widgets::{Drag, DragData, DragType, Initial, State, DRAG_END, DRAG_START};
-use crate::{handle_key, EditData, RESET};
+use crate::{graph_initial_lens, handle_key, state_initial_lens, EditData, RESET};
 use druid::kurbo::RoundedRect;
 use druid::kurbo::{BezPath, Line, Shape, Vec2};
 use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
@@ -24,19 +24,20 @@ pub struct Root {
     sid: Option<Idx>,
     // make this an option? we don't need it at all unless there are
     // child states TODO:
-    initial: WidgetPod<EditData, Drag<EditData, Initial>>,
+    initial: WidgetPod<EditData, Box<dyn Widget<EditData>>>,
     states: Vec<WidgetPod<EditData, Drag<EditData, State>>>,
 }
 
 impl Root {
     pub fn new(sid: Option<Idx>) -> Self {
+        let initial: Box<dyn Widget<EditData>> = match sid {
+            Some(i) => Box::new(Initial::new().lens(state_initial_lens(i))),
+            None => Box::new(Initial::new().lens(graph_initial_lens())),
+        };
+
         Self {
             sid,
-            initial: WidgetPod::new(Drag::new(
-                Initial::new(sid),
-                DragType::MoveInitial(sid),
-                None,
-            )),
+            initial: WidgetPod::new(Drag::new(initial, DragType::MoveInitial(sid), None)).boxed(),
             states: Vec::new(),
         }
     }
@@ -88,8 +89,10 @@ impl Widget<EditData> for Root {
                 }
             }
             _ => {
-                self.initial.event(ctx, event, data, env);
-                has_active |= self.initial.has_active();
+                if self.states.len() > 0 {
+                    self.initial.event(ctx, event, data, env);
+                    has_active |= self.initial.has_active();
+                }
 
                 for state in &mut self.states.iter_mut().rev() {
                     state.event(ctx, event, data, env);
@@ -200,7 +203,9 @@ impl Widget<EditData> for Root {
             _ => (),
         }
 
-        self.initial.lifecycle(ctx, event, data, env);
+        if self.states.len() > 0 {
+            self.initial.lifecycle(ctx, event, data, env);
+        }
 
         for state in &mut self.states {
             state.lifecycle(ctx, event, data, env);
@@ -209,7 +214,9 @@ impl Widget<EditData> for Root {
 
     // TODO: figure out z, put selected state on top
     fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &EditData, data: &EditData, env: &Env) {
-        self.initial.update(ctx, data, env);
+        if self.states.len() > 0 {
+            self.initial.update(ctx, data, env);
+        }
 
         // sync Vec<State> with this state's children
         // if the state stored the child list we might be able to lens over just the state
@@ -278,13 +285,16 @@ impl Widget<EditData> for Root {
         env: &Env,
     ) -> Size {
         let g = &data.graph1.graph;
-        let initial_size = self.initial.layout(ctx, bc, data, env);
-        let p = match self.sid {
-            Some(idx) => g[idx].edit_data.initial,
-            None => g.edit_data.initial,
-        };
-        self.initial
-            .set_layout_rect(Rect::from_origin_size(p, initial_size));
+
+        if self.states.len() > 0 {
+            let initial_size = self.initial.layout(ctx, bc, data, env);
+            let p = match self.sid {
+                Some(idx) => g[idx].edit_data.initial,
+                None => g.edit_data.initial,
+            };
+            self.initial
+                .set_layout_rect(Rect::from_origin_size(p, initial_size));
+        }
 
         //let mut min_rect = Rect::ZERO;
 
@@ -347,29 +357,32 @@ impl Widget<EditData> for Root {
             state.paint_with_offset(ctx, data, env)
         }
 
-        // we have to draw the initial arrow here since only we know
-        // the position of the widget; draw after states so we can
-        // connect to children of children
-        let color = env.get(&theme::LABEL_COLOR);
-        let g = &data.graph1.graph;
-        if let Some(initial) = g.initial_idx(self.sid) {
-            // TODO: make this a quadratic curve
-            let a = self.initial.layout_rect().center();
-            let b = g.rel_pos(self.sid, initial);
-            ctx.stroke(Line::new(a, b), &color, 1.5);
-            let b: Vec2 = b.into();
-            let affine = Affine::translate(b);
-            let up = Vec2::new(0., -1.);
-            let mut th = (b - a.to_vec2()).normalize().dot(up).acos();
-            if b.x < a.x {
-                th = -th;
+        // don't paint if we have no children
+        if self.states.len() > 0 {
+            // we have to draw the initial arrow here since only we know
+            // the position of the widget; draw after states so we can
+            // connect to children of children
+            let color = env.get(&theme::LABEL_COLOR);
+            let g = &data.graph1.graph;
+            if let Some(initial) = g.initial_idx(self.sid) {
+                // TODO: make this a quadratic curve
+                let a = self.initial.layout_rect().center();
+                let b = g.rel_pos(self.sid, initial);
+                ctx.stroke(Line::new(a, b), &color, 1.5);
+                let b: Vec2 = b.into();
+                let affine = Affine::translate(b);
+                let up = Vec2::new(0., -1.);
+                let mut th = (b - a.to_vec2()).normalize().dot(up).acos();
+                if b.x < a.x {
+                    th = -th;
+                }
+                let affine = affine * Affine::rotate(th);
+                let mut arrow = arrow(8.0, 12.0);
+                arrow.apply_affine(affine);
+                ctx.fill(arrow, &color);
             }
-            let affine = affine * Affine::rotate(th);
-            let mut arrow = arrow(8.0, 12.0);
-            arrow.apply_affine(affine);
-            ctx.fill(arrow, &color);
+            self.initial.paint_with_offset(ctx, data, env);
         }
-        self.initial.paint_with_offset(ctx, data, env);
 
         if clip {
             if let Err(e) = ctx.restore() {
