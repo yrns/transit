@@ -7,7 +7,7 @@ use druid::{
     LifeCycleCtx, MouseButton, MouseEvent, PaintCtx, RenderContext, Selector, Target, UnitPoint,
     UpdateCtx, Widget, WidgetId, WidgetPod,
 };
-use transit::Idx;
+use transit::{Idx, TransIdx};
 
 pub const DRAG_START: Selector = Selector::new("transit.edit.drag-start");
 pub const DRAG_END: Selector = Selector::new("transit.edit.drag-end");
@@ -25,13 +25,22 @@ pub const DRAG_END: Selector = Selector::new("transit.edit.drag-end");
 // than passing the id down on create
 pub const REGISTER_DRAG_HANDLE: Selector = Selector::new("transit.edit.register-drag-handle");
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum DragType {
     MoveState(Idx),
     // resize direction for edge drag?
     ResizeState(Idx),
     MoveInitial(Option<Idx>),
     CreateTransition(Idx),
+    MoveTransition(TransIdx),
+}
+
+pub type DragTypeSelector = Box<dyn Fn(&MouseEvent) -> DragType>;
+
+impl Into<DragTypeSelector> for DragType {
+    fn into(self) -> DragTypeSelector {
+        Box::new(move |_| self)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +86,7 @@ impl DragData {
 
 pub struct Drag<T, W> {
     drag: Option<DragData>,
-    ty: DragType,
+    ty: DragTypeSelector,
     // we use WidgetPod here only so we can tell if the inner is active
     inner: WidgetPod<T, W>,
     // we cannot use Align here because we need to access the handle's
@@ -87,11 +96,14 @@ pub struct Drag<T, W> {
 }
 
 impl<T: Data, W: Widget<T>> Drag<T, W> {
-    pub fn new(inner: W, ty: DragType, handle: Option<DragType>) -> Self {
+    pub fn new<D>(inner: W, ty: D, handle: Option<DragTypeSelector>) -> Self
+    where
+        D: Into<DragTypeSelector>,
+    {
         let handle = handle.map(|a| Align::new(UnitPoint::BOTTOM_RIGHT, Resizer::new(a)));
         Self {
             drag: None,
-            ty,
+            ty: ty.into(),
             inner: WidgetPod::new(inner),
             handle,
             handle_p0: Point::ZERO,
@@ -150,7 +162,7 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
 
         match event {
             Event::MouseDown(mouse) => {
-                self.drag = Some(new_drag(ctx, mouse.pos, self.ty.clone()));
+                self.drag = Some(new_drag(ctx, mouse.pos, (self.ty)(mouse)));
                 ctx.set_handled();
             }
             Event::MouseUp(mouse) => {
@@ -180,6 +192,8 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
                             let size = Size::new(size.x.max(100.), size.y.max(40.));
                             drag.rect1 = drag.rect1.with_size(size);
                         }
+                        // use absolute positioning?
+                        //DragType::CreateTransition(_) => {}
                         _ => {
                             // keep it inside the widget
                             // fit the moved state inside its parent when the drag ends?
@@ -250,12 +264,12 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
 }
 
 pub struct Resizer {
-    ty: DragType,
+    ty: DragTypeSelector,
     parent: Option<WidgetId>,
 }
 
 impl Resizer {
-    pub fn new(ty: DragType) -> Self {
+    pub fn new(ty: DragTypeSelector) -> Self {
         Self { ty, parent: None }
     }
 }
@@ -266,13 +280,15 @@ impl<T: Data> Widget<T> for Resizer {
             Event::Command(cmd) if cmd.selector == REGISTER_DRAG_HANDLE => {
                 self.parent = Some(cmd.get_object::<WidgetId>().unwrap().clone());
             }
-            Event::MouseDown(_) => {
+            Event::MouseDown(mouse) => {
                 // this tells the drag widget to start resize via handle
                 if let Some(id) = self.parent {
-                    ctx.submit_command(Command::new(DRAG_START, self.ty.clone()), id);
+                    ctx.submit_command(Command::new(DRAG_START, (self.ty)(mouse)), id);
                     ctx.set_handled();
                     ctx.set_active(true);
                     ctx.request_paint();
+                } else {
+                    log::warn!("handle parent is None");
                 }
             }
             Event::MouseUp(_) => {

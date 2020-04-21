@@ -9,3 +9,4 @@ transit = { path = "..", features = ["editor"] }
 druid = { path = "../../druid/druid" }
 anyhow = "1.0.26"
 log = "0.4.8"
+indexmap = "1.3.2"

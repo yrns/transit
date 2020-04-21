@@ -186,6 +186,10 @@ impl Data for State {
     }
 }
 
+#[cfg(feature = "editor")]
+#[derive(Serialize, Deserialize, Debug, Clone, Data)]
+pub struct TransitionEditData(pub Point);
+
 // newtype event key?
 // enum for both strings and bound version?
 // can't serialize bound version
@@ -193,13 +197,26 @@ impl Data for State {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "editor", derive(Data))]
 pub struct Transition {
-    event: String,
+    pub event: String,
     // this only has meaning for self-transitions
-    internal: bool,
-    guard: Option<String>,
-    action: Option<String>,
-    // edit data for curve parameters, etc.
-    //edit_data: TransitionEditData?
+    pub internal: bool,
+    pub guard: Option<String>,
+    pub action: Option<String>,
+    #[cfg(feature = "editor")]
+    pub edit_data: TransitionEditData,
+}
+
+impl Default for Transition {
+    fn default() -> Self {
+        Self {
+            event: "event".to_string(),
+            internal: false,
+            guard: None,
+            action: None,
+            #[cfg(feature = "editor")]
+            edit_data: TransitionEditData((0., 0.)),
+        }
+    }
 }
 
 // implementing index traits allows us to circumvent being unable to
@@ -219,7 +236,7 @@ impl IndexMut<Idx> for Graph {
 }
 
 impl Index<TransIdx> for Graph {
-    type Output = Arc<Transition>;
+    type Output = Transition;
 
     fn index(&self, i: TransIdx) -> &Self::Output {
         &self.graph[i]
@@ -228,7 +245,7 @@ impl Index<TransIdx> for Graph {
 
 impl IndexMut<TransIdx> for Graph {
     fn index_mut(&mut self, i: TransIdx) -> &mut Self::Output {
-        &mut self.graph[i]
+        Arc::make_mut(&mut self.graph[i])
     }
 }
 
@@ -288,6 +305,14 @@ impl Graph {
         self.graph
             .node_indices()
             .filter(move |i| self.graph[*i].parent == p)
+    }
+
+    pub fn transitions(&self) -> impl Iterator<Item = TransIdx> + '_ {
+        self.graph.edge_indices()
+    }
+
+    pub fn endpoints(&self, i: TransIdx) -> Option<(Idx, Idx)> {
+        self.graph.edge_endpoints(i)
     }
 
     pub fn set_id(&mut self, i: Option<Idx>, id: &str) {
@@ -722,10 +747,16 @@ impl Transition {
     pub fn new(event: &str, guard: Option<&str>, action: Option<&str>) -> Self {
         Self {
             event: event.to_string(),
-            internal: false,
             guard: guard.map(String::from),
             action: action.map(String::from),
+            ..Default::default()
         }
+    }
+
+    #[cfg(feature = "editor")]
+    pub fn at(mut self, p: Point) -> Self {
+        self.edit_data = TransitionEditData(p);
+        self
     }
 
     // TODO: only self-transitions can be internal but we can't check that here

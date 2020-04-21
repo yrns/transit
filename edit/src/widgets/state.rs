@@ -1,20 +1,8 @@
-use crate::widgets::{Drag, Resizer, Root, STATE_ADDED};
-use crate::{handle_key, state_id_lens, EditData, GraphData};
-use druid::kurbo::BezPath;
-use druid::kurbo::RoundedRect;
-use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
-use druid::theme;
-use druid::widget::{
-    Align, CrossAxisAlignment, Flex, Label, LabelText, Padding, SizedBox, TextBox, WidgetExt,
-};
-use druid::{
-    lens,
-    lens::{Field, InArc, Lens, Then},
-    *,
-};
+use crate::{widgets::*, *};
+use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use std::fmt;
 use std::sync::Arc;
-use transit::{Graph, Idx, State as TransitState, Transition};
+use transit::Idx;
 
 // each state contains a label and child states
 pub struct State {

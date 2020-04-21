@@ -1,10 +1,10 @@
 #![allow(unused_imports, dead_code)]
 
+mod sync;
 mod widgets;
 
-pub use crate::widgets::Root;
+use crate::widgets::Root;
 use anyhow::{anyhow, Result};
-//use druid::lens;
 use druid::lens;
 use druid::lens::LensExt;
 use druid::theme;
@@ -22,7 +22,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
-use transit::{Graph, Idx, Initial, State, Transition};
+use transit::{Graph, Idx, TransIdx};
 
 const RESET: Selector = Selector::new("transit-reset");
 
@@ -137,7 +137,7 @@ impl GraphData {
     pub fn add_state(&mut self, id: &str, parent: Option<Idx>) -> Result<()> {
         let uid = self.unique_id(id, parent)?;
         let g = Arc::make_mut(&mut self.graph);
-        g.add_state(State::new(
+        g.add_state(transit::State::new(
             uid.unwrap_or_else(|| id.to_string()),
             parent,
             None,
@@ -234,6 +234,16 @@ impl GraphData {
             log::warn!("can't drag initial outside rect bounds");
         }
     }
+
+    pub fn add_transition(&mut self, from: Idx, to: Idx, p: Point) {
+        self.with_undo(
+            |g| {
+                g.add_transition(from, to, transit::Transition::default().at(p.into()))
+                    .unwrap()
+            },
+            "add transition",
+        )
+    }
 }
 
 // fit rect b into a, keep a small border when fitting so the child
@@ -284,23 +294,29 @@ pub(crate) fn graph_id_lens() -> impl Lens<EditData, String> {
     graph_lens().then(lens!(Graph, id).in_arc())
 }
 
-pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<State>> {
-    // FIX: why doesn't this work in a single statement?
-    let lens = lens!(EditData, graph1).then(lens!(GraphData, graph));
-    let lens2 = lens::Id.index(i).in_arc();
-    lens.then(lens2)
+pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<transit::State>> {
+    graph_lens().then(lens::Id.index(i).in_arc())
 }
 
 pub(crate) fn state_id_lens(i: Idx) -> impl Lens<EditData, String> {
-    state_lens(i).then(lens!(State, id).in_arc())
+    state_lens(i).then(lens!(transit::State, id).in_arc())
 }
 
-pub fn state_initial_lens(i: Idx) -> impl Lens<EditData, Initial> {
-    state_lens(i).then(lens!(State, initial).in_arc())
+pub fn state_initial_lens(i: Idx) -> impl Lens<EditData, transit::Initial> {
+    state_lens(i).then(lens!(transit::State, initial).in_arc())
 }
 
-pub fn graph_initial_lens() -> impl Lens<EditData, Initial> {
+pub fn graph_initial_lens() -> impl Lens<EditData, transit::Initial> {
     graph_lens().then(lens!(Graph, initial).in_arc())
+}
+
+// indexing with transitions doesn't return an Arc, testing this out
+pub fn transition_lens(i: TransIdx) -> impl Lens<EditData, transit::Transition> {
+    graph_lens().then(lens::Id.index(i).in_arc())
+}
+
+pub fn transition_event_lens(i: TransIdx) -> impl Lens<EditData, String> {
+    transition_lens(i).then(lens!(transit::Transition, event))
 }
 
 fn ui_builder() -> impl Widget<EditData> {
