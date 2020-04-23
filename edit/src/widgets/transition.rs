@@ -23,12 +23,17 @@ impl Transition {
                             .lens(lens!(transit::Transition, guard))
                             .padding(4.),
                     )
-                    .with_child(Button::new("action").padding(4.))
                     .with_child(
-                        Checkbox::new("internal")
-                            .lens(lens!(transit::Transition, internal))
+                        Action::new(ActionType::Action(i))
+                            .lens(lens!(transit::Transition, action))
                             .padding(4.),
                     ),
+                // draw internal icon later, maybe just change connector color for now
+                // .with_child(
+                //     Checkbox::new("internal")
+                //         .lens(lens!(transit::Transition, internal))
+                //         .padding(4.),
+                // ),
                 DragType::MoveTransition(i),
                 None,
             ),
@@ -45,6 +50,37 @@ impl Widget<transit::Transition> for Transition {
         env: &Env,
     ) {
         self.child.event(ctx, event, data, env);
+
+        // the drag is internal, unlike state, so this doesn't work FIX:?
+        // if ctx.is_handled() {
+        //     return;
+        // }
+
+        match event {
+            Event::MouseDown(_) => {
+                dbg!(self.child.has_active());
+                if !self.child.has_active() {
+                    if !ctx.is_focused() {
+                        ctx.request_focus();
+                    }
+                }
+            }
+            Event::KeyDown(e) => {
+                if ctx.is_focused() {
+                    match e {
+                        // focus endpoint a
+                        e if HotKey::new(None, KeyCode::Backspace).matches(e) => todo!(),
+                        // remove transition
+                        e if HotKey::new(None, KeyCode::Delete).matches(e) => todo!(),
+                        // toggle internal (if self)
+                        e if HotKey::new(None, "i").matches(e) => todo!(),
+                        _ => log::info!("unhandled key: {:?}", e),
+                    }
+                    ctx.set_handled();
+                }
+            }
+            _ => (),
+        }
     }
 
     fn lifecycle(
@@ -55,9 +91,9 @@ impl Widget<transit::Transition> for Transition {
         env: &Env,
     ) {
         match event {
-            LifeCycle::HotChanged(_) => {
-                ctx.request_paint();
-            }
+            LifeCycle::WidgetAdded => ctx.register_for_focus(),
+            LifeCycle::HotChanged(_) => ctx.request_paint(),
+            LifeCycle::FocusChanged(_) => ctx.request_paint(),
             _ => {}
         }
 
@@ -85,6 +121,17 @@ impl Widget<transit::Transition> for Transition {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &transit::Transition, env: &Env) {
+        let rounded_rect = RoundedRect::from_origin_size(Point::ORIGIN, ctx.size().to_vec2(), 2.);
+
+        let border_color = if ctx.is_focused() {
+            env.get(theme::PRIMARY_LIGHT)
+        } else {
+            env.get(theme::BORDER_LIGHT)
+        };
+
+        ctx.stroke(rounded_rect, &border_color, 2.);
+        ctx.fill(rounded_rect, &env.get(theme::BACKGROUND_LIGHT));
+
         self.child.paint(ctx, data, env);
     }
 }
