@@ -12,11 +12,23 @@ impl Transition {
     pub fn new(i: TransIdx) -> Self {
         Self {
             child: Drag::new(
-                Flex::row().with_child(
-                    TextBox::new()
-                        .lens(lens!(transit::Transition, event))
-                        .padding(4.),
-                ),
+                Flex::row()
+                    .with_child(
+                        TextBox::new()
+                            .lens(lens!(transit::Transition, event))
+                            .padding(4.),
+                    )
+                    .with_child(
+                        Action::new(ActionType::Guard(i))
+                            .lens(lens!(transit::Transition, guard))
+                            .padding(4.),
+                    )
+                    .with_child(Button::new("action").padding(4.))
+                    .with_child(
+                        Checkbox::new("internal")
+                            .lens(lens!(transit::Transition, internal))
+                            .padding(4.),
+                    ),
                 DragType::MoveTransition(i),
                 None,
             ),

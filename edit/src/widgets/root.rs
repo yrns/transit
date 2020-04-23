@@ -113,6 +113,31 @@ impl Widget<EditData> for Root {
                     }
                 }
             }
+            // the unique path for a transition includes the index
+            // since there's no other unique identifier - maybe just
+            // do the same for states rather than have unique
+            // (editable) ids?
+            Event::Command(cmd) if cmd.selector == SET_ACTION => {
+                let (a, go) = cmd.get_object::<(ActionType, bool)>().unwrap();
+                // TODO: somehow make this configurable, just use the path for now:
+                match a {
+                    ActionType::Guard(i) => {
+                        let g = &data.graph1.graph;
+                        if let Some((s, _)) = g.endpoints(*i) {
+                            let path =
+                                format!("{}_{}_{}_guard", g.path_str(s), g[*i].event, i.index());
+                            data.graph1
+                                .with_undo(|g| g[*i].guard = Some(path.clone()), "set guard");
+                            if *go {
+                                // TODO:
+                                log::info!("GO EMACS!!!");
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+                return;
+            }
             _ => {
                 if self.states.len() > 0 {
                     self.initial.event(ctx, event, data, env);
