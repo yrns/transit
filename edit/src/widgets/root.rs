@@ -393,7 +393,8 @@ impl Widget<EditData> for Root {
             ctx.clip(clip_rect);
         }
 
-        self.children_mut()
+        self.states
+            .values_mut()
             .for_each(|w| w.paint_with_offset(ctx, data, env));
 
         // drag transition lines here, the widget only draws the label
@@ -403,15 +404,19 @@ impl Widget<EditData> for Root {
                 let from = g.abs_pos(from);
                 let to = g.abs_pos(to);
                 let color = env.get(&theme::LABEL_COLOR);
-                let mut path = BezPath::new();
-                path.move_to(from);
-                // TODO: figure out the math to force the line through the label widget
                 let center = w.layout_rect().center();
-                let w = Vec2::new(w.layout_rect().width() * 0.5, 0.);
-                path.curve_to(center - w, center + w, to.into());
-                ctx.stroke(path, &color, 1.5);
+                ctx.stroke(
+                    fit_quadbez(from.into(), center.to_vec2(), to.into()),
+                    &color,
+                    1.5,
+                );
             }
         });
+
+        // draw transition widgets over the connection curves
+        self.transitions
+            .values_mut()
+            .for_each(|w| w.paint_with_offset(ctx, data, env));
 
         // don't paint initial if we have no children
         if self.states.len() > 0 {
@@ -454,5 +459,15 @@ pub fn arrow(width: f64, height: f64) -> BezPath {
     a.line_to(Point::new(width / 2., height));
     a.line_to(Point::new(-width / 2., height));
     a.close_path();
+    a
+}
+
+// Given 3 points, find a quad bezier that passes through the middle point at time 0.5.
+pub fn fit_quadbez(p0: Vec2, p1: Vec2, p2: Vec2) -> BezPath {
+    let cp = (p1 - 0.25 * (p0 + p2)) / 0.5;
+    // there's no easy way to QuadBez -> BezPath?
+    let mut a = BezPath::new();
+    a.move_to(p0.to_point());
+    a.quad_to(cp.to_point(), p2.to_point());
     a
 }
