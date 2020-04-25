@@ -315,6 +315,14 @@ impl Graph {
         self.graph.edge_endpoints(i)
     }
 
+    pub fn is_self_transition(&self, i: TransIdx) -> bool {
+        if let Some((a, b)) = self.endpoints(i) {
+            a == b
+        } else {
+            false
+        }
+    }
+
     pub fn set_id(&mut self, i: Option<Idx>, id: &str) {
         if let Some(i) = i {
             Arc::make_mut(&mut self.graph[i]).id = id.to_string();

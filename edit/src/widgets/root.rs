@@ -41,13 +41,8 @@ impl Root {
             .boxed()
         };
 
-        let new_transition = |i| {
-            // let drag: DragTypeSelector = Box::new(move |mouse: &MouseEvent| match mouse.button {}}}
-            //     MouseButton::Right => DragType::CreateTransition(sid),
-            //     _ => DragType::MoveState(sid),
-            // });
-            WidgetPod::new(Transition::new(i).lens(transition_lens(i))).boxed()
-        };
+        let new_transition =
+            |i| WidgetPod::new(Transition::new(i).lens(transition_lens(i))).boxed();
 
         Self {
             sid,
@@ -69,6 +64,15 @@ impl Root {
         self.states
             .values_mut()
             .chain(self.transitions.values_mut())
+    }
+
+    /// Sync child widgets with data. Returns true if there are
+    /// changes.
+    pub fn sync(&mut self, data: &EditData) -> bool {
+        // provide children via lens?
+        let children = data.graph1.graph.children(self.sid);
+        self.states.sync(children)
+            | (self.is_root() && self.transitions.sync(data.graph1.graph.transitions()))
     }
 }
 
@@ -247,8 +251,9 @@ impl Widget<EditData> for Root {
                     ctx.register_for_focus();
                 }
 
-                // the list widget syncs data and children here too,
-                // but isn't update called initially? TODO:
+                if self.sync(data) {
+                    ctx.children_changed();
+                }
             }
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
@@ -280,12 +285,10 @@ impl Widget<EditData> for Root {
             .for_each(|w| w.lifecycle(ctx, event, data, env));
     }
 
-    // use raise
-    // TODO: figure out z, put selected state on top YEP
+    // TODO: in order to raise states and work with undo we need to
+    // store the z order in the data, raise a state when it's focused
+    // or moved, and resort the widgets by z in update
     fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &EditData, data: &EditData, env: &Env) {
-        // provide children via lens? TODO:?
-        let children = data.graph1.graph.children(self.sid);
-
         // this will update widgets that are about to be removed FIX:?
         self.states
             .values_mut()
@@ -293,10 +296,8 @@ impl Widget<EditData> for Root {
             .for_each(|w| w.update(ctx, data, env));
 
         // TODO: we want to actually move widgets with deep
-        // hierarchies rather than recreate them?
-        if self.states.sync(children)
-            | (self.is_root() && self.transitions.sync(data.graph1.graph.transitions()))
-        {
+        // hierarchies rather than recreate them when moved?
+        if self.sync(data) {
             ctx.children_changed();
             // why? seems like the above should repaint, the list widget does not do this
             ctx.request_paint();

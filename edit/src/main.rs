@@ -17,10 +17,14 @@ use druid::{
     Size, SysMods, Target, UnitPoint, Widget, WidgetId, WidgetPod, WindowDesc, WindowId,
 };
 use log;
+use ron::de::from_reader;
+use ron::ser::{to_string_pretty, PrettyConfig};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use transit::{Graph, Idx, TransIdx};
 
@@ -30,13 +34,8 @@ const RESET: Selector = Selector::new("transit-reset");
 pub struct EditData {
     // we only have one graph editable at a time for now
     graph1: GraphData,
-    // command to run when editing an action (emacsclient, etc.)
-    graph1_str: String,
     #[druid(ignore)]
-    edit_action: Option<String>,
-    // command to run when renaming an action
-    #[druid(ignore)]
-    rename_action: Option<String>,
+    conf: EditConf,
 }
 
 #[derive(Clone)]
@@ -60,23 +59,25 @@ struct GraphData {
     history: Vec<History>,
 }
 
-impl Default for EditData {
-    fn default() -> Self {
+impl EditData {
+    fn new(conf: EditConf) -> Self {
         EditData {
-            graph1: GraphData::new(),
-            graph1_str: "this is a test".to_string(),
-            edit_action: None,
-            rename_action: None,
+            graph1: conf
+                .last_open_file
+                .as_ref()
+                .map(|p| GraphData::from_path(p)) // -> Option<Result<GraphData>>
+                .transpose() // -> Result<Option<GraphData>>
+                .unwrap_or_else(|e| {
+                    log::error!("error importing last open file: {}", e);
+                    None
+                }) // -> Option<GraphData>
+                .unwrap_or_else(|| GraphData::new()),
+            conf,
         }
     }
-}
 
-impl EditData {
     fn reset(&mut self) {
         self.graph1 = GraphData::new();
-        // TODO: Default
-        self.edit_action = None;
-        self.rename_action = None;
     }
 }
 
@@ -94,13 +95,13 @@ impl GraphData {
         }
     }
 
-    pub fn from_graph(graph: Graph) -> Self {
-        Self {
-            graph: Arc::new(graph),
-            path: None,
+    pub fn from_path(path: &Path) -> Result<Self> {
+        Ok(Self {
+            graph: Arc::new(Graph::import_from_file(path)?),
+            path: Some(path.to_path_buf()),
             wids: HashMap::new(),
             history: Vec::new(),
-        }
+        })
     }
 
     // similar to lens; clone graph, pass to closure, check if
@@ -260,14 +261,34 @@ fn fit_rect(a: Rect, b: Rect) -> Rect {
     a.inset(-10.).intersect(b)
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct EditConf {
+    last_open_file: Option<PathBuf>,
+    edit_action: Option<String>,
+    rename_action: Option<String>,
+    //keys: Vec<Key>,
+    //autosave: Option<f64>,
+}
+
+const CONF_PATH: &str = "conf.ron";
+
+fn read_conf() -> Result<EditConf> {
+    Ok(from_reader(File::open(CONF_PATH)?)?)
+}
+
+fn save_conf(conf: &EditConf) -> Result<()> {
+    let mut file = File::create(CONF_PATH)?;
+    file.write_all(to_string_pretty(conf, PrettyConfig::default())?.as_bytes())?;
+    Ok(())
+}
+
 fn main() {
+    let data = EditData::new(read_conf().unwrap_or_default());
+
     let main_window = WindowDesc::new(ui_builder)
-        .menu(make_menu(&EditData::default()))
+        .menu(make_menu(&data))
         // TODO update with graph name and file path
         .title(LocalizedString::new("transit-window-title").with_placeholder("transit"));
-
-    // start with a blank graph
-    let data = EditData::default();
 
     AppLauncher::with_window(main_window)
         // black on white
@@ -365,13 +386,12 @@ impl AppDelegate<EditData> for Delegate {
             &druid::commands::OPEN_FILE => {
                 // the command contains the path from the open panel
                 match cmd.get_object::<FileInfo>() {
-                    Ok(f) => match Graph::import_from_file(f.path()) {
+                    Ok(f) => match GraphData::from_path(f.path()) {
                         Ok(g) => {
-                            data.graph1 = GraphData::from_graph(g);
-                            data.graph1.path = Some(f.path().to_path_buf());
+                            data.graph1 = g;
                             ctx.submit_command(RESET, None);
                         }
-                        Err(e) => log::error!("failed to export graph: {:?}", e),
+                        Err(e) => log::error!("failed to import graph: {:?}", e),
                     },
                     Err(_) => {
                         ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, *target);
@@ -412,6 +432,9 @@ impl AppDelegate<EditData> for Delegate {
     }
 }
 
+// TODO: we want to pass mouse position too so we can create states at
+// mouse location rather than dumping them on top of each other; also,
+// create transitions by selecting a state and hovering another with "t"
 pub(crate) fn handle_key(
     ctx: &mut EventCtx,
     event: &KeyEvent,
@@ -449,9 +472,25 @@ pub(crate) fn handle_key(
                 log::warn!("can't step initial for root (yet?)");
             }
         }
-
+        k_e if HotKey::new(None, "q").matches(k_e) => {
+            // save and quit if we have a path
+            if let Some(path) = &data.graph1.path {
+                data.conf.last_open_file = Some(path.clone());
+                if let Err(e) = save_conf(&data.conf) {
+                    log::error!("error saving configuration file: {}", e);
+                }
+                // copied from SAVE_FILE
+                if let Err(e) = data.graph1.graph.export_to_file(&path) {
+                    log::error!("failed to export graph: {:?}", e);
+                }
+                ctx.submit_command(druid::commands::QUIT_APP, None);
+            } else {
+                // FIX: have to hit q twice here
+                ctx.submit_command(druid::commands::SAVE_FILE, None);
+            }
+        }
         _ => {
-            dbg!("unhandled key: {:?}", event);
+            log::info!("unhandled key: {:?}", event);
         }
     }
 }
