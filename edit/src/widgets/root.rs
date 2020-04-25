@@ -8,6 +8,7 @@ use transit::{Graph, Idx};
 pub const STATE_ADDED: Selector = Selector::new("transit.edit.state-added");
 // TODO:
 pub const STATE_REMOVED: Selector = Selector::new("transit.edit.state-removed");
+pub const ROOT_FOCUS: Selector = Selector::new("transit.edit.root-focus");
 
 type Child = WidgetPod<EditData, Box<dyn Widget<EditData>>>;
 
@@ -167,6 +168,10 @@ impl Widget<EditData> for Root {
                     ctx.request_focus();
                 }
             }
+            Event::Command(cmd) if cmd.selector == ROOT_FOCUS => {
+                ctx.request_focus();
+                return;
+            }
             Event::Command(cmd) if cmd.selector == DRAG_END => {
                 // we are inside the deepest root widget that will
                 // accept this drag
@@ -258,12 +263,14 @@ impl Widget<EditData> for Root {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
-            // LifeCycle::FocusChanged(focus) => {
-            //     log::info!("focus for {:?}: {}", ctx.widget_id(), focus);
-            //     if *focus && !self.is_root() {
-            //         log::warn!("non-root root has focus!");
-            //     }
-            // }
+            LifeCycle::FocusChanged(focus) => {
+                if !focus && self.is_root() {
+                    // make sure the root widget always has focus -
+                    // this will break with multiple graphs/windows
+                    // FIX:?
+                    ctx.submit_command(ROOT_FOCUS, None);
+                }
+            }
             // LifeCycle::RouteFocusChanged { old, new } => {
             //     // only the root root gets focus
             //     log::info!(
