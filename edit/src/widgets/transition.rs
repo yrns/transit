@@ -13,21 +13,18 @@ impl Transition {
         Self {
             child: Drag::new(
                 Flex::row()
+                    //.main_axis_alignment(MainAxisAlignment::SpaceAround)
+                    .with_spacer(6.)
+                    .with_child(TextBox::new().lens(lens!(transit::Transition, event)))
+                    .with_spacer(6.)
                     .with_child(
-                        TextBox::new()
-                            .lens(lens!(transit::Transition, event))
-                            .padding(4.),
+                        Action::new(ActionType::Guard(i)).lens(lens!(transit::Transition, guard)),
                     )
+                    .with_spacer(6.)
                     .with_child(
-                        Action::new(ActionType::Guard(i))
-                            .lens(lens!(transit::Transition, guard))
-                            .padding(4.),
+                        Action::new(ActionType::Action(i)).lens(lens!(transit::Transition, action)),
                     )
-                    .with_child(
-                        Action::new(ActionType::Action(i))
-                            .lens(lens!(transit::Transition, action))
-                            .padding(4.),
-                    ),
+                    .with_spacer(6.),
                 // draw internal icon later, maybe just change connector color for now
                 // .with_child(
                 //     Checkbox::new("internal")

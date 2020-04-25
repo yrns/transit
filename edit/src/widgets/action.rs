@@ -82,7 +82,7 @@ impl Widget<Option<String>> for Action {
         _data: &Option<String>,
         _env: &Env,
     ) -> Size {
-        Size::new(8., 8.)
+        Size::new(12., 12.)
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &Option<String>, env: &Env) {
@@ -92,11 +92,11 @@ impl Widget<Option<String>> for Action {
             theme::LABEL_COLOR
         });
 
-        let r = Rect::from_origin_size(Point::ZERO, ctx.size()).inset(2.);
+        let r = Rect::from_origin_size(Point::ZERO, ctx.size()).inset(-1.);
         if data.is_some() {
             ctx.fill(r, &color);
         } else {
-            ctx.stroke(r, &color, 2.);
+            ctx.stroke(r, &color, 1.);
         }
     }
 }

@@ -415,7 +415,7 @@ impl Widget<EditData> for Root {
                 ctx.stroke(
                     fit_quadbez(from.into(), center.to_vec2(), to.into()),
                     &color,
-                    1.5,
+                    1.0,
                 );
             }
         });
@@ -436,7 +436,7 @@ impl Widget<EditData> for Root {
                 // TODO: make this a quadratic curve
                 let a = self.initial.layout_rect().center();
                 let b = g.rel_pos(self.sid, initial);
-                ctx.stroke(Line::new(a, b), &color, 1.5);
+                ctx.stroke(Line::new(a, b), &color, 1.0);
                 let b: Vec2 = b.into();
                 let affine = Affine::translate(b);
                 let up = Vec2::new(0., -1.);
