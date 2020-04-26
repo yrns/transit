@@ -107,14 +107,18 @@ impl Widget<EditData> for Root {
             Event::Command(cmd) if cmd.selector == DRAG_END => {
                 let drag = cmd.get_object::<DragData>().unwrap();
 
-                // reverse so states on top handle the event first
-                for state in self.states.values_mut().rev() {
-                    // can't move a state inside itself
-                    if state.id() != drag.id {
-                        let rect = state.layout_rect();
-                        if rect.winding(drag.anchor()) != 0 {
-                            let event = drag.offset(rect.origin().to_vec2()).to_event();
-                            state.event(ctx, &event, data, env);
+                if let DragType::MoveTransition(_) = drag.ty {
+                    // don't transform these, they are only for the root widget
+                } else {
+                    // reverse so states on top handle the event first
+                    for state in self.states.values_mut().rev() {
+                        // can't move a state inside itself
+                        if state.id() != drag.id {
+                            let rect = state.layout_rect();
+                            if rect.winding(drag.anchor()) != 0 {
+                                let event = drag.offset(rect.origin().to_vec2()).to_event();
+                                state.event(ctx, &event, data, env);
+                            }
                         }
                     }
                 }
