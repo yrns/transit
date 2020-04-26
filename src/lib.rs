@@ -423,6 +423,12 @@ impl Graph {
             .fold((0., 0.), add)
     }
 
+    /// Find the absolute rect of a state in the graph.
+    #[cfg(feature = "editor")]
+    pub fn abs_rect(&self, a: Idx) -> Rect {
+        (self.abs_pos(a), self[a].edit_data.rect.1)
+    }
+
     /// Find the position of one state relative to another using
     /// EditData. Used to draw transitions and such between any two
     /// states in the graph.

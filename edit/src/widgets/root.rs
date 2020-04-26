@@ -1,5 +1,6 @@
 use crate::{sync::SyncMap, widgets::*, *};
 use druid::{kurbo::*, piet::*, theme, widget::*, *};
+use flo_curves::line::{line_clip_to_bounds, Coord2, Line as _};
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::sync::Arc;
@@ -408,12 +409,29 @@ impl Widget<EditData> for Root {
         let g = &data.graph1.graph;
         self.transitions.iter().for_each(|(i, w)| {
             if let Some((from, to)) = g.endpoints(*i) {
-                let from = g.abs_pos(from);
-                let to = g.abs_pos(to);
+                let r0 = to_rect(g.abs_rect(from));
+                let r1 = to_rect(g.abs_rect(to));
+                let p0 = r0.center();
+                let p1 = r1.center();
+
+                // take a line from center to center, then clip that
+                // line with both rects to find terminals
+                let line = (Coord2(p0.x, p0.y), Coord2(p1.x, p1.y));
+                let t0 = line_clip_to_bounds(&line, &(Coord2(r0.x0, r0.y0), Coord2(r0.x1, r0.y1)))
+                    .unwrap()
+                    .1;
+                let t1 = line_clip_to_bounds(&line, &(Coord2(r1.x0, r1.y0), Coord2(r1.x1, r1.y1)))
+                    .unwrap()
+                    .0;
+
                 let color = env.get(&theme::LABEL_COLOR);
                 let center = w.layout_rect().center();
                 ctx.stroke(
-                    fit_quadbez(from.into(), center.to_vec2(), to.into()),
+                    fit_quadbez(
+                        Vec2::new(t0.0, t0.1),
+                        center.to_vec2(),
+                        Vec2::new(t1.0, t1.1),
+                    ),
                     &color,
                     1.0,
                 );
