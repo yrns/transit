@@ -5,7 +5,7 @@ use transit::TransIdx;
 
 pub struct Transition {
     //idx: TransIdx,
-    child: Drag<transit::Transition, Flex<transit::Transition>>,
+    child: Drag<transit::Transition, Padding<transit::Transition>>,
 }
 
 impl Transition {
@@ -24,7 +24,8 @@ impl Transition {
                     .with_child(
                         Action::new(ActionType::Action(i)).lens(lens!(transit::Transition, action)),
                     )
-                    .with_spacer(6.),
+                    .with_spacer(6.)
+                    .padding(4.),
                 // draw internal icon later, maybe just change connector color for now
                 // .with_child(
                 //     Checkbox::new("internal")
