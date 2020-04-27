@@ -409,6 +409,8 @@ impl Widget<EditData> for Root {
             .values_mut()
             .for_each(|w| w.paint_with_offset(ctx, data, env));
 
+        let arrow = arrow(8., 12.);
+
         // drag transition lines here, the widget only draws the label
         let g = &data.graph1.graph;
         self.transitions.iter().for_each(|(i, w)| {
@@ -421,7 +423,8 @@ impl Widget<EditData> for Root {
 
                 // take a line from state center to transition widget,
                 // then clip that line with the state rect to find the
-                // terminal
+                // terminal - we can safely unwrap here since the
+                // center is always inside the bounds?
                 let line = (Coord2(p0.x, p0.y), Coord2(tc.x, tc.y));
                 let t0 = line_clip_to_bounds(&line, &(Coord2(r0.x0, r0.y0), Coord2(r0.x1, r0.y1)))
                     .unwrap()
@@ -431,17 +434,21 @@ impl Widget<EditData> for Root {
                     .unwrap()
                     .1;
 
+                // convert
+                let t0 = Vec2::new(t0.0, t0.1);
+                let t1 = Vec2::new(t1.0, t1.1);
+
                 let color = env.get(&theme::LABEL_COLOR);
                 let center = w.layout_rect().center();
-                ctx.stroke(
-                    fit_quadbez(
-                        Vec2::new(t0.0, t0.1),
-                        center.to_vec2(),
-                        Vec2::new(t1.0, t1.1),
-                    ),
-                    &color,
-                    1.0,
-                );
+                let q = fit_quadbez(t0, center.to_vec2(), t1);
+
+                // pick a point near the end of the curve to orient the arrow
+                let a = q.get_seg(1).unwrap().eval(0.9);
+
+                ctx.stroke(q, &color, 1.0);
+
+                // draw an arrow at the endpoint
+                ctx.fill(orient_arrow(arrow.clone(), a.to_vec2(), t1), &color);
             }
         });
 
@@ -458,21 +465,12 @@ impl Widget<EditData> for Root {
             let color = env.get(&theme::LABEL_COLOR);
             let g = &data.graph1.graph;
             if let Some(initial) = g.initial_idx(self.sid) {
-                // TODO: make this a quadratic curve
+                // TODO: make this a curve
                 let a = self.initial.layout_rect().center();
                 let b = g.rel_pos(self.sid, initial);
                 ctx.stroke(Line::new(a, b), &color, 1.0);
                 let b: Vec2 = b.into();
-                let affine = Affine::translate(b);
-                let up = Vec2::new(0., -1.);
-                let mut th = (b - a.to_vec2()).normalize().dot(up).acos();
-                if b.x < a.x {
-                    th = -th;
-                }
-                let affine = affine * Affine::rotate(th);
-                let mut arrow = arrow(8.0, 12.0);
-                arrow.apply_affine(affine);
-                ctx.fill(arrow, &color);
+                ctx.fill(orient_arrow(arrow.clone(), a.to_vec2(), b), &color);
             }
             self.initial.paint_with_offset(ctx, data, env);
         }
@@ -485,6 +483,7 @@ impl Widget<EditData> for Root {
     }
 }
 
+/// Make an arrow that points up.
 pub fn arrow(width: f64, height: f64) -> BezPath {
     let mut a = BezPath::new();
     a.move_to(Point::new(0., 0.));
@@ -492,6 +491,18 @@ pub fn arrow(width: f64, height: f64) -> BezPath {
     a.line_to(Point::new(-width / 2., height));
     a.close_path();
     a
+}
+
+/// Orient an arrow at the endpoint of a line (ab).
+pub fn orient_arrow(mut p: BezPath, a: Vec2, b: Vec2) -> BezPath {
+    let up = Vec2::new(0., -1.);
+    let mut th = (b - a).normalize().dot(up).acos();
+    if b.x < a.x {
+        th = -th;
+    }
+    let affine = Affine::translate(b) * Affine::rotate(th);
+    p.apply_affine(affine);
+    p
 }
 
 // Given 3 points, find a quad bezier that passes through the middle point at time 0.5.
