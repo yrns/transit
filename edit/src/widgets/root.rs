@@ -417,16 +417,19 @@ impl Widget<EditData> for Root {
                 let r1 = to_rect(g.abs_rect(to));
                 let p0 = r0.center();
                 let p1 = r1.center();
+                let tc = w.layout_rect().center();
 
-                // take a line from center to center, then clip that
-                // line with both rects to find terminals
-                let line = (Coord2(p0.x, p0.y), Coord2(p1.x, p1.y));
+                // take a line from state center to transition widget,
+                // then clip that line with the state rect to find the
+                // terminal
+                let line = (Coord2(p0.x, p0.y), Coord2(tc.x, tc.y));
                 let t0 = line_clip_to_bounds(&line, &(Coord2(r0.x0, r0.y0), Coord2(r0.x1, r0.y1)))
                     .unwrap()
                     .1;
+                let line = (Coord2(p1.x, p1.y), Coord2(tc.x, tc.y));
                 let t1 = line_clip_to_bounds(&line, &(Coord2(r1.x0, r1.y0), Coord2(r1.x1, r1.y1)))
                     .unwrap()
-                    .0;
+                    .1;
 
                 let color = env.get(&theme::LABEL_COLOR);
                 let center = w.layout_rect().center();
