@@ -3,19 +3,9 @@
 mod sync;
 mod widgets;
 
-use crate::widgets::Root;
+use crate::widgets::{FilePath, Root};
 use anyhow::{anyhow, Result};
-use druid::lens;
-use druid::lens::LensExt;
-use druid::theme;
-use druid::widget::{
-    Align, Button, Container, Flex, Label, List, Padding, Scroll, SizedBox, WidgetExt,
-};
-use druid::{
-    AppDelegate, AppLauncher, Color, Command, Data, DelegateCtx, Env, Event, EventCtx, FileInfo,
-    HotKey, KeyCode, KeyEvent, Lens, LocalizedString, MenuDesc, Point, RawMods, Rect, Selector,
-    Size, SysMods, Target, UnitPoint, Widget, WidgetId, WidgetPod, WindowDesc, WindowId,
-};
+use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use log;
 use ron::de::from_reader;
 use ron::ser::{to_string_pretty, PrettyConfig};
@@ -26,9 +16,10 @@ use std::io::prelude::*;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use transit::{Graph, Idx, TransIdx};
+use transit::{Graph, GraphEditData, Idx, PathData, TransIdx};
 
-const RESET: Selector = Selector::new("transit-reset");
+const RESET: Selector = Selector::new("transit.edit.reset");
+const SELECT_SRC: Selector = Selector::new("transit.edit.select-src");
 
 #[derive(Clone, Data, Lens)]
 pub struct EditData {
@@ -36,6 +27,9 @@ pub struct EditData {
     graph1: GraphData,
     #[druid(ignore)]
     conf: EditConf,
+    #[druid(ignore)]
+    // TODO: which graph, if/when applicable
+    select_src: bool,
 }
 
 #[derive(Clone)]
@@ -73,6 +67,7 @@ impl EditData {
                 }) // -> Option<GraphData>
                 .unwrap_or_else(|| GraphData::new()),
             conf,
+            select_src: false,
         }
     }
 
@@ -283,6 +278,9 @@ fn save_conf(conf: &EditConf) -> Result<()> {
 }
 
 fn main() {
+    // do this earlier to log errors initializing data
+    simple_logger::init().ok();
+
     let data = EditData::new(read_conf().unwrap_or_default());
 
     let main_window = WindowDesc::new(ui_builder)
@@ -300,8 +298,14 @@ fn main() {
             env.set(theme::CURSOR_COLOR, Color::rgb8(0xFF, 0x33, 0x33));
             env.set(theme::BACKGROUND_LIGHT, Color::WHITE);
             env.set(theme::BACKGROUND_DARK, Color::rgb8(230, 230, 230));
+
+            // for buttons
+            env.set(theme::BUTTON_DARK, Color::rgb8(0xCC, 0xCC, 0xCC));
+            env.set(theme::BUTTON_LIGHT, Color::rgb8(0xEE, 0xEE, 0xEE));
+            env.set(theme::BORDER_DARK, Color::rgb8(0x33, 0x33, 0x33));
+            env.set(theme::BORDER_LIGHT, Color::rgb8(0xCC, 0xCC, 0xCC));
         })
-        .use_simple_logger()
+        //.use_simple_logger()
         .delegate(Delegate)
         .launch(data)
         .expect("launch failed");
@@ -331,6 +335,14 @@ pub fn graph_initial_lens() -> impl Lens<EditData, transit::Initial> {
     graph_lens().then(lens!(Graph, initial).in_arc())
 }
 
+pub fn graph_edit_data_lens() -> impl Lens<EditData, transit::GraphEditData> {
+    graph_lens().then(lens!(Graph, edit_data).in_arc())
+}
+
+pub fn graph_src_lens() -> impl Lens<EditData, transit::PathData> {
+    graph_edit_data_lens().then(lens!(GraphEditData, src))
+}
+
 // indexing with transitions doesn't return an Arc, testing this out
 pub fn transition_lens(i: TransIdx) -> impl Lens<EditData, transit::Transition> {
     graph_lens().then(lens::Id.index(i).in_arc())
@@ -342,14 +354,31 @@ pub fn transition_event_lens(i: TransIdx) -> impl Lens<EditData, String> {
 
 fn ui_builder() -> impl Widget<EditData> {
     Flex::column()
+        .cross_axis_alignment(CrossAxisAlignment::Start)
         .with_flex_child(Scroll::new(Root::new(None)), 1.0)
         .with_child(
             // show path to hovered state, key commands, etc.
             Flex::row()
-                .with_flex_child(
+                .must_fill_main_axis(true)
+                .with_child(
                     Label::new(|id: &String, _env: &_| format!("{}", id)).lens(graph_id_lens()),
-                    1.0,
                 )
+                .with_spacer(8.)
+                .with_child(
+                    FilePath::new().lens(graph_src_lens()),
+                    // Button::new(|data: &EditData, _env: &_| {
+                    //     match dbg!(&data.graph1.graph.edit_data.src) {
+                    //         Some(src) => format!("{}", src.to_string_lossy()),
+                    //         None => "select src".to_string(),
+                    //     }
+                    // })
+                    // .on_click(|ctx, _data, _env| {
+                    //     dbg!("click");
+                    //     ctx.submit_command(SELECT_SRC, None);
+                    //     ctx.
+                    // }),
+                )
+                .padding(2.)
                 .background(Color::rgb8(0xEF, 0xEF, 0xEF)), //.debug_paint_layout(),
         )
 }
@@ -384,16 +413,32 @@ impl AppDelegate<EditData> for Delegate {
                 false
             }
             &druid::commands::OPEN_FILE => {
+                dbg!("OPEN_FILE");
+
                 // the command contains the path from the open panel
                 match cmd.get_object::<FileInfo>() {
-                    Ok(f) => match GraphData::from_path(f.path()) {
-                        Ok(g) => {
-                            data.graph1 = g;
-                            ctx.submit_command(RESET, None);
+                    Ok(f) => {
+                        if data.select_src {
+                            // update source file for graph
+                            data.graph1.with_undo(
+                                |g| g.edit_data.src = PathData::new(Some(f.path().to_path_buf())),
+                                "select src",
+                            );
+                            data.select_src = false;
+                            dbg!(&data.graph1.graph.edit_data.src);
+                        } else {
+                            // open new graph
+                            match GraphData::from_path(f.path()) {
+                                Ok(g) => {
+                                    data.graph1 = g;
+                                    ctx.submit_command(RESET, None);
+                                }
+                                Err(e) => log::error!("failed to import graph: {:?}", e),
+                            }
                         }
-                        Err(e) => log::error!("failed to import graph: {:?}", e),
-                    },
+                    }
                     Err(_) => {
+                        dbg!("submit SHOW_OPEN_PANEL");
                         ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, *target);
                     }
                 };
@@ -422,6 +467,12 @@ impl AppDelegate<EditData> for Delegate {
                     log::error!("failed to export graph: {:?}", e);
                 }
 
+                false
+            }
+            &SELECT_SRC => {
+                dbg!("SELECT_SRC recv");
+                data.select_src = true;
+                ctx.submit_command(druid::commands::OPEN_FILE, *target);
                 false
             }
             // TODO:

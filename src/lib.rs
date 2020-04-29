@@ -21,7 +21,7 @@ use std::iter::Iterator;
 use std::mem::{discriminant, Discriminant};
 //use std::ops::Deref;
 use std::ops::{Index, IndexMut};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 // TODO: use statecharts as as states, "includes"
@@ -56,16 +56,54 @@ type Size = (f64, f64);
 type Rect = (Point, Size);
 
 #[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(transparent)]
+pub struct PathData(pub Option<PathBuf>);
+
+#[cfg(feature = "editor")]
+impl PathData {
+    pub fn new(p: Option<PathBuf>) -> Self {
+        Self(p)
+    }
+}
+
+// submit PR for Path/PathBuf?
+#[cfg(feature = "editor")]
+impl Data for PathData {
+    fn same(&self, other: &Self) -> bool {
+        match (self.0.as_ref(), other.0.as_ref()) {
+            (Some(a), Some(b)) => a == b,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+#[cfg(feature = "editor")]
+#[derive(Serialize, Deserialize, Debug, Clone, Data)]
+#[serde(default)]
 pub struct GraphEditData {
+    #[serde(default)]
     pub initial: Point,
+    // Location of the source file associated with this graph. This
+    // needs to be here so its saved. But maybe that precludes reusing
+    // a graph with multiple contexts?
+    #[serde(default)]
+    pub src: PathData,
 }
 
 #[cfg(feature = "editor")]
 impl GraphEditData {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for GraphEditData {
+    fn default() -> Self {
         Self {
             initial: (20., 20.),
+            src: PathData(None),
         }
     }
 }
@@ -77,6 +115,7 @@ pub struct Graph {
     //ids: HashMap, do we need to externally reference by id?
     graph: StableDiGraph<Arc<State>, Arc<Transition>, u32>,
     #[cfg(feature = "editor")]
+    #[serde(default)]
     pub edit_data: GraphEditData,
 }
 
@@ -145,20 +184,30 @@ impl Data for Initial {
 // rename StateEditData?
 #[cfg(feature = "editor")]
 #[derive(Serialize, Deserialize, Debug, Clone, Data)]
+#[serde(default)]
 pub struct EditData {
     // relative to parent
+    #[serde(default)]
     pub rect: Rect,
+    #[serde(default)]
     pub initial: Point,
 }
 
 #[cfg(feature = "editor")]
 impl EditData {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(feature = "editor")]
+impl Default for EditData {
+    fn default() -> Self {
         Self {
-            rect: ((20., 20.), (120., 40.)),
+            rect: ((40., 60.), (120., 40.)),
             // set this only after initial is set, so we can match the
             // position to the state which is the initial?
-            initial: (30., 30.),
+            initial: (20., 40.),
         }
     }
 }
@@ -171,6 +220,7 @@ pub struct State {
     pub entry: Option<String>,
     pub exit: Option<String>,
     #[cfg(feature = "editor")]
+    #[serde(default)]
     pub edit_data: EditData,
 }
 
@@ -186,8 +236,10 @@ impl Data for State {
     }
 }
 
+// the default won't be useful, we need to apply a better one in
+// layout/validation TODO:
 #[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone, Data)]
+#[derive(Serialize, Deserialize, Debug, Clone, Data, Default)]
 pub struct TransitionEditData(pub Point);
 
 // newtype event key?
@@ -203,6 +255,7 @@ pub struct Transition {
     pub guard: Option<String>,
     pub action: Option<String>,
     #[cfg(feature = "editor")]
+    #[serde(default)]
     pub edit_data: TransitionEditData,
 }
 
