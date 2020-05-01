@@ -3,6 +3,7 @@ use druid::{kurbo::*, piet::*, theme, widget::*, *};
 use flo_curves::line::{line_clip_to_bounds, Coord2, Line as _};
 use std::cmp::Ordering;
 use std::f64::consts::PI;
+use std::process::Command;
 use std::sync::Arc;
 use transit::{Graph, Idx};
 
@@ -129,23 +130,60 @@ impl Widget<EditData> for Root {
             // (editable) ids?
             Event::Command(cmd) if cmd.selector == SET_ACTION => {
                 let (a, go) = cmd.get_object::<(ActionType, bool)>().unwrap();
-                // TODO: somehow make this configurable, just use the path for now:
-                match a {
-                    ActionType::Guard(i) => {
-                        let g = &data.graph1.graph;
-                        if let Some((s, _)) = g.endpoints(*i) {
-                            let path =
-                                format!("{}_{}_{}_guard", g.path_str(s), g[*i].event, i.index());
-                            data.graph1
-                                .with_undo(|g| g[*i].guard = Some(path.clone()), "set guard");
-                            if *go {
-                                // TODO:
-                                log::info!("GO EMACS!!!");
+                let g = &data.graph1.graph;
+                // clone so it's not borrowed
+                if let Some(src) = &g.edit_data.src.0.clone() {
+                    let action = match a {
+                        ActionType::Guard(i) => {
+                            let action = g.endpoints(*i).map(|(s, _)|
+                                // TODO: somehow make this configurable, just use the path for now:
+                                format!(
+                                    "{}_{}_{}_guard",
+                                    g.path_str(s),
+                                    g[*i].event,
+                                    i.index()
+                                ));
+
+                            if let Some(action) = &action {
+                                data.graph1
+                                    .with_undo(|g| g[*i].guard = Some(action.clone()), "set guard");
                             }
+                            action
+                        }
+                        ActionType::Action(i) => {
+                            let action = g.endpoints(*i).map(|(s, _)| {
+                                format!("{}_{}_{}_action", g.path_str(s), g[*i].event, i.index())
+                            });
+
+                            if let Some(action) = &action {
+                                data.graph1.with_undo(
+                                    |g| g[*i].action = Some(action.clone()),
+                                    "set action",
+                                );
+                            }
+                            action
+                        }
+                        _ => None,
+                    };
+
+                    if *go {
+                        if let Some(action) = action {
+                            Command::new("sh")
+                                .arg("-c")
+                                .arg(format!(
+                                    "emacsclient -n --eval '(transit-edit \"{}\" \"{}\")'",
+                                    src.to_string_lossy(),
+                                    &action
+                                ))
+                                .spawn()
+                                .expect("edit action");
                         }
                     }
-                    _ => (),
+                } else {
+                    // prompt to select src?
+                    log::warn!("no src set!");
                 }
+
                 return;
             }
             _ => {
