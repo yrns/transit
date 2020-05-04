@@ -3,7 +3,7 @@
 mod sync;
 mod widgets;
 
-use crate::widgets::{FilePath, Root};
+use crate::widgets::{FilePath, Root, StateIdLens};
 use anyhow::{anyhow, Result};
 use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use log;
@@ -115,23 +115,8 @@ impl GraphData {
 
     //pub fn with_undo_idx()
 
-    // make a unique id
-    fn unique_id(&self, id: &str, parent: Option<Idx>) -> Result<Option<String>> {
-        if self.graph.is_unique_id(parent, &id) {
-            Ok(None)
-        } else {
-            for n in 1..10 {
-                let id = format!("{}-{}", id, n);
-                if self.graph.is_unique_id(parent, &id) {
-                    return Ok(Some(id));
-                }
-            }
-            Err(anyhow!("failed to make unique id"))
-        }
-    }
-
     pub fn add_state(&mut self, id: &str, parent: Option<Idx>) -> Result<()> {
-        let uid = self.unique_id(id, parent)?;
+        let uid = unique_id(&self.graph, id, parent)?;
         let g = Arc::make_mut(&mut self.graph);
         g.add_state(transit::State::new(
             uid.unwrap_or_else(|| id.to_string()),
@@ -158,7 +143,7 @@ impl GraphData {
             let p0 = self.graph.get(i).parent;
             if p0 != parent {
                 let id = &self.graph.get(i).id;
-                self.unique_id(id, parent)?
+                unique_id(&self.graph, id, parent)?
             } else {
                 None
             }
@@ -239,6 +224,21 @@ impl GraphData {
             },
             "add transition",
         )
+    }
+}
+
+// make a unique id
+fn unique_id(graph: &Graph, id: &str, parent: Option<Idx>) -> Result<Option<String>> {
+    if graph.is_unique_id(parent, &id) {
+        Ok(None)
+    } else {
+        for n in 1..10 {
+            let id = format!("{}-{}", id, n);
+            if graph.is_unique_id(parent, &id) {
+                return Ok(Some(id));
+            }
+        }
+        Err(anyhow!("failed to make unique id"))
     }
 }
 
@@ -324,7 +324,7 @@ pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<transit::State>> {
 }
 
 pub(crate) fn state_id_lens(i: Idx) -> impl Lens<EditData, String> {
-    state_lens(i).then(lens!(transit::State, id).in_arc())
+    graph_lens().then(StateIdLens::new(i).in_arc())
 }
 
 pub fn state_initial_lens(i: Idx) -> impl Lens<EditData, transit::Initial> {

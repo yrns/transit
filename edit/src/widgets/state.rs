@@ -4,6 +4,37 @@ use std::fmt;
 use std::sync::Arc;
 use transit::Idx;
 
+#[derive(Debug, Copy, Clone)]
+pub struct StateIdLens {
+    idx: Idx,
+}
+
+impl StateIdLens {
+    pub fn new(idx: Idx) -> Self {
+        Self { idx }
+    }
+}
+
+// we require the graph to force uniqueness among siblings for the id
+impl Lens<Graph, String> for StateIdLens {
+    fn with<V, F: FnOnce(&String) -> V>(&self, g: &Graph, f: F) -> V {
+        f(&g[self.idx].id)
+    }
+
+    fn with_mut<V, F: FnOnce(&mut String) -> V>(&self, g: &mut Graph, f: F) -> V {
+        let mut temp = g[self.idx].id.clone();
+        let v = f(&mut temp);
+        let p = g[self.idx].parent;
+        match unique_id(g, &temp, p) {
+            Ok(uid) => Arc::make_mut(&mut g[self.idx]).id = uid.unwrap_or(temp),
+            Err(e) => {
+                log::error!("error in state id lens: {}", e);
+            }
+        }
+        v
+    }
+}
+
 // each state contains a label and child states
 pub struct State {
     id: WidgetId,
