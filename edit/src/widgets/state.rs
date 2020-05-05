@@ -60,7 +60,7 @@ impl State {
                 // align top left in the layer
                 Flex::row()
                     .cross_axis_alignment(CrossAxisAlignment::Start)
-                    .with_child(TextBox::new().lens(state_id_lens(sid)))
+                    .with_child(IdBox::new().lens(state_id_lens(sid)))
                     .padding(4.),
                 None,
             )
