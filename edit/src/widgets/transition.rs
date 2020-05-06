@@ -73,6 +73,11 @@ impl Widget<transit::Transition> for Transition {
                         // toggle internal (if self)
                         e if HotKey::new(None, "i").matches(e) => todo!(),
                         e if HotKey::new(None, KeyCode::Escape).matches(e) => ctx.resign_focus(),
+                        e if HotKey::new(None, KeyCode::Tab).matches(e) => ctx.focus_next(),
+                        e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(e) => {
+                            ctx.focus_prev()
+                        }
+
                         _ => log::info!("unhandled key: {:?}", e),
                     }
                     ctx.set_handled();

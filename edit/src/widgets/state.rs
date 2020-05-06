@@ -88,6 +88,15 @@ impl Widget<EditData> for State {
     }
 
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut EditData, env: &Env) {
+        // key overrides for the textbox
+        // if let Event::KeyDown(e) = event {
+        //     if HotKey::new(None, KeyCode::Return).matches(e) {
+        //         ctx.focus_next();
+        //         ctx.set_handled();
+        //         return;
+        //     }
+        // }
+
         self.layers.event(ctx, event, data, env);
 
         if ctx.is_handled() {

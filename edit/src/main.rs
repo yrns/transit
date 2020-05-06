@@ -505,6 +505,7 @@ pub(crate) fn handle_key(
         k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
             // TODO:
         }
+        k_e if HotKey::new(None, KeyCode::Escape).matches(k_e) => ctx.resign_focus(),
         // Tab and shift+tab change focus to child states
         k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
         k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => ctx.focus_prev(),
