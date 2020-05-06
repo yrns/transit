@@ -7,8 +7,7 @@ use std::process::Command;
 use std::sync::Arc;
 use transit::{Graph, Idx};
 
-// TODO:
-pub const STATE_REMOVED: Selector = Selector::new("transit.edit.state-removed");
+pub const REMOVE_TRANSITION: Selector = Selector::new("transit.edit.remove-transition");
 pub const ROOT_FOCUS: Selector = Selector::new("transit.edit.root-focus");
 
 type Child = WidgetPod<EditData, Box<dyn Widget<EditData>>>;
@@ -94,6 +93,18 @@ impl Widget<EditData> for Root {
                 ctx.children_changed();
                 // this does nothing FIX:?
                 //ctx.request_paint();
+                return;
+            }
+            Event::Command(cmd) if cmd.selector == REMOVE_TRANSITION => {
+                let i = cmd.get_object::<TransIdx>().unwrap();
+                data.graph1.with_undo(
+                    |g| {
+                        if g.remove_transition(*i).is_none() {
+                            log::warn!("no transition {:?} to remove", i);
+                        }
+                    },
+                    "remove transition",
+                );
                 return;
             }
             // transform drag end event for children, like WidgetPod
@@ -332,10 +343,19 @@ impl Widget<EditData> for Root {
     // store the z order in the data, raise a state when it's focused
     // or moved, and resort the widgets by z in update
     fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &EditData, data: &EditData, env: &Env) {
-        // this will update widgets that are about to be removed FIX:?
         self.states
-            .values_mut()
-            .chain(self.transitions.values_mut())
+            .iter_mut()
+            // Don't update widgets that are about to be removed. The
+            // lens indexing will panic.
+            .filter(|(i, _)| data.graph1.graph.contains_state(**i))
+            .map(|(_, w)| w)
+            .chain(
+                self.transitions
+                    .iter_mut()
+                    // Don't update widgets that are about to be removed.
+                    .filter(|(i, _)| data.graph1.graph.contains_transition(**i))
+                    .map(|(_, w)| w),
+            )
             .for_each(|w| w.update(ctx, data, env));
 
         // TODO: we want to actually move widgets with deep
@@ -343,6 +363,7 @@ impl Widget<EditData> for Root {
         if self.sync(data) {
             ctx.children_changed();
             // why? seems like the above should repaint, the list widget does not do this
+            // I think this got fixed with the last druid update?
             ctx.request_paint();
         }
 

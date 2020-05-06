@@ -496,7 +496,16 @@ pub(crate) fn handle_key(
         }
         // Delete this state
         k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
-            // TODO:
+            if let Some(i) = idx {
+                data.graph1.with_undo(
+                    |g| {
+                        if g.remove_state(i).is_none() {
+                            log::warn!("no state {:?} to remove", i);
+                        }
+                    },
+                    "remove state",
+                )
+            }
         }
         k_e if HotKey::new(None, KeyCode::Escape).matches(k_e) => ctx.resign_focus(),
         // Tab and shift+tab change focus to child states

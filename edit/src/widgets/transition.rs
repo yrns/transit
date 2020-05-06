@@ -4,13 +4,14 @@ use std::sync::Arc;
 use transit::TransIdx;
 
 pub struct Transition {
-    //idx: TransIdx,
+    idx: TransIdx,
     child: Drag<transit::Transition, Padding<transit::Transition>>,
 }
 
 impl Transition {
     pub fn new(i: TransIdx) -> Self {
         Self {
+            idx: i,
             child: Drag::new(
                 Flex::row()
                     //.main_axis_alignment(MainAxisAlignment::SpaceAround)
@@ -69,7 +70,9 @@ impl Widget<transit::Transition> for Transition {
                         // focus endpoint a
                         e if HotKey::new(None, KeyCode::Backspace).matches(e) => todo!(),
                         // remove transition
-                        e if HotKey::new(None, KeyCode::Delete).matches(e) => todo!(),
+                        e if HotKey::new(None, KeyCode::Delete).matches(e) => {
+                            ctx.submit_command(Command::new(REMOVE_TRANSITION, self.idx), None)
+                        }
                         // toggle internal (if self)
                         e if HotKey::new(None, "i").matches(e) => todo!(),
                         e if HotKey::new(None, KeyCode::Escape).matches(e) => ctx.resign_focus(),

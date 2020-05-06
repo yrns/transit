@@ -348,9 +348,17 @@ impl Graph {
         a
     }
 
-    pub fn remove_state(&mut self, _i: Idx) -> State {
+    pub fn remove_state(&mut self, i: Idx) -> Option<Arc<State>> {
         // TODO: clean up transitions? move transitions to parent?
-        todo!()
+        self.graph.remove_node(i)
+    }
+
+    pub fn contains_state(&self, i: Idx) -> bool {
+        self.graph.contains_node(i)
+    }
+
+    pub fn contains_transition(&self, i: TransIdx) -> bool {
+        self.graph.edge_weight(i).is_some()
     }
 
     // iter mut? over State verses Idx?
@@ -431,8 +439,8 @@ impl Graph {
         Ok(())
     }
 
-    pub fn remove_transition(&mut self, _i: EdgeIndex<u32>) -> Transition {
-        todo!()
+    pub fn remove_transition(&mut self, i: TransIdx) -> Option<Arc<Transition>> {
+        self.graph.remove_edge(i)
     }
 
     // returns an iterator from idx -> root
