@@ -75,9 +75,9 @@ impl Widget<String> for IdBox {
     }
 
     // why?
-    fn id(&self) -> Option<WidgetId> {
-        self.either.id()
-    }
+    // fn id(&self) -> Option<WidgetId> {
+    //     self.either.id()
+    // }
 }
 
 /// This is like Either but switches on focus, not a closure.
@@ -111,6 +111,7 @@ impl<T: Data> Widget<T> for EitherFocus<T> {
         if let LifeCycle::FocusChanged(focus) = event {
             if self.has_focus != *focus {
                 self.has_focus = *focus;
+                log::info!("focus: {} id: {:?}", focus, ctx.widget_id());
                 ctx.request_layout();
             }
         }
@@ -126,24 +127,16 @@ impl<T: Data> Widget<T> for EitherFocus<T> {
         }
     }
 
-    fn layout(
-        &mut self,
-        layout_ctx: &mut LayoutCtx,
-        bc: &BoxConstraints,
-        data: &T,
-        env: &Env,
-    ) -> Size {
+    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
         if self.has_focus {
-            let size = self.focus.layout(layout_ctx, bc, data, env);
-            self.focus
-                .set_layout_rect(Rect::from_origin_size(Point::ORIGIN, size));
-            layout_ctx.set_paint_insets(self.focus.paint_insets());
+            let size = self.focus.layout(ctx, bc, data, env);
+            self.focus.set_layout_rect(ctx, data, env, size.to_rect());
+            ctx.set_paint_insets(self.focus.paint_insets());
             size
         } else {
-            let size = self.nof.layout(layout_ctx, bc, data, env);
-            self.nof
-                .set_layout_rect(Rect::from_origin_size(Point::ORIGIN, size));
-            layout_ctx.set_paint_insets(self.focus.paint_insets());
+            let size = self.nof.layout(ctx, bc, data, env);
+            self.nof.set_layout_rect(ctx, data, env, size.to_rect());
+            ctx.set_paint_insets(self.focus.paint_insets());
             size
         }
     }

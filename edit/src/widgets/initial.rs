@@ -1,11 +1,6 @@
 use crate::widgets::{DragData, DRAG_END, DRAG_START};
 use crate::{handle_key, EditData, RESET};
-use druid::kurbo::RoundedRect;
-use druid::kurbo::{BezPath, Circle, Shape};
-use druid::piet::{FontBuilder, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
-use druid::theme;
-use druid::widget::*;
-use druid::*;
+use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use std::sync::Arc;
 use transit::{Graph, Idx, State, Transition};
 

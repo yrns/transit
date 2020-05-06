@@ -92,7 +92,7 @@ impl Widget<Option<String>> for Action {
             theme::LABEL_COLOR
         });
 
-        let r = Rect::from_origin_size(Point::ZERO, ctx.size()).inset(-1.);
+        let r = ctx.size().to_rect().inset(-1.);
         if data.is_some() {
             ctx.fill(r, &color);
         } else {

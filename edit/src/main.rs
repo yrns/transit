@@ -25,9 +25,9 @@ const SELECT_SRC: Selector = Selector::new("transit.edit.select-src");
 pub struct EditData {
     // we only have one graph editable at a time for now
     graph1: GraphData,
-    #[druid(ignore)]
+    #[data(ignore)]
     conf: EditConf,
-    #[druid(ignore)]
+    #[data(ignore)]
     // TODO: which graph, if/when applicable
     select_src: bool,
 }
@@ -42,14 +42,9 @@ struct History {
 struct GraphData {
     graph: Arc<Graph>,
     // path to file on disk
-    #[druid(ignore)]
+    #[data(ignore)]
     path: Option<PathBuf>,
-    // the state widgets store a state index, but we can't access the
-    // widgets directly - this gives us widget id -> state index
-    // TODO: remove this? we don't need it for dragging anymore
-    #[druid(ignore)]
-    wids: HashMap<WidgetId, Idx>,
-    #[druid(ignore)]
+    #[data(ignore)]
     history: Vec<History>,
 }
 
@@ -85,7 +80,6 @@ impl GraphData {
             path: None,
             // we're only doing this since we aren't storing state ids
             // in DragData, maybe make the state id a type parameter? TODO:
-            wids: HashMap::new(),
             history: Vec::new(),
         }
     }
@@ -94,7 +88,6 @@ impl GraphData {
         Ok(Self {
             graph: Arc::new(Graph::import_from_file(path)?),
             path: Some(path.to_path_buf()),
-            wids: HashMap::new(),
             history: Vec::new(),
         })
     }
@@ -131,7 +124,7 @@ impl GraphData {
         let rect = if let Some(p) = parent {
             // we want the new rect relative to the parent, so when
             // fitting we only use the parent size
-            let a = Rect::from_origin_size(Point::ZERO, self.graph.get(p).edit_data.rect.1);
+            let a = Size::from(self.graph.get(p).edit_data.rect.1).to_rect();
             fit_rect(a, rect)
         } else {
             rect

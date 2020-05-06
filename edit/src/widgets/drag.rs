@@ -1,12 +1,5 @@
 use crate::EditData;
-use druid::{
-    kurbo::{BezPath, Point, Rect, RoundedRect, Size, Vec2},
-    theme,
-    widget::Align,
-    Affine, BoxConstraints, Command, Cursor, Data, Env, Event, EventCtx, LayoutCtx, LifeCycle,
-    LifeCycleCtx, MouseButton, MouseEvent, PaintCtx, RenderContext, Selector, Target, UnitPoint,
-    UpdateCtx, Widget, WidgetId, WidgetPod,
-};
+use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use transit::{Idx, TransIdx};
 
 pub const DRAG_START: Selector = Selector::new("transit.edit.drag-start");
@@ -20,10 +13,6 @@ pub const DRAG_END: Selector = Selector::new("transit.edit.drag-end");
 // a resize doesn't have a target widget, so maybe it's a different event?
 // pub const RESIZE_START: Selector = Selector::new("transit.edit.resize-start");
 // pub const RESIZE_END: Selector = Selector::new("transit.edit.resize-end");
-
-// this is used register the drag handle's target widget id, rather
-// than passing the id down on create
-pub const REGISTER_DRAG_HANDLE: Selector = Selector::new("transit.edit.register-drag-handle");
 
 #[derive(Debug, Copy, Clone)]
 pub enum DragType {
@@ -60,7 +49,7 @@ impl DragData {
         DragData {
             p0,
             //offset: Vec2::ZERO,
-            rect1: Rect::from_origin_size(Point::ZERO, size),
+            rect1: size.to_rect(),
             id,
             ty,
         }
@@ -87,6 +76,7 @@ impl DragData {
 pub struct Drag<T, W> {
     drag: Option<DragData>,
     ty: DragTypeSelector,
+    id: WidgetId,
     // we use WidgetPod here only so we can tell if the inner is active
     inner: WidgetPod<T, W>,
     // we cannot use Align here because we need to access the handle's
@@ -100,10 +90,12 @@ impl<T: Data, W: Widget<T>> Drag<T, W> {
     where
         D: Into<DragTypeSelector>,
     {
-        let handle = handle.map(|a| Align::new(UnitPoint::BOTTOM_RIGHT, Resizer::new(a)));
+        let id = WidgetId::next();
+        let handle = handle.map(|a| Align::new(UnitPoint::BOTTOM_RIGHT, Resizer::new(a, id)));
         Self {
             drag: None,
             ty: ty.into(),
+            id,
             inner: WidgetPod::new(inner),
             handle,
             handle_p0: Point::ZERO,
@@ -120,7 +112,7 @@ impl<T: Data, W: Widget<T>> Drag<T, W> {
     }
 }
 
-// TODO: add a minimum drag distance so we're not interpreting every click as a drag?
+// TODO: add a minimum drag distance (or time?) so we're not interpreting every click as a drag?
 impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut T, env: &Env) {
         let new_drag = |ctx: &mut EventCtx, p, ty| {
@@ -167,6 +159,11 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
             }
             Event::MouseUp(mouse) => {
                 if let Some(mut drag) = self.drag.take() {
+                    // Unpaint old drag rect. Even though we are only
+                    // painting inside the rect now, we still get a
+                    // little artifacting, so fudge this. FIX:?
+                    ctx.request_paint_rect(drag.rect1.inset(1.));
+
                     // put the drag data into window coords
                     let d = mouse.window_pos - mouse.pos;
                     drag.rect1 = drag.rect1.with_origin(drag.rect1.origin() + d);
@@ -179,11 +176,12 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
                     };
                     ctx.submit_command(Command::new(DRAG_END, drag), target);
                     ctx.set_active(false);
-                    ctx.request_paint();
                 }
             }
-            Event::MouseMoved(mouse) => {
+            Event::MouseMove(mouse) => {
                 if let Some(drag) = self.drag.as_mut() {
+                    // unpaint old drag rect
+                    ctx.request_paint_rect(drag.rect1.inset(1.));
                     match drag.ty {
                         DragType::ResizeState(_) => {
                             let size = ctx.size().to_vec2() + (mouse.pos - drag.p0);
@@ -202,7 +200,8 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
                             drag.rect1 = drag.rect1.with_origin(origin);
                         }
                     }
-                    ctx.request_paint();
+                    // repaint new drag rect
+                    ctx.request_paint_rect(drag.rect1.inset(1.));
                 }
             }
             _ => (),
@@ -212,15 +211,7 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &T, env: &Env) {
         if let Some(handle) = self.handle.as_mut() {
             match event {
-                LifeCycle::WidgetAdded => {
-                    // send our widget id to the handle so it can send us events
-                    let id = ctx.widget_id();
-                    ctx.submit_command(
-                        Command::new(REGISTER_DRAG_HANDLE, id),
-                        // this sends the event to us and all descendants
-                        id,
-                    );
-                }
+                LifeCycle::WidgetAdded => {}
                 _ => (),
             }
             handle.lifecycle(ctx, event, data, env);
@@ -240,10 +231,7 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
             handle.layout(ctx, bc, data, env);
         }
         let size = self.inner.layout(ctx, bc, data, env);
-        // should there be a warning on zero-size widgets? I always
-        // forget this part when changing Widget -> WidgetPod
-        self.inner
-            .set_layout_rect(Rect::from_origin_size(Point::ORIGIN, size));
+        self.inner.set_layout_rect(ctx, data, env, size.to_rect());
         size
     }
 
@@ -256,40 +244,38 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
         }
 
         if let Some(drag) = &self.drag {
+            let stroke_width = 2.0;
+            let rect = drag.rect1.inset(-stroke_width / 2.).to_rounded_rect(4.);
             let color = env.get(theme::SELECTION_COLOR);
-            let rect = RoundedRect::from_rect(drag.rect1, 4.);
-            ctx.stroke(rect, &color, 4.);
+            ctx.stroke(rect, &color, stroke_width);
         }
+    }
+
+    fn id(&self) -> Option<WidgetId> {
+        Some(self.id)
     }
 }
 
 pub struct Resizer {
     ty: DragTypeSelector,
-    parent: Option<WidgetId>,
+    drag_id: WidgetId,
 }
 
 impl Resizer {
-    pub fn new(ty: DragTypeSelector) -> Self {
-        Self { ty, parent: None }
+    pub fn new(ty: DragTypeSelector, drag_id: WidgetId) -> Self {
+        Self { ty, drag_id }
     }
 }
 
 impl<T: Data> Widget<T> for Resizer {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, _data: &mut T, _env: &Env) {
         match event {
-            Event::Command(cmd) if cmd.selector == REGISTER_DRAG_HANDLE => {
-                self.parent = Some(cmd.get_object::<WidgetId>().unwrap().clone());
-            }
             Event::MouseDown(mouse) => {
                 // this tells the drag widget to start resize via handle
-                if let Some(id) = self.parent {
-                    ctx.submit_command(Command::new(DRAG_START, (self.ty)(mouse)), id);
-                    ctx.set_handled();
-                    ctx.set_active(true);
-                    ctx.request_paint();
-                } else {
-                    log::warn!("handle parent is None");
-                }
+                ctx.submit_command(Command::new(DRAG_START, (self.ty)(mouse)), self.drag_id);
+                ctx.set_handled();
+                ctx.set_active(true);
+                ctx.request_paint();
             }
             Event::MouseUp(_) => {
                 ctx.set_active(false);

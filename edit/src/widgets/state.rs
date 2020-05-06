@@ -127,17 +127,8 @@ impl Widget<EditData> for State {
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &EditData, env: &Env) {
         match event {
-            LifeCycle::WidgetAdded => {
-                ctx.submit_command(Command::new(STATE_ADDED, (ctx.widget_id(), self.sid)), None);
-                ctx.register_for_focus();
-            }
-            LifeCycle::HotChanged(_) => {
-                ctx.request_paint();
-            }
-            LifeCycle::FocusChanged(focus) => {
-                log::info!("focus changed for state {:?}: {}", ctx.widget_id(), focus);
-                ctx.request_paint();
-            }
+            LifeCycle::WidgetAdded => ctx.register_for_focus(),
+            LifeCycle::HotChanged(_) | LifeCycle::FocusChanged(_) => ctx.request_paint(),
             _ => (),
         }
 
@@ -161,7 +152,12 @@ impl Widget<EditData> for State {
     fn paint(&mut self, ctx: &mut PaintCtx, data: &EditData, env: &Env) {
         let is_hot = ctx.is_hot();
 
-        let rounded_rect = RoundedRect::from_origin_size(Point::ORIGIN, ctx.size().to_vec2(), 4.);
+        let stroke_width = if is_hot { 4.0 } else { 2.0 };
+        let rect = ctx
+            .size()
+            .to_rect()
+            .inset(-stroke_width / 2.)
+            .to_rounded_rect(4.);
 
         let border_color = if ctx.is_focused() {
             env.get(theme::PRIMARY_LIGHT)
@@ -169,10 +165,8 @@ impl Widget<EditData> for State {
             env.get(theme::BORDER_LIGHT)
         };
 
-        let border_size = if is_hot { 4.0 } else { 2.0 };
-
-        ctx.stroke(rounded_rect, &border_color, border_size);
-        ctx.fill(rounded_rect, &env.get(theme::BACKGROUND_LIGHT));
+        ctx.stroke(rect, &border_color, stroke_width);
+        ctx.fill(rect, &env.get(theme::BACKGROUND_LIGHT));
 
         self.layers.paint(ctx, data, env);
     }
@@ -232,7 +226,7 @@ impl<T: Data> Widget<T> for Layers<T> {
     fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
         for layer in &mut self.children {
             let layer_size = layer.layout(ctx, bc, data, env);
-            layer.set_layout_rect(Rect::from_origin_size(Point::ORIGIN, layer_size));
+            layer.set_layout_rect(ctx, data, env, layer_size.to_rect());
         }
 
         bc.max()

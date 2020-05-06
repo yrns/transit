@@ -15,7 +15,7 @@ impl Transition {
                 Flex::row()
                     //.main_axis_alignment(MainAxisAlignment::SpaceAround)
                     .with_spacer(6.)
-                    .with_child(TextBox::new().lens(lens!(transit::Transition, event)))
+                    .with_child(IdBox::new().lens(lens!(transit::Transition, event)))
                     .with_spacer(6.)
                     .with_child(
                         Action::new(ActionType::Guard(i)).lens(lens!(transit::Transition, guard)),
@@ -125,7 +125,12 @@ impl Widget<transit::Transition> for Transition {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &transit::Transition, env: &Env) {
-        let rounded_rect = RoundedRect::from_origin_size(Point::ORIGIN, ctx.size().to_vec2(), 2.);
+        let stroke_width = 2.0;
+        let rect = ctx
+            .size()
+            .to_rect()
+            .inset(-stroke_width / 2.)
+            .to_rounded_rect(2.);
 
         let border_color = if ctx.is_focused() {
             env.get(theme::PRIMARY_LIGHT)
@@ -133,8 +138,8 @@ impl Widget<transit::Transition> for Transition {
             env.get(theme::BORDER_LIGHT)
         };
 
-        ctx.stroke(rounded_rect, &border_color, 2.);
-        ctx.fill(rounded_rect, &env.get(theme::BACKGROUND_LIGHT));
+        ctx.stroke(rect, &border_color, stroke_width);
+        ctx.fill(rect, &env.get(theme::BACKGROUND_LIGHT));
 
         self.child.paint(ctx, data, env);
     }

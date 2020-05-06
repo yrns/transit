@@ -1,6 +1,6 @@
 use crate::*;
 use druid::{kurbo::*, piet::*, theme, widget::*, *};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use transit::PathData;
 
 pub struct FilePath {
@@ -32,7 +32,7 @@ impl Widget<PathData> for FilePath {
             }
             Event::MouseDown(e) => {
                 if e.button == MouseButton::Left {
-                    self.timer_id = ctx.request_timer(Instant::now() + Duration::from_millis(1));
+                    self.timer_id = ctx.request_timer(Duration::from_millis(1));
                 }
             }
             _ => (),
@@ -60,12 +60,13 @@ impl Widget<PathData> for FilePath {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &PathData, env: &Env) {
-        let size = ctx.size();
-        ctx.stroke(
-            RoundedRect::from_origin_size(Point::ZERO, size, 4.),
-            &env.get(theme::BORDER_LIGHT),
-            0.5,
-        );
+        let stroke_width = 1.0;
+        let rect = ctx
+            .size()
+            .to_rect()
+            .inset(-stroke_width / 2.)
+            .to_rounded_rect(4.);
+        ctx.stroke(rect, &env.get(theme::BORDER_LIGHT), stroke_width);
         self.label.paint(ctx, data, env)
     }
 }

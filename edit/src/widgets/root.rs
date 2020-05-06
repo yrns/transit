@@ -7,7 +7,6 @@ use std::process::Command;
 use std::sync::Arc;
 use transit::{Graph, Idx};
 
-pub const STATE_ADDED: Selector = Selector::new("transit.edit.state-added");
 // TODO:
 pub const STATE_REMOVED: Selector = Selector::new("transit.edit.state-removed");
 pub const ROOT_FOCUS: Selector = Selector::new("transit.edit.root-focus");
@@ -95,12 +94,6 @@ impl Widget<EditData> for Root {
                 ctx.children_changed();
                 // this does nothing FIX:?
                 //ctx.request_paint();
-                return;
-            }
-            Event::Command(cmd) if cmd.selector == STATE_ADDED => {
-                let (id, sid) = cmd.get_object::<(WidgetId, Idx)>().unwrap().clone();
-                log::info!("state_added {:?} {:?}", id, sid);
-                data.graph1.wids.insert(id, sid);
                 return;
             }
             // transform drag end event for children, like WidgetPod
@@ -376,8 +369,8 @@ impl Widget<EditData> for Root {
                 Some(idx) => g[idx].edit_data.initial,
                 None => g.edit_data.initial,
             };
-            self.initial
-                .set_layout_rect(Rect::from_origin_size(p, initial_size));
+            let rect = Rect::from_origin_size(p, initial_size);
+            self.initial.set_layout_rect(ctx, data, env, rect);
         }
 
         //let mut min_rect = Rect::ZERO;
@@ -396,7 +389,7 @@ impl Widget<EditData> for Root {
             // }
             // tuple -> Rect - can't index by ref?
             let rect = to_rect(g[*idx].edit_data.rect);
-            state.set_layout_rect(rect);
+            state.set_layout_rect(ctx, data, env, rect);
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're
             // not anymore
@@ -407,7 +400,8 @@ impl Widget<EditData> for Root {
         self.transitions.iter_mut().for_each(|(i, t)| {
             let size = t.layout(ctx, &bc, data, env);
             let p: Point = g[*i].edit_data.0.into();
-            t.set_layout_rect(Rect::from_origin_size(p, size));
+            let rect = Rect::from_origin_size(p, size);
+            t.set_layout_rect(ctx, data, env, rect);
         });
 
         // is this even used? no we always return the max
@@ -439,8 +433,8 @@ impl Widget<EditData> for Root {
                 log::error!("saving render context failed: {:?}", e);
                 return;
             }
-            let clip_rect = Rect::from_origin_size(Point::ORIGIN, ctx.size());
-            ctx.clip(clip_rect);
+            let rect = ctx.size().to_rect();
+            ctx.clip(rect);
         }
 
         self.states
