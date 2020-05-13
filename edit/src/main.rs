@@ -373,15 +373,12 @@ fn ui_builder() -> impl Widget<EditData> {
     Flex::column()
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .with_flex_child(
-            Scroll::new(
-                Layers::new()
-                    .add_layer(
-                        Hover::new().lens(lens!(EditData, hover)),
-                        // This doesn't work?
-                        Some(UnitPoint::BOTTOM_RIGHT),
-                    )
-                    .add_layer(Root::new(None), None),
-            ),
+            Layers::new()
+                .add_layer(
+                    Hover::new().lens(lens!(EditData, hover)),
+                    Some(UnitPoint::BOTTOM_RIGHT),
+                )
+                .add_layer(Scroll::new(Root::new(None)), None),
             1.0,
         )
         .with_child(
