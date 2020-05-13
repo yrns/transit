@@ -57,7 +57,6 @@ impl Widget<transit::Transition> for Transition {
 
         match event {
             Event::MouseDown(_) => {
-                dbg!(self.child.has_active());
                 if !self.child.has_active() {
                     if !ctx.is_focused() {
                         ctx.request_focus();

@@ -441,8 +441,6 @@ impl AppDelegate<EditData> for Delegate {
                 false
             }
             &druid::commands::OPEN_FILE => {
-                dbg!("OPEN_FILE");
-
                 // the command contains the path from the open panel
                 match cmd.get_object::<FileInfo>() {
                     Ok(f) => {
@@ -453,7 +451,6 @@ impl AppDelegate<EditData> for Delegate {
                                 "select src",
                             );
                             data.select_src = false;
-                            dbg!(&data.graph1.graph.edit_data.src);
                         } else {
                             // open new graph
                             match GraphData::from_path(f.path()) {
@@ -466,7 +463,6 @@ impl AppDelegate<EditData> for Delegate {
                         }
                     }
                     Err(_) => {
-                        dbg!("submit SHOW_OPEN_PANEL");
                         ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, target);
                     }
                 };
@@ -498,7 +494,6 @@ impl AppDelegate<EditData> for Delegate {
                 false
             }
             &SELECT_SRC => {
-                dbg!("SELECT_SRC recv");
                 data.select_src = true;
                 ctx.submit_command(druid::commands::OPEN_FILE, target);
                 false
