@@ -130,17 +130,21 @@ impl<T: Data> Widget<T> for EitherFocus<T> {
         }
     }
 
+    // Layout both widgets. This is only to silence a warning about
+    // receiving events whilst not laid-out. Maybe fix this later.
     fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
+        let size1 = self.focus.layout(ctx, bc, data, env);
+        self.focus.set_layout_rect(ctx, data, env, size1.to_rect());
+        ctx.set_paint_insets(self.focus.paint_insets());
+
+        let size2 = self.nof.layout(ctx, bc, data, env);
+        self.nof.set_layout_rect(ctx, data, env, size2.to_rect());
+        ctx.set_paint_insets(self.focus.paint_insets());
+
         if self.has_focus {
-            let size = self.focus.layout(ctx, bc, data, env);
-            self.focus.set_layout_rect(ctx, data, env, size.to_rect());
-            ctx.set_paint_insets(self.focus.paint_insets());
-            size
+            size1
         } else {
-            let size = self.nof.layout(ctx, bc, data, env);
-            self.nof.set_layout_rect(ctx, data, env, size.to_rect());
-            ctx.set_paint_insets(self.focus.paint_insets());
-            size
+            size2
         }
     }
 
