@@ -2,6 +2,14 @@ use crate::*;
 use druid::{kurbo::*, piet::*, theme, widget::*, *};
 use transit::{Graph, Idx, TransIdx};
 
+// ENTRY https://icons.getbootstrap.com/icons/box-arrow-in-right/
+// or https://icons.getbootstrap.com/icons/box-arrow-in-down-right/
+// EXIT https://icons.getbootstrap.com/icons/box-arrow-down-right/
+// GUARD https://icons.getbootstrap.com/icons/lock-fill/
+// ACTION https://icons.getbootstrap.com/icons/play-fill/
+
+const ACTION: &str = "M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z";
+
 pub const SET_ACTION: Selector = Selector::new("transit.edit.set-action");
 
 #[derive(Copy, Clone)]
@@ -82,7 +90,7 @@ impl Widget<Option<String>> for Action {
         _data: &Option<String>,
         _env: &Env,
     ) -> Size {
-        Size::new(12., 12.)
+        Size::new(16., 16.)
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &Option<String>, env: &Env) {
@@ -92,7 +100,9 @@ impl Widget<Option<String>> for Action {
             theme::LABEL_COLOR
         });
 
-        let r = ctx.size().to_rect().inset(-1.);
+        // use once-cell?
+        let r = BezPath::from_svg(ACTION).unwrap();
+        //let r = ctx.size().to_rect().inset(-1.);
         if data.is_some() {
             ctx.fill(r, &color);
         } else {
