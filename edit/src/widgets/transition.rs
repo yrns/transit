@@ -86,6 +86,14 @@ impl Widget<transit::Transition> for Transition {
                     ctx.set_handled();
                 }
             }
+            Event::MouseMove(_mouse) => {
+                //log::debug!("mouse in {:?}", ctx.widget_id());
+                ctx.submit_command(
+                    Command::new(UPDATE_HOVER, format!("transition: {:?}", ctx.widget_id())),
+                    None,
+                );
+                ctx.set_handled();
+            }
             _ => (),
         }
     }

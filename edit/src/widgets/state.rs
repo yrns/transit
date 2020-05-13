@@ -15,22 +15,27 @@ impl StateIdLens {
     }
 }
 
-// we require the graph to force uniqueness among siblings for the id
+// Removed uniqueness for now. Revert to combinators since we don't
+// need the graph?
 impl Lens<Graph, String> for StateIdLens {
     fn with<V, F: FnOnce(&String) -> V>(&self, g: &Graph, f: F) -> V {
         f(&g[self.idx].id)
     }
 
     fn with_mut<V, F: FnOnce(&mut String) -> V>(&self, g: &mut Graph, f: F) -> V {
-        let mut temp = g[self.idx].id.clone();
+        let id = &g[self.idx].id;
+        let mut temp = id.clone();
         let v = f(&mut temp);
-        let p = g[self.idx].parent;
-        match unique_id(g, &temp, p) {
-            Ok(uid) => Arc::make_mut(&mut g[self.idx]).id = uid.unwrap_or(temp),
-            Err(e) => {
-                log::error!("error in state id lens: {}", e);
-            }
+        if temp != *id {
+            Arc::make_mut(&mut g[self.idx]).id = temp;
         }
+        // let p = g[self.idx].parent;
+        // match unique_id(g, &temp, p) {
+        //     Ok(uid) => Arc::make_mut(&mut g[self.idx]).id = uid.unwrap_or(temp),
+        //     Err(e) => {
+        //         log::error!("error in state id lens: {}", e);
+        //     }
+        // }
         v
     }
 }
@@ -121,6 +126,12 @@ impl Widget<EditData> for State {
                     ctx.set_handled();
                 }
             }
+            Event::MouseMove(_mouse) => {
+                ctx.submit_command(
+                    Command::new(UPDATE_HOVER, format!("state: {:?}", ctx.widget_id())),
+                    None,
+                );
+            }
             _ => (),
         }
     }
@@ -172,7 +183,7 @@ impl Widget<EditData> for State {
     }
 }
 
-struct Layers<T> {
+pub struct Layers<T> {
     children: Vec<WidgetPod<T, Box<dyn Widget<T>>>>,
 }
 
@@ -195,6 +206,20 @@ impl<T: Data> Layers<T> {
         };
         self.children.push(layer);
         self
+    }
+}
+
+impl<T> fmt::Debug for Layers<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Layers {{ children: {:?} }}",
+            self.children
+                .iter()
+                .map(|w| format!("{:?}", w.id()))
+                .collect::<Vec<String>>()
+                .join(" ")
+        )
     }
 }
 
@@ -224,12 +249,14 @@ impl<T: Data> Widget<T> for Layers<T> {
     }
 
     fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
+        // Size doesn't have union.
+        let mut max = Rect::ZERO;
         for layer in &mut self.children {
             let layer_size = layer.layout(ctx, bc, data, env);
             layer.set_layout_rect(ctx, data, env, layer_size.to_rect());
+            max = max.union(layer_size.to_rect());
         }
-
-        bc.max()
+        max.size()
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &T, env: &Env) {

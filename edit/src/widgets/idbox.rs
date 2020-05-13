@@ -32,22 +32,21 @@ impl Widget<String> for IdBox {
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &String, env: &Env) {
         match event {
             LifeCycle::WidgetAdded => self.data = data.clone(),
-            LifeCycle::FocusChanged(focus) => {
-                if *focus != self.either.has_focus {
-                    if *focus {
-                        self.data = data.clone();
-                    } else {
-                        // we cannot update data here, so bounce the new data back through an event
-                        ctx.submit_command(
-                            Command::new(COPY_BACK, self.data.clone()),
-                            ctx.widget_id(),
-                        );
-                    }
-                }
-            }
             _ => (),
         }
-        self.either.lifecycle(ctx, event, &self.data, env)
+
+        let had_focus = self.either.has_focus;
+
+        self.either.lifecycle(ctx, event, &self.data, env);
+
+        if had_focus != self.either.has_focus {
+            if had_focus {
+                // we cannot update data here, so bounce the new data back through an event
+                ctx.submit_command(Command::new(COPY_BACK, self.data.clone()), ctx.widget_id());
+            } else {
+                self.data = data.clone();
+            }
+        }
     }
 
     fn update(&mut self, ctx: &mut UpdateCtx, old_data: &String, data: &String, env: &Env) {
@@ -107,14 +106,18 @@ impl<T: Data> Widget<T> for EitherFocus<T> {
     }
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &T, env: &Env) {
-        //if let LifeCycle::WidgetAdded = event {}
-        if let LifeCycle::FocusChanged(focus) = event {
-            if self.has_focus != *focus {
-                self.has_focus = *focus;
-                log::info!("focus: {} id: {:?}", focus, ctx.widget_id());
-                ctx.request_layout();
+        match event {
+            // We can no longer rely on FocusChanged since only the
+            // leaf widget gets it.
+            LifeCycle::Internal(InternalLifeCycle::RouteFocusChanged { old, new }) => {
+                if old != new {
+                    self.has_focus = *new == Some(self.focus.id());
+                    ctx.request_layout();
+                }
             }
+            _ => {}
         }
+
         self.focus.lifecycle(ctx, event, data, env);
         self.nof.lifecycle(ctx, event, data, env);
     }

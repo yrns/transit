@@ -1,5 +1,6 @@
 pub mod action;
 pub mod drag;
+pub mod hover;
 pub mod idbox;
 pub mod initial;
 pub mod path;
@@ -9,6 +10,7 @@ pub mod transition;
 
 pub use action::*;
 pub use drag::*;
+pub use hover::*;
 pub use idbox::*;
 pub use initial::*;
 pub use path::*;

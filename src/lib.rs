@@ -361,11 +361,14 @@ impl Graph {
         self.graph.edge_weight(i).is_some()
     }
 
-    // iter mut? over State verses Idx?
     pub fn children(&self, p: Option<Idx>) -> impl Iterator<Item = Idx> + '_ {
         self.graph
             .node_indices()
             .filter(move |i| self.graph[*i].parent == p)
+    }
+
+    pub fn siblings(&self, i: Idx) -> impl Iterator<Item = Idx> + '_ {
+        self.children(self.graph[i].parent).filter(move |s| *s != i)
     }
 
     pub fn transitions(&self) -> impl Iterator<Item = TransIdx> + '_ {
@@ -393,13 +396,14 @@ impl Graph {
         }
     }
 
-    pub fn is_unique_id(&self, p: Option<Idx>, id: &str) -> bool {
-        self.children(p)
+    pub fn is_unique_id(&self, i: Idx, id: &str) -> bool {
+        self.siblings(i)
             .map(|i| &self.graph[i].id)
             .all(|id2| id2 != id)
     }
 
     // move state, check id for uniqueness among new siblings?
+    // TODO: do something with all cases of make_mut except indexing?
     pub fn set_parent(&mut self, i: Idx, p: Option<Idx>) {
         Arc::make_mut(&mut self.graph[i]).parent = p;
     }
@@ -497,6 +501,14 @@ impl Graph {
     pub fn rel_pos(&self, a: Option<Idx>, b: Idx) -> Point {
         let b = self.abs_pos(b);
         a.map(|a| sub(b, self.abs_pos(a))).unwrap_or(b)
+    }
+
+    pub fn validate() -> Result<()> {
+        // initial is set for graph/states and valid/exists/is a child of
+        // no cycles in hierarchy
+        // all states ids are unique among siblings
+        // edit data, rects are not negative/zero
+        Ok(())
     }
 }
 
@@ -792,6 +804,11 @@ impl State {
         }
     }
 
+    pub fn with_parent(mut self, p: Option<Idx>) -> Self {
+        self.parent = p;
+        self
+    }
+
     pub fn set_initial(&mut self, initial: Initial) {
         self.initial = initial;
     }
@@ -809,6 +826,12 @@ impl State {
     // use set_id in Graph to change this
     pub fn id(&self) -> &str {
         &self.id
+    }
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self::new("untitled", None, None, None)
     }
 }
 

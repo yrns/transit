@@ -1,9 +1,14 @@
 #![allow(unused_imports, dead_code)]
 
+mod history;
 mod sync;
 mod widgets;
+// mod lens;
 
-use crate::widgets::{FilePath, Root, StateIdLens};
+use crate::{
+    history::History,
+    widgets::{FilePath, Hover, Layers, Root, StateIdLens},
+};
 use anyhow::{anyhow, Result};
 use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use log;
@@ -25,6 +30,7 @@ const SELECT_SRC: Selector = Selector::new("transit.edit.select-src");
 pub struct EditData {
     // we only have one graph editable at a time for now
     graph1: GraphData,
+    hover: String,
     #[data(ignore)]
     conf: EditConf,
     #[data(ignore)]
@@ -33,11 +39,14 @@ pub struct EditData {
 }
 
 #[derive(Clone)]
-struct History {
+struct Undo {
     graph: Arc<Graph>,
     hint: &'static str,
 }
 
+/// GraphData associates extra data to Graph which is not
+/// serialized. Serde does not deduplicate Arcs, so history would be a
+/// too much data?
 #[derive(Clone, Data, Lens)]
 struct GraphData {
     graph: Arc<Graph>,
@@ -45,7 +54,7 @@ struct GraphData {
     #[data(ignore)]
     path: Option<PathBuf>,
     #[data(ignore)]
-    history: Vec<History>,
+    history: History<Undo>,
 }
 
 impl EditData {
@@ -61,6 +70,7 @@ impl EditData {
                     None
                 }) // -> Option<GraphData>
                 .unwrap_or_else(|| GraphData::new()),
+            hover: String::new(),
             conf,
             select_src: false,
         }
@@ -71,16 +81,12 @@ impl EditData {
     }
 }
 
-// we need to do layout in the data here so that layout in the widget can just read the data
-// we can't update the data in update
 impl GraphData {
     pub fn new() -> Self {
         Self {
             graph: Arc::new(Graph::new("untitled")),
             path: None,
-            // we're only doing this since we aren't storing state ids
-            // in DragData, maybe make the state id a type parameter? TODO:
-            history: Vec::new(),
+            history: History::new(),
         }
     }
 
@@ -88,66 +94,63 @@ impl GraphData {
         Ok(Self {
             graph: Arc::new(Graph::import_from_file(path)?),
             path: Some(path.to_path_buf()),
-            history: Vec::new(),
+            history: History::new(),
         })
     }
 
-    // similar to lens; clone graph, pass to closure, check if
-    // different - if so, append to history and update arc
-    pub fn with_undo<F: Fn(&mut Graph)>(&mut self, f: F, hint: &'static str) {
+    // This is similar to `in_arc` for lenses; clone graph, pass to
+    // closure, then check if different. If so, update graph and
+    // append old graph to history.
+    pub fn with_undo<V, F: FnOnce(&mut Graph) -> V>(&mut self, f: F, hint: &'static str) -> V {
+        log::debug!("with_undo: {}", hint);
         let g0 = self.graph.clone();
         let g = Arc::make_mut(&mut self.graph);
-        f(g);
+        let v = f(g);
         if !g0.same(&self.graph) {
-            // TODO: limit this?
-            self.history.push(History { graph: g0, hint });
+            self.history.push(Undo { graph: g0, hint });
         } else {
             log::warn!("no change for {}!", hint);
         }
+        v
     }
 
-    //pub fn with_undo_idx()
-
-    pub fn add_state(&mut self, id: &str, parent: Option<Idx>) -> Result<()> {
-        let uid = unique_id(&self.graph, id, parent)?;
-        let g = Arc::make_mut(&mut self.graph);
-        g.add_state(transit::State::new(
-            uid.unwrap_or_else(|| id.to_string()),
-            parent,
-            None,
-            None,
-        ));
-        Ok(())
-    }
-
-    pub fn move_state(&mut self, parent: Option<Idx>, i: Idx, rect: Rect) -> Result<()> {
-        let rect = if let Some(p) = parent {
-            // we want the new rect relative to the parent, so when
-            // fitting we only use the parent size
-            let a = Size::from(self.graph.get(p).edit_data.rect.1).to_rect();
-            fit_rect(a, rect)
+    pub fn undo(&mut self) {
+        if let Some(undo) = self.history.pop() {
+            self.graph = undo.graph;
+            log::info!("undo: {}", undo.hint);
         } else {
-            rect
-        };
-
-        // we only want a new id if it's a new parent and the current
-        // id won't be unique
-        let id = {
-            let p0 = self.graph.get(i).parent;
-            if p0 != parent {
-                let id = &self.graph.get(i).id;
-                unique_id(&self.graph, id, parent)?
-            } else {
-                None
-            }
-        };
-        let s = Arc::make_mut(&mut self.graph).get_mut(i);
-        s.parent = parent;
-        if let Some(id) = id {
-            s.id = id;
+            log::warn!("no more history!");
         }
-        s.edit_data.rect = (rect.origin().into(), rect.size().into());
-        Ok(())
+    }
+
+    pub fn add_state(&mut self, parent: Option<Idx>) {
+        //let uid = unique_id(&self.graph, id, parent)?;
+        self.with_undo(
+            |g| g.add_state(transit::State::default().with_parent(parent)),
+            "add state",
+        );
+    }
+
+    pub fn move_state(&mut self, parent: Option<Idx>, i: Idx, rect: Rect) {
+        // we want the new rect relative to the parent, so when
+        // fitting we only use the parent size
+        let rect = parent
+            .map(|p| {
+                fit_rect(
+                    Size::from(self.graph.get(p).edit_data.rect.1).to_rect(),
+                    rect,
+                )
+            })
+            .unwrap_or(rect);
+
+        self.with_undo(
+            |g| {
+                let s = g.get_mut(i);
+                s.parent = parent;
+                s.edit_data.rect = (rect.origin().into(), rect.size().into());
+            },
+            "move state",
+        );
     }
 
     // TODO: unset initial with delete key?
@@ -220,20 +223,20 @@ impl GraphData {
     }
 }
 
-// make a unique id
-fn unique_id(graph: &Graph, id: &str, parent: Option<Idx>) -> Result<Option<String>> {
-    if graph.is_unique_id(parent, &id) {
-        Ok(None)
-    } else {
-        for n in 1..10 {
-            let id = format!("{}-{}", id, n);
-            if graph.is_unique_id(parent, &id) {
-                return Ok(Some(id));
-            }
-        }
-        Err(anyhow!("failed to make unique id"))
-    }
-}
+// Removing this for now.
+// fn unique_id(graph: &Graph, id: &str, parent: Option<Idx>) -> Result<Option<String>> {
+//     if graph.is_unique_id(parent, &id) {
+//         Ok(None)
+//     } else {
+//         for n in 1..10 {
+//             let id = format!("{}-{}", id, n);
+//             if graph.is_unique_id(parent, &id) {
+//                 return Ok(Some(id));
+//             }
+//         }
+//         Err(anyhow!("failed to make unique id"))
+//     }
+// }
 
 // fit rect b into a, keep a small border when fitting so the child
 // state is distinct from the parent - we should really have a
@@ -304,7 +307,28 @@ fn main() {
         .expect("launch failed");
 }
 
+// TODO: move all these into a lens module, move StateIdLens there too
+struct GraphLens;
+
+impl GraphLens {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Lens<EditData, Graph> for GraphLens {
+    fn with<V, F: FnOnce(&Graph) -> V>(&self, data: &EditData, f: F) -> V {
+        f(&data.graph1.graph)
+    }
+
+    fn with_mut<V, F: FnOnce(&mut Graph) -> V>(&self, data: &mut EditData, f: F) -> V {
+        data.graph1.with_undo(f, "lens???")
+    }
+}
+
+// we want to implicitly handle the Arc here with with_undo
 pub fn graph_lens() -> impl Lens<EditData, Arc<Graph>> {
+    //GraphLens::new()
     lens!(EditData, graph1).then(lens!(GraphData, graph))
 }
 
@@ -348,7 +372,18 @@ pub fn transition_event_lens(i: TransIdx) -> impl Lens<EditData, String> {
 fn ui_builder() -> impl Widget<EditData> {
     Flex::column()
         .cross_axis_alignment(CrossAxisAlignment::Start)
-        .with_flex_child(Scroll::new(Root::new(None)), 1.0)
+        .with_flex_child(
+            Scroll::new(
+                Layers::new()
+                    .add_layer(
+                        Hover::new().lens(lens!(EditData, hover)),
+                        // This doesn't work?
+                        Some(UnitPoint::BOTTOM_RIGHT),
+                    )
+                    .add_layer(Root::new(None), None),
+            ),
+            1.0,
+        )
         .with_child(
             // show path to hovered state, key commands, etc.
             Flex::row()
@@ -393,7 +428,7 @@ impl AppDelegate<EditData> for Delegate {
     fn command(
         &mut self,
         ctx: &mut DelegateCtx,
-        target: &Target,
+        target: Target,
         cmd: &Command,
         data: &mut EditData,
         _env: &Env,
@@ -432,7 +467,7 @@ impl AppDelegate<EditData> for Delegate {
                     }
                     Err(_) => {
                         dbg!("submit SHOW_OPEN_PANEL");
-                        ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, *target);
+                        ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, target);
                     }
                 };
                 false
@@ -450,7 +485,7 @@ impl AppDelegate<EditData> for Delegate {
                             path
                         } else {
                             // else present the save panel
-                            ctx.submit_command(druid::commands::SHOW_SAVE_PANEL, *target);
+                            ctx.submit_command(druid::commands::SHOW_SAVE_PANEL, target);
                             return false;
                         }
                     }
@@ -465,11 +500,14 @@ impl AppDelegate<EditData> for Delegate {
             &SELECT_SRC => {
                 dbg!("SELECT_SRC recv");
                 data.select_src = true;
-                ctx.submit_command(druid::commands::OPEN_FILE, *target);
+                ctx.submit_command(druid::commands::OPEN_FILE, target);
+                false
+            }
+            &druid::commands::UNDO => {
+                data.graph1.undo();
                 false
             }
             // TODO:
-            &druid::commands::UNDO => false,
             &druid::commands::REDO => false,
             _ => true,
         }
@@ -512,9 +550,7 @@ pub(crate) fn handle_key(
         k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
         k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => ctx.focus_prev(),
         k_e if HotKey::new(None, "n").matches(k_e) => {
-            if let Err(err) = data.graph1.add_state("untitled", idx) {
-                log::error!("error on adding state: {}", err);
-            }
+            data.graph1.add_state(idx);
             ctx.set_handled();
         }
         // step initial type
@@ -542,6 +578,9 @@ pub(crate) fn handle_key(
                 // FIX: have to hit q twice here
                 ctx.submit_command(druid::commands::SAVE_FILE, None);
             }
+        }
+        k_e if HotKey::new(None, "u").matches(k_e) => {
+            ctx.submit_command(druid::commands::UNDO, None)
         }
         _ => {
             log::info!("unhandled key: {:?}", event);

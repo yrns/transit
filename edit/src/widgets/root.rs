@@ -215,6 +215,7 @@ impl Widget<EditData> for Root {
                     ctx.request_focus();
                 }
             }
+            // Remove this? Or fix it.
             Event::Command(cmd) if cmd.selector == ROOT_FOCUS => {
                 ctx.request_focus();
                 return;
@@ -225,16 +226,12 @@ impl Widget<EditData> for Root {
                 let drag = cmd.get_object::<DragData>().unwrap();
                 match drag.ty {
                     DragType::MoveState(idx) => {
-                        if let Err(err) = data.graph1.move_state(self.sid, idx, drag.rect1) {
-                            log::error!("error on drag: {}", err);
-                        }
+                        data.graph1.move_state(self.sid, idx, drag.rect1);
                     }
                     DragType::ResizeState(idx) => {
                         // just set rect for resizes, use same parent
                         let p = data.graph1.graph[idx].parent;
-                        if let Err(err) = data.graph1.move_state(p, idx, drag.rect1) {
-                            log::error!("error on drag: {}", err);
-                        }
+                        data.graph1.move_state(p, idx, drag.rect1);
                     }
                     DragType::MoveInitial(idx) => {
                         // if the drag id is our initial widget id, we are moving the widget
@@ -310,14 +307,14 @@ impl Widget<EditData> for Root {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
-            LifeCycle::FocusChanged(focus) => {
-                if !focus && self.is_root() {
-                    // make sure the root widget always has focus -
-                    // this will break with multiple graphs/windows
-                    // FIX:?
-                    ctx.submit_command(ROOT_FOCUS, None);
-                }
-            }
+            // This no longer works since ancestor nodes do not get
+            // this event anymore.
+            // LifeCycle::FocusChanged(focus) => {
+            //     if !focus && self.is_root() {
+            //         ctx.submit_command(ROOT_FOCUS, None);
+            //     }
+            // }
+
             // LifeCycle::RouteFocusChanged { old, new } => {
             //     // only the root root gets focus
             //     log::info!(
@@ -339,16 +336,39 @@ impl Widget<EditData> for Root {
             .for_each(|w| w.lifecycle(ctx, event, data, env));
     }
 
+    // Every root widget gets an update every time any state or
+    // transition changes. We need a better strategy to pare down the
+    // updates.
+
     // TODO: in order to raise states and work with undo we need to
     // store the z order in the data, raise a state when it's focused
     // or moved, and resort the widgets by z in update
-    fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &EditData, data: &EditData, env: &Env) {
+    fn update(&mut self, ctx: &mut UpdateCtx, old_data: &EditData, data: &EditData, env: &Env) {
+        let mut layout = false;
+
         self.states
             .iter_mut()
             // Don't update widgets that are about to be removed. The
             // lens indexing will panic.
             .filter(|(i, _)| data.graph1.graph.contains_state(**i))
-            .map(|(_, w)| w)
+            .map(|(i, w)| {
+                // The side effect here is requesting layout if the
+                // size has changed, setting the layout rect if the
+                // size or position has changed, or requesting a
+                // repaint for the old and new positions if it's
+                // moved.
+                let (p0, s0) = old_data.graph1.graph[*i].edit_data.rect;
+                let (p1, s1) = data.graph1.graph[*i].edit_data.rect;
+                if p0 != p1 || s0 != s1 {
+                    // Does this just repaint everything anyway? This
+                    // will set the new layout rect.
+                    //ctx.request_layout();
+                    layout = true;
+                    //ctx.request_paint_rect(Rect::from_origin_size(p0, s0));
+                    //ctx.request_paint_rect(Rect::from_origin_size(p1, s1));
+                }
+                w
+            })
             .chain(
                 self.transitions
                     .iter_mut()
@@ -358,13 +378,18 @@ impl Widget<EditData> for Root {
             )
             .for_each(|w| w.update(ctx, data, env));
 
+        // Something moved.
+        if layout {
+            ctx.request_layout();
+        }
+
         // TODO: we want to actually move widgets with deep
         // hierarchies rather than recreate them when moved?
         if self.sync(data) {
             ctx.children_changed();
             // why? seems like the above should repaint, the list widget does not do this
             // I think this got fixed with the last druid update?
-            ctx.request_paint();
+            //ctx.request_paint();
         }
 
         if self.states.len() > 0 {
