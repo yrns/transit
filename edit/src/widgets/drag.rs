@@ -210,10 +210,12 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &T, env: &Env) {
         if let Some(handle) = self.handle.as_mut() {
-            match event {
-                LifeCycle::WidgetAdded => {}
-                _ => (),
-            }
+            // match event {
+            //     LifeCycle::WidgetAdded => {
+            //         dbg!(ctx.widget_id());
+            //     }
+            //     _ => (),
+            // }
             handle.lifecycle(ctx, event, data, env);
         }
         self.inner.lifecycle(ctx, event, data, env)

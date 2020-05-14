@@ -44,7 +44,7 @@ impl Lens<Graph, String> for StateIdLens {
 pub struct State {
     id: WidgetId,
     // should be state index? sidx? si?
-    pub sid: Idx,
+    sid: Idx,
     layers: Layers<EditData>,
     //header: WidgetPod<EditData, Flex<EditData>>,
     //header: Flex<EditData>,
@@ -132,13 +132,28 @@ impl Widget<EditData> for State {
                     None,
                 );
             }
+            Event::Command(cmd) if cmd.selector == FOCUS_STATE => {
+                let i = cmd.get_object::<Idx>().unwrap();
+                // Have to check the index otherwise all descendant
+                // states will request focus too.
+                if *i == self.sid {
+                    ctx.request_focus();
+                }
+            }
             _ => (),
         }
     }
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &EditData, env: &Env) {
         match event {
-            LifeCycle::WidgetAdded => ctx.register_for_focus(),
+            LifeCycle::WidgetAdded => {
+                ctx.register_for_focus();
+                // We can't request focus here so we have to submit an
+                // event to ourselves.
+                if data.graph1.retain_focus == Some(self.sid) {
+                    ctx.submit_command(Command::new(FOCUS_STATE, self.sid), ctx.widget_id());
+                }
+            }
             LifeCycle::HotChanged(_) | LifeCycle::FocusChanged(_) => ctx.request_paint(),
             _ => (),
         }

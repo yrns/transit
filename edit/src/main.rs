@@ -35,6 +35,7 @@ pub struct EditData {
     conf: EditConf,
     #[data(ignore)]
     // TODO: which graph, if/when applicable
+    // move to GraphData?
     select_src: bool,
 }
 
@@ -55,6 +56,12 @@ struct GraphData {
     path: Option<PathBuf>,
     #[data(ignore)]
     history: History<Undo>,
+    // This is to retain the focus for a state that has moved (and has
+    // a new WidgetId). This is never unset so it works for undo
+    // too. There may be some cases where this will cause problems. I
+    // guess we could store focus state in the edit data.
+    #[data(ignore)]
+    retain_focus: Option<Idx>,
 }
 
 impl EditData {
@@ -87,6 +94,7 @@ impl GraphData {
             graph: Arc::new(Graph::new("untitled")),
             path: None,
             history: History::new(),
+            retain_focus: None,
         }
     }
 
@@ -95,6 +103,7 @@ impl GraphData {
             graph: Arc::new(Graph::import_from_file(path)?),
             path: Some(path.to_path_buf()),
             history: History::new(),
+            retain_focus: None,
         })
     }
 
@@ -404,8 +413,10 @@ fn ui_builder() -> impl Widget<EditData> {
                     // }),
                 )
                 .padding(2.)
-                .background(Color::rgb8(0xEF, 0xEF, 0xEF)), //.debug_paint_layout(),
+                .background(Color::rgb8(0xEF, 0xEF, 0xEF)),
         )
+    //.debug_paint_layout()
+    //.debug_widget_id()
 }
 
 struct Delegate;

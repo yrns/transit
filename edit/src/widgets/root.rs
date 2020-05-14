@@ -3,12 +3,12 @@ use druid::{kurbo::*, piet::*, theme, widget::*, *};
 use flo_curves::line::{line_clip_to_bounds, Coord2, Line as _};
 use std::cmp::Ordering;
 use std::f64::consts::PI;
-use std::process::Command;
 use std::sync::Arc;
 use transit::{Graph, Idx};
 
 pub const REMOVE_TRANSITION: Selector = Selector::new("transit.edit.remove-transition");
-pub const ROOT_FOCUS: Selector = Selector::new("transit.edit.root-focus");
+pub const FOCUS_ROOT: Selector = Selector::new("transit.edit.focus-root");
+pub const FOCUS_STATE: Selector = Selector::new("transit.edit.focus-state");
 
 type Child = WidgetPod<EditData, Box<dyn Widget<EditData>>>;
 
@@ -172,7 +172,7 @@ impl Widget<EditData> for Root {
 
                     if *go {
                         if let Some(action) = action {
-                            Command::new("sh")
+                            std::process::Command::new("sh")
                                 .arg("-c")
                                 .arg(format!(
                                     "emacsclient -n --eval '(transit-edit \"{}\" \"{}\")'",
@@ -215,10 +215,10 @@ impl Widget<EditData> for Root {
                     ctx.request_focus();
                 }
             }
-            // Remove this? Or fix it.
-            Event::Command(cmd) if cmd.selector == ROOT_FOCUS => {
-                ctx.request_focus();
-                return;
+            Event::Command(cmd) if cmd.selector == FOCUS_ROOT => {
+                if self.is_root() {
+                    ctx.request_focus();
+                }
             }
             Event::Command(cmd) if cmd.selector == DRAG_END => {
                 // we are inside the deepest root widget that will
@@ -227,6 +227,11 @@ impl Widget<EditData> for Root {
                 match drag.ty {
                     DragType::MoveState(idx) => {
                         data.graph1.move_state(self.sid, idx, drag.rect1);
+                        // We cannot focus the widget because it does
+                        // not exist yet - it requires an update. We
+                        // set this here and catch focus in
+                        // `LifeCycle::WidgetAdded`.
+                        data.graph1.retain_focus = Some(idx);
                     }
                     DragType::ResizeState(idx) => {
                         // just set rect for resizes, use same parent
@@ -292,10 +297,15 @@ impl Widget<EditData> for Root {
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &EditData, env: &Env) {
         match event {
-            // since we aren't a WidgetPod (except the root) we have
-            // to accept the route event
+            LifeCycle::Internal(InternalLifeCycle::RouteFocusChanged { old: _, new }) => {
+                //log::debug!("route focus {:?} -> {:?}", old, new);
+                if new.is_none() && self.is_root() {
+                    // No reason to target this event since every root
+                    // is a descendant of us...
+                    ctx.submit_command(FOCUS_ROOT, ctx.widget_id());
+                }
+            }
             LifeCycle::WidgetAdded => {
-                //| LifeCycle::RouteWidgetAdded => {
                 if self.is_root() {
                     ctx.register_for_focus();
                 }
@@ -307,24 +317,6 @@ impl Widget<EditData> for Root {
             LifeCycle::HotChanged(_) => {
                 ctx.request_paint();
             }
-            // This no longer works since ancestor nodes do not get
-            // this event anymore.
-            // LifeCycle::FocusChanged(focus) => {
-            //     if !focus && self.is_root() {
-            //         ctx.submit_command(ROOT_FOCUS, None);
-            //     }
-            // }
-
-            // LifeCycle::RouteFocusChanged { old, new } => {
-            //     // only the root root gets focus
-            //     log::info!(
-            //         "route focus me: {:?} old: {:?}, new: {:?}",
-            //         ctx.widget_id(),
-            //         old,
-            //         new
-            //     );
-            //     self.is_focused = &Some(ctx.widget_id()) == new;
-            // }
             _ => (),
         }
 
