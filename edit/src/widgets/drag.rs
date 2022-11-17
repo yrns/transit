@@ -2,8 +2,8 @@ use crate::EditData;
 use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 use transit::{Idx, TransIdx};
 
-pub const DRAG_START: Selector = Selector::new("transit.edit.drag-start");
-pub const DRAG_END: Selector = Selector::new("transit.edit.drag-end");
+pub const DRAG_START: Selector<DragType> = Selector::new("transit.edit.drag-start");
+pub const DRAG_END: Selector<DragData> = Selector::new("transit.edit.drag-end");
 
 // TODO:? these might be useful to paint drag targets, but we'd need
 // to filter like DRAG_END to be useful
@@ -69,7 +69,7 @@ impl DragData {
 
     // wrap into an event
     pub fn to_event(self) -> Event {
-        Event::Command(Command::new(DRAG_END, self))
+        Event::Command(DRAG_END.with(self))
     }
 }
 
@@ -138,8 +138,8 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
         }
 
         match event {
-            Event::Command(cmd) if cmd.selector == DRAG_START => {
-                let ty = cmd.get_object::<DragType>().unwrap().clone();
+            Event::Command(cmd) if cmd.is(DRAG_START) => {
+                let ty = cmd.get_unchecked(DRAG_START).clone();
                 self.drag = Some(new_drag(ctx, self.handle_p0, ty));
                 return;
             }
@@ -174,7 +174,7 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
                         //DragType::MoveInitial(_) => Target::Widget(ctx.widget_id()),
                         _ => Target::Global,
                     };
-                    ctx.submit_command(Command::new(DRAG_END, drag), target);
+                    ctx.submit_command(Command::new(DRAG_END, drag, target));
                     ctx.set_active(false);
                 }
             }
@@ -238,7 +238,7 @@ impl<T: Data, W: Widget<T>> Widget<T> for Drag<T, W> {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &T, env: &Env) {
-        self.inner.paint_with_offset(ctx, data, env);
+        self.inner.paint(ctx, data, env);
 
         // paint on top
         if let Some(handle) = self.handle.as_mut() {
@@ -274,7 +274,7 @@ impl<T: Data> Widget<T> for Resizer {
         match event {
             Event::MouseDown(mouse) => {
                 // this tells the drag widget to start resize via handle
-                ctx.submit_command(Command::new(DRAG_START, (self.ty)(mouse)), self.drag_id);
+                ctx.submit_command(Command::new(DRAG_START, (self.ty)(mouse), self.drag_id));
                 ctx.set_handled();
                 ctx.set_active(true);
                 ctx.request_paint();

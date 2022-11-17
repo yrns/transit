@@ -67,18 +67,20 @@ impl Widget<transit::Transition> for Transition {
                 if ctx.is_focused() {
                     match e {
                         // focus endpoint a
-                        e if HotKey::new(None, KeyCode::Backspace).matches(e) => todo!(),
+                        e if HotKey::new(None, KbKey::Backspace).matches(e) => todo!(),
                         // remove transition
-                        e if HotKey::new(None, KeyCode::Delete).matches(e) => {
-                            ctx.submit_command(Command::new(REMOVE_TRANSITION, self.idx), None)
+                        e if HotKey::new(None, KbKey::Delete).matches(e) => {
+                            ctx.submit_command(Command::new(
+                                REMOVE_TRANSITION,
+                                self.idx,
+                                Target::Auto,
+                            ));
                         }
                         // toggle internal (if self)
                         e if HotKey::new(None, "i").matches(e) => todo!(),
-                        e if HotKey::new(None, KeyCode::Escape).matches(e) => ctx.resign_focus(),
-                        e if HotKey::new(None, KeyCode::Tab).matches(e) => ctx.focus_next(),
-                        e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(e) => {
-                            ctx.focus_prev()
-                        }
+                        e if HotKey::new(None, KbKey::Escape).matches(e) => ctx.resign_focus(),
+                        e if HotKey::new(None, KbKey::Tab).matches(e) => ctx.focus_next(),
+                        e if HotKey::new(RawMods::Shift, KbKey::Tab).matches(e) => ctx.focus_prev(),
 
                         _ => log::info!("unhandled key: {:?}", e),
                     }
@@ -87,10 +89,11 @@ impl Widget<transit::Transition> for Transition {
             }
             Event::MouseMove(_mouse) => {
                 //log::debug!("mouse in {:?}", ctx.widget_id());
-                ctx.submit_command(
-                    Command::new(UPDATE_HOVER, format!("transition: {:?}", ctx.widget_id())),
-                    None,
-                );
+                ctx.submit_command(Command::new(
+                    UPDATE_HOVER,
+                    format!("transition: {:?}", ctx.widget_id()),
+                    Target::Auto,
+                ));
                 ctx.set_handled();
             }
             _ => (),

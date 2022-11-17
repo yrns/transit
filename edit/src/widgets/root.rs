@@ -6,7 +6,7 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 use transit::{Graph, Idx};
 
-pub const REMOVE_TRANSITION: Selector = Selector::new("transit.edit.remove-transition");
+pub const REMOVE_TRANSITION: Selector<TransIdx> = Selector::new("transit.edit.remove-transition");
 pub const FOCUS_ROOT: Selector = Selector::new("transit.edit.focus-root");
 pub const FOCUS_STATE: Selector = Selector::new("transit.edit.focus-state");
 
@@ -87,7 +87,7 @@ impl Widget<EditData> for Root {
 
         // recurse first, with special cases:
         match event {
-            Event::Command(cmd) if cmd.selector == RESET => {
+            Event::Command(cmd) if cmd.is(RESET) => {
                 //data.reset();
                 self.states.clear();
                 ctx.children_changed();
@@ -95,8 +95,8 @@ impl Widget<EditData> for Root {
                 //ctx.request_paint();
                 return;
             }
-            Event::Command(cmd) if cmd.selector == REMOVE_TRANSITION => {
-                let i = cmd.get_object::<TransIdx>().unwrap();
+            Event::Command(cmd) if cmd.is(REMOVE_TRANSITION) => {
+                let i = cmd.get_unchecked(REMOVE_TRANSITION);
                 data.graph1.with_undo(
                     |g| {
                         if g.remove_transition(*i).is_none() {
@@ -109,8 +109,8 @@ impl Widget<EditData> for Root {
             }
             // transform drag end event for children, like WidgetPod
             // does for mouse events
-            Event::Command(cmd) if cmd.selector == DRAG_END => {
-                let drag = cmd.get_object::<DragData>().unwrap();
+            Event::Command(cmd) if cmd.is(DRAG_END) => {
+                let drag = cmd.get_unchecked(DRAG_END);
 
                 if let DragType::MoveTransition(_) = drag.ty {
                     // don't transform these, they are only for the root widget
@@ -132,8 +132,8 @@ impl Widget<EditData> for Root {
             // since there's no other unique identifier - maybe just
             // do the same for states rather than have unique
             // (editable) ids?
-            Event::Command(cmd) if cmd.selector == SET_ACTION => {
-                let (a, go) = cmd.get_object::<(ActionType, bool)>().unwrap();
+            Event::Command(cmd) if cmd.is(SET_ACTION) => {
+                let (a, go) = cmd.get_unchecked(SET_ACTION);
                 let g = &data.graph1.graph;
                 // clone so it's not borrowed
                 if let Some(src) = &g.edit_data.src.0.clone() {
@@ -215,15 +215,22 @@ impl Widget<EditData> for Root {
                     ctx.request_focus();
                 }
             }
-            Event::Command(cmd) if cmd.selector == FOCUS_ROOT => {
-                if self.is_root() {
-                    ctx.request_focus();
-                }
+            Event::Command(cmd) if cmd.is(FOCUS_ROOT) => {
+                log::debug!(
+                    "{} {:?} {}",
+                    self.is_root(),
+                    ctx.widget_id(),
+                    ctx.is_handled()
+                );
+                //if self.is_root() {
+                ctx.request_focus();
+                //}
+                ctx.set_handled();
             }
-            Event::Command(cmd) if cmd.selector == DRAG_END => {
+            Event::Command(cmd) if cmd.is(DRAG_END) => {
                 // we are inside the deepest root widget that will
                 // accept this drag
-                let drag = cmd.get_object::<DragData>().unwrap();
+                let drag = cmd.get_unchecked(DRAG_END);
                 match drag.ty {
                     DragType::MoveState(idx) => {
                         data.graph1.move_state(self.sid, idx, drag.rect1);
@@ -297,12 +304,10 @@ impl Widget<EditData> for Root {
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &EditData, env: &Env) {
         match event {
-            LifeCycle::Internal(InternalLifeCycle::RouteFocusChanged { old: _, new }) => {
-                //log::debug!("route focus {:?} -> {:?}", old, new);
+            LifeCycle::Internal(InternalLifeCycle::RouteFocusChanged { old, new }) => {
+                log::debug!("{:?} route focus {:?} -> {:?}", ctx.widget_id(), old, new);
                 if new.is_none() && self.is_root() {
-                    // No reason to target this event since every root
-                    // is a descendant of us...
-                    ctx.submit_command(FOCUS_ROOT, ctx.widget_id());
+                    ctx.submit_command(FOCUS_ROOT);
                 }
             }
             LifeCycle::WidgetAdded => {
@@ -320,9 +325,10 @@ impl Widget<EditData> for Root {
             _ => (),
         }
 
-        if self.states.len() > 0 {
-            self.initial.lifecycle(ctx, event, data, env);
-        }
+        // WidgetAdded needs to propagate no matter.
+        //if self.states.len() > 0 {
+        self.initial.lifecycle(ctx, event, data, env);
+        //}
 
         self.children_mut()
             .for_each(|w| w.lifecycle(ctx, event, data, env));
@@ -427,11 +433,11 @@ impl Widget<EditData> for Root {
             // }
             // tuple -> Rect - can't index by ref?
             let rect = to_rect(g[*idx].edit_data.rect);
-            state.set_layout_rect(ctx, data, env, rect);
             let child_bc = BoxConstraints::tight(rect.size());
             // we were using this to make the state smaller, but we're
             // not anymore
             let _child_size = state.layout(ctx, &child_bc, data, env);
+            state.set_origin(ctx, data, env, rect.origin());
             //min_rect = min_rect.union(rect);
         }
 
@@ -477,7 +483,7 @@ impl Widget<EditData> for Root {
 
         self.states
             .values_mut()
-            .for_each(|w| w.paint_with_offset(ctx, data, env));
+            .for_each(|w| w.paint(ctx, data, env));
 
         let arrow = arrow(8., 12.);
 
@@ -525,7 +531,7 @@ impl Widget<EditData> for Root {
         // draw transition widgets over the connection curves
         self.transitions
             .values_mut()
-            .for_each(|w| w.paint_with_offset(ctx, data, env));
+            .for_each(|w| w.paint(ctx, data, env));
 
         // don't paint initial if we have no children
         if self.states.len() > 0 {
@@ -542,7 +548,7 @@ impl Widget<EditData> for Root {
                 let b: Vec2 = b.into();
                 ctx.fill(orient_arrow(arrow.clone(), a.to_vec2(), b), &color);
             }
-            self.initial.paint_with_offset(ctx, data, env);
+            self.initial.paint(ctx, data, env);
         }
 
         if clip {

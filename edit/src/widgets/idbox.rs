@@ -1,7 +1,7 @@
 use crate::{widgets::*, *};
 use druid::{kurbo::*, lens, lens::*, piet::*, theme, widget::*, *};
 
-const COPY_BACK: Selector = Selector::new("transit.edit.idbox.copy-back");
+const COPY_BACK: Selector<String> = Selector::new("transit.edit.idbox.copy-back");
 
 // This is a label that turns into a textbox for editing.
 pub struct IdBox {
@@ -21,8 +21,8 @@ impl IdBox {
 impl Widget<String> for IdBox {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut String, env: &Env) {
         match event {
-            Event::Command(cmd) if cmd.selector == COPY_BACK => {
-                *data = cmd.get_object::<String>().unwrap().clone();
+            Event::Command(cmd) if cmd.is(COPY_BACK) => {
+                *data = cmd.get_unchecked(COPY_BACK).clone();
             }
             _ => (),
         }
@@ -42,7 +42,7 @@ impl Widget<String> for IdBox {
         if had_focus != self.either.has_focus {
             if had_focus {
                 // we cannot update data here, so bounce the new data back through an event
-                ctx.submit_command(Command::new(COPY_BACK, self.data.clone()), ctx.widget_id());
+                ctx.submit_command(Command::new(COPY_BACK, self.data.clone(), ctx.widget_id()));
             } else {
                 self.data = data.clone();
             }

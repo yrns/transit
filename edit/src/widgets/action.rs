@@ -10,7 +10,7 @@ use transit::{Graph, Idx, TransIdx};
 
 const ACTION: &str = "M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z";
 
-pub const SET_ACTION: Selector = Selector::new("transit.edit.set-action");
+pub const SET_ACTION: Selector<(ActionType, bool)> = Selector::new("transit.edit.set-action");
 
 #[derive(Copy, Clone)]
 pub enum ActionType {
@@ -41,14 +41,18 @@ impl Widget<Option<String>> for Action {
                 if mouse.button == MouseButton::Left {
                     // toggle action on (if off) and jump to action in
                     // source file
-                    ctx.submit_command(Command::new(SET_ACTION, (self.ty, true)), None);
+                    ctx.submit_command(Command::new(SET_ACTION, (self.ty, true), Target::Global));
                 } else if mouse.button == MouseButton::Right {
                     // toggle action
                     if data.is_some() {
                         // TODO: this can't be undone? need to build with_undo into the lens
                         *data = None;
                     } else {
-                        ctx.submit_command(Command::new(SET_ACTION, (self.ty, false)), None);
+                        ctx.submit_command(Command::new(
+                            SET_ACTION,
+                            (self.ty, false),
+                            Target::Global,
+                        ));
                     }
                 }
                 ctx.set_active(false);

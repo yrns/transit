@@ -127,18 +127,20 @@ impl Widget<EditData> for State {
                 }
             }
             Event::MouseMove(_mouse) => {
-                ctx.submit_command(
-                    Command::new(UPDATE_HOVER, format!("state: {:?}", ctx.widget_id())),
-                    None,
-                );
+                ctx.submit_command(Command::new(
+                    UPDATE_HOVER,
+                    format!("state: {:?}", ctx.widget_id()),
+                    Target::Auto,
+                ));
             }
-            Event::Command(cmd) if cmd.selector == FOCUS_STATE => {
-                let i = cmd.get_object::<Idx>().unwrap();
+            Event::Command(cmd) if cmd.is(FOCUS_STATE) => {
+                //let i = cmd.get_object::<Idx>().unwrap();
                 // Have to check the index otherwise all descendant
                 // states will request focus too.
-                if *i == self.sid {
-                    ctx.request_focus();
-                }
+                //if *i == self.sid {
+                ctx.request_focus();
+                ctx.set_handled();
+                //}
             }
             _ => (),
         }
@@ -151,7 +153,7 @@ impl Widget<EditData> for State {
                 // We can't request focus here so we have to submit an
                 // event to ourselves.
                 if data.graph1.retain_focus == Some(self.sid) {
-                    ctx.submit_command(Command::new(FOCUS_STATE, self.sid), ctx.widget_id());
+                    ctx.submit_command(Command::new(FOCUS_STATE, (), ctx.widget_id()));
                 }
             }
             LifeCycle::HotChanged(_) | LifeCycle::FocusChanged(_) => ctx.request_paint(),

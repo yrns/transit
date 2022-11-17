@@ -240,20 +240,20 @@ fn mk_door() -> Result<Statechart<Door>> {
 
     let mut g = Graph::new("door");
 
-    let intact = g.add_state(State::new("intact", None, Some("intact_entry"), None))?;
-    let locked = g.add_state(State::new("locked", Some(intact), None, None))?;
+    let intact = g.add_state(State::new("intact", None, Some("intact_entry"), None));
+    let locked = g.add_state(State::new("locked", Some(intact), None, None));
     let closed = g.add_state(State::new(
         "closed",
         Some(intact),
         Some("closed_entry"),
         None,
-    ))?;
-    let open = g.add_state(State::new("open", Some(intact), Some("open_entry"), None))?;
-    let destroyed = g.add_state(State::new("destroyed", None, Some("destroyed_entry"), None))?;
+    ));
+    let open = g.add_state(State::new("open", Some(intact), Some("open_entry"), None));
+    let destroyed = g.add_state(State::new("destroyed", None, Some("destroyed_entry"), None));
 
     // make it default to the first added state?
-    g.set_initial(intact)?;
-    g.get_mut(intact).set_initial(Initial::Initial(locked))?;
+    g.set_initial(intact);
+    g.get_mut(intact).set_initial(Initial::Initial(locked));
 
     g.add_transition(
         intact,

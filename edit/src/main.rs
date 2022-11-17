@@ -296,7 +296,7 @@ fn main() {
     AppLauncher::with_window(main_window)
         // black on white
         .configure_env(|env, _| {
-            env.set(theme::FONT_NAME, "serif");
+            env.set(theme::UI_FONT, FontDescriptor::default().with_size(12.0));
             env.set(theme::SELECTION_COLOR, Color::rgb8(0xA6, 0xCC, 0xFF));
             env.set(theme::WINDOW_BACKGROUND_COLOR, Color::WHITE);
             env.set(theme::LABEL_COLOR, Color::BLACK);
@@ -346,7 +346,7 @@ pub(crate) fn graph_id_lens() -> impl Lens<EditData, String> {
 }
 
 pub(crate) fn state_lens(i: Idx) -> impl Lens<EditData, Arc<transit::State>> {
-    graph_lens().then(lens::Id.index(i).in_arc())
+    graph_lens().then(lens::Identity.index(i).in_arc())
 }
 
 pub(crate) fn state_id_lens(i: Idx) -> impl Lens<EditData, String> {
@@ -371,7 +371,7 @@ pub fn graph_src_lens() -> impl Lens<EditData, transit::PathData> {
 
 // indexing with transitions doesn't return an Arc, testing this out
 pub fn transition_lens(i: TransIdx) -> impl Lens<EditData, transit::Transition> {
-    graph_lens().then(lens::Id.index(i).in_arc())
+    graph_lens().then(lens::Identity.index(i).in_arc())
 }
 
 pub fn transition_event_lens(i: TransIdx) -> impl Lens<EditData, String> {
@@ -436,83 +436,71 @@ impl AppDelegate<EditData> for Delegate {
     fn command(
         &mut self,
         ctx: &mut DelegateCtx,
-        target: Target,
+        _target: Target,
         cmd: &Command,
         data: &mut EditData,
         _env: &Env,
-    ) -> bool {
-        match &cmd.selector {
-            &druid::commands::NEW_FILE => {
+    ) -> Handled {
+        match cmd {
+            _ if cmd.is(druid::commands::NEW_FILE) => {
                 // TODO: save unsaved changes? no modals
                 data.reset();
-                ctx.submit_command(RESET, None);
-                false
+                ctx.submit_command(RESET);
+                Handled::Yes
             }
-            &druid::commands::OPEN_FILE => {
+            _ if cmd.is(druid::commands::OPEN_FILE) => {
                 // the command contains the path from the open panel
-                match cmd.get_object::<FileInfo>() {
-                    Ok(f) => {
-                        if data.select_src {
-                            // update source file for graph
-                            data.graph1.with_undo(
-                                |g| g.edit_data.src = PathData::new(Some(f.path().to_path_buf())),
-                                "select src",
-                            );
-                            data.select_src = false;
-                        } else {
-                            // open new graph
-                            match GraphData::from_path(f.path()) {
-                                Ok(g) => {
-                                    data.graph1 = g;
-                                    ctx.submit_command(RESET, None);
-                                }
-                                Err(e) => log::error!("failed to import graph: {:?}", e),
-                            }
+                let f = cmd.get_unchecked(druid::commands::OPEN_FILE);
+                if data.select_src {
+                    // update source file for graph
+                    data.graph1.with_undo(
+                        |g| g.edit_data.src = PathData::new(Some(f.path().to_path_buf())),
+                        "select src",
+                    );
+                    data.select_src = false;
+                } else {
+                    // open new graph
+                    match GraphData::from_path(f.path()) {
+                        Ok(g) => {
+                            data.graph1 = g;
+                            ctx.submit_command(RESET);
                         }
+                        Err(e) => log::error!("failed to import graph: {:?}", e),
                     }
-                    Err(_) => {
-                        ctx.submit_command(druid::commands::SHOW_OPEN_PANEL, target);
-                    }
-                };
-                false
+                }
+                Handled::Yes
             }
-            &druid::commands::SAVE_FILE => {
-                // the command contains the path from the "save as" panel
-                let path = match cmd.get_object::<FileInfo>() {
-                    Ok(f) => {
-                        data.graph1.path = Some(f.path().to_path_buf());
-                        f.path()
-                    }
-                    // else use the path stored in the edit data
-                    Err(_) => {
-                        if let Some(ref path) = data.graph1.path {
-                            path
-                        } else {
-                            // else present the save panel
-                            ctx.submit_command(druid::commands::SHOW_SAVE_PANEL, target);
-                            return false;
-                        }
-                    }
-                };
-
-                if let Err(e) = data.graph1.graph.export_to_file(path) {
+            _ if cmd.is(druid::commands::SAVE_FILE_AS) => {
+                let f = cmd.get_unchecked(druid::commands::SAVE_FILE_AS);
+                data.graph1.path = Some(f.path().to_path_buf());
+                if let Err(e) = data.graph1.graph.export_to_file(f.path()) {
                     log::error!("failed to export graph: {:?}", e);
                 }
-
-                false
+                Handled::Yes
             }
-            &SELECT_SRC => {
+            _ if cmd.is(druid::commands::SAVE_FILE) => {
+                if let Some(ref path) = data.graph1.path {
+                    if let Err(e) = data.graph1.graph.export_to_file(path) {
+                        log::error!("failed to export graph: {:?}", e);
+                    }
+                } else {
+                    // else present the save panel
+                    ctx.submit_command(druid::commands::SHOW_SAVE_PANEL.with(Default::default()));
+                }
+                Handled::Yes
+            }
+            _ if cmd.is(SELECT_SRC) => {
                 data.select_src = true;
-                ctx.submit_command(druid::commands::OPEN_FILE, target);
-                false
+                ctx.submit_command(druid::commands::SHOW_OPEN_PANEL.with(Default::default()));
+                Handled::Yes
             }
-            &druid::commands::UNDO => {
+            _ if cmd.is(druid::commands::UNDO) => {
                 data.graph1.undo();
-                false
+                Handled::Yes
             }
             // TODO:
-            &druid::commands::REDO => false,
-            _ => true,
+            _ if cmd.is(druid::commands::REDO) => Handled::Yes,
+            _ => Handled::No,
         }
     }
 }
@@ -532,11 +520,11 @@ pub(crate) fn handle_key(
             // TODO:
         }
         // Backspace focuses parent?
-        k_e if (HotKey::new(None, KeyCode::Backspace)).matches(k_e) => {
+        k_e if (HotKey::new(None, KbKey::Backspace)).matches(k_e) => {
             // TODO:
         }
         // Delete this state
-        k_e if (HotKey::new(None, KeyCode::Delete)).matches(k_e) => {
+        k_e if (HotKey::new(None, KbKey::Delete)).matches(k_e) => {
             if let Some(i) = idx {
                 data.graph1.with_undo(
                     |g| {
@@ -548,10 +536,10 @@ pub(crate) fn handle_key(
                 )
             }
         }
-        k_e if HotKey::new(None, KeyCode::Escape).matches(k_e) => ctx.resign_focus(),
+        k_e if HotKey::new(None, KbKey::Escape).matches(k_e) => ctx.resign_focus(),
         // Tab and shift+tab change focus to child states
-        k_e if HotKey::new(None, KeyCode::Tab).matches(k_e) => ctx.focus_next(),
-        k_e if HotKey::new(RawMods::Shift, KeyCode::Tab).matches(k_e) => ctx.focus_prev(),
+        k_e if HotKey::new(None, KbKey::Tab).matches(k_e) => ctx.focus_next(),
+        k_e if HotKey::new(RawMods::Shift, KbKey::Tab).matches(k_e) => ctx.focus_prev(),
         k_e if HotKey::new(None, "n").matches(k_e) => {
             data.graph1.add_state(idx);
             ctx.set_handled();
@@ -576,15 +564,13 @@ pub(crate) fn handle_key(
                 if let Err(e) = data.graph1.graph.export_to_file(&path) {
                     log::error!("failed to export graph: {:?}", e);
                 }
-                ctx.submit_command(druid::commands::QUIT_APP, None);
+                ctx.submit_command(druid::commands::QUIT_APP);
             } else {
                 // FIX: have to hit q twice here
-                ctx.submit_command(druid::commands::SAVE_FILE, None);
+                ctx.submit_command(druid::commands::SAVE_FILE);
             }
         }
-        k_e if HotKey::new(None, "u").matches(k_e) => {
-            ctx.submit_command(druid::commands::UNDO, None)
-        }
+        k_e if HotKey::new(None, "u").matches(k_e) => ctx.submit_command(druid::commands::UNDO),
         _ => {
             log::info!("unhandled key: {:?}", event);
         }
@@ -638,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_arc() {
-        let lens = lens::Id.index(2).in_arc();
+        let lens = lens::Identity.index(2).in_arc();
         let mut x = Arc::new(vec![0, 1, 2, 3]);
         let original = x.clone();
         assert_eq!(lens.get(&x), 2);
@@ -657,7 +643,7 @@ mod tests {
         use druid::lens::Field;
 
         let tuple0 = Field::new(|a: &(usize, usize)| &a.0, |a| &mut a.0);
-        let lens = lens::Id.index(2).in_arc().then(tuple0);
+        let lens = lens::Identity.index(2).in_arc().then(tuple0);
         let mut x = Arc::new(vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
         let original = x.clone();
         assert_eq!(lens.get(&x), 2);
@@ -677,7 +663,10 @@ mod tests {
         let id = g.add_state("child1");
         let mut g = Arc::new(g);
         let original = g.clone();
-        let lens = lens::Id.index(id).in_arc().then(lens!(State, id).in_arc());
+        let lens = lens::Identity
+            .index(id)
+            .in_arc()
+            .then(lens!(State, id).in_arc());
         assert_eq!(lens.get(&g), "child1");
 
         lens.put(&mut g, "child1".to_string());

@@ -4,7 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 use transit::Idx;
 
-pub const UPDATE_HOVER: Selector = Selector::new("transit.edit.update-hover");
+pub const UPDATE_HOVER: Selector<String> = Selector::new("transit.edit.update-hover");
 
 pub struct Hover {
     label: WidgetPod<String, Box<dyn Widget<String>>>,
@@ -23,8 +23,8 @@ impl Hover {
 impl Widget<String> for Hover {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut String, env: &Env) {
         match event {
-            Event::Command(cmd) if cmd.selector == UPDATE_HOVER => {
-                *data = cmd.get_object::<String>().unwrap().clone();
+            Event::Command(cmd) if cmd.is(UPDATE_HOVER) => {
+                *data = cmd.get_unchecked(UPDATE_HOVER).clone();
                 // we need layout too?
                 ctx.request_paint();
                 return;

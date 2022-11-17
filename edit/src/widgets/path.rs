@@ -27,7 +27,7 @@ impl Widget<PathData> for FilePath {
         match event {
             Event::Timer(id) => {
                 if *id == self.timer_id {
-                    ctx.submit_command(SELECT_SRC, None);
+                    ctx.submit_command(SELECT_SRC);
                 }
             }
             Event::MouseDown(e) => {
