@@ -1,11 +1,7 @@
 ///! this is a door
-use anyhow::{anyhow, Result};
-use once_cell::sync::Lazy;
 use rustyline::error::ReadlineError;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::mem::{discriminant, Discriminant};
-use transit::{ActionFn, Context, Graph, Initial, State, Statechart, Transition};
+use transit::{Context, Graph, Internal, State, Statechart, Transition};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct HitPoints {
@@ -34,155 +30,220 @@ enum DoorEvent {
     Bash(Attack),
 }
 
-// macro?
-static EVENT_MAP: Lazy<HashMap<&'static str, Discriminant<DoorEvent>>> = Lazy::new(|| {
-    let mut m = HashMap::new();
-    m.insert("lock", discriminant(&DoorEvent::Lock(None)));
-    m.insert("unlock", discriminant(&DoorEvent::Unlock(None)));
-    m.insert("open", discriminant(&DoorEvent::Open));
-    m.insert("close", discriminant(&DoorEvent::Close));
-    m.insert(
-        "bash",
-        discriminant(&DoorEvent::Bash(Attack { damage: 0. })),
-    );
-    m
-});
-
-static ACTION_MAP: Lazy<HashMap<&'static str, ActionFn<Door, DoorEvent>>> = Lazy::new(|| {
-    let mut m = HashMap::<&'static str, ActionFn<Door, DoorEvent>>::new();
-    m.insert("intact_entry", |c, e| Door::intact_entry(c, e));
-    m.insert("closed_entry", |c, e| Door::closed_entry(c, e));
-    m.insert("open_entry", |c, e| Door::open_entry(c, e));
-    m.insert("destroyed_entry", |c, e| Door::destroyed_entry(c, e));
-    m.insert("bash_guard_self", |c, e| Door::bash_guard_self(c, e));
-    m.insert("bash_guard", |c, e| Door::bash_guard(c, e));
-    m.insert("lock_guard", |c, e| Door::lock_guard(c, e));
-    m.insert("unlock_guard", |c, e| Door::unlock_guard(c, e));
-    m
-});
-
 impl Context for Door {
     type Event = DoorEvent;
+    type State = DoorState;
+    type Transition = DoorGuard;
 
-    // fn events() -> &'static HashMap<&'static str, Discriminant<Self::Event>> {
-    //     &EVENT_MAP
-    // }
-
-    // fn actions() -> &'static HashMap<&'static str, ActionFn<Self, Self::Event>> {
-    //     &ACTION_MAP
-    // }
-
-    fn event(event: &str) -> Discriminant<DoorEvent> {
-        // TODO: unwrap
-        *EVENT_MAP.get(event).expect("missing event")
+    fn dispatch(&mut self, event: &Self::Event) {
+        println!("dispatching {:?} old context: {:?}", event, self);
     }
 
-    fn action(action: &str) -> &ActionFn<Self, Self::Event> {
-        // TODO: unwrap
-        ACTION_MAP.get(action).expect("missing action")
+    fn transition(&mut self, source: &Self::State, target: &Self::State) {
+        println!(
+            "transitioned: {} -> {} new context: {:?}",
+            source, target, self
+        );
     }
 }
 
-impl Door {
-    fn intact_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
-        println!("You are in front of a large wooden door.");
-        Ok(())
+// The default is only used for the root state.
+#[derive(Clone, Debug, Default)]
+enum DoorState {
+    #[default]
+    None,
+    Intact,
+    Locked,
+    Closed,
+    Open,
+    Destroyed,
+}
+
+impl std::fmt::Display for DoorState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DoorState::None => "???",
+            DoorState::Intact => "intact",
+            DoorState::Locked => "locked",
+            DoorState::Closed => "closed",
+            DoorState::Open => "open",
+            DoorState::Destroyed => "destroyed",
+        })
     }
+}
 
-    fn closed_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
-        // it only makes sense to print this if we're coming from open
-        //println!("The door is now closed.");
-        Ok(())
-    }
-
-    fn open_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
-        println!("The door is now open.");
-        Ok(())
-    }
-
-    fn destroyed_entry(&mut self, _event: Option<&DoorEvent>) -> Result<()> {
-        println!("The door shatters into many pieces.");
-        Ok(())
-    }
-
-    // so we need an id for transitions? bash1_bash_guard in case there are multiple?
-    fn bash_guard(&mut self, event: Option<&DoorEvent>) -> Result<()> {
-        if let Some(DoorEvent::Bash(attack)) = event {
-            let new_hp = self.hit_points.current - attack.damage;
-
-            if new_hp <= 0. {
-                // destroyed
-                self.hit_points.current = 0.;
-                Ok(())
-            } else {
-                Err(anyhow!("guard false"))
-            }
-        } else {
-            Err(anyhow!("guard event mismatch"))
+impl State<Door> for DoorState {
+    fn enter(&mut self, _ctx: &mut Door, _event: Option<&DoorEvent>) {
+        match self {
+            DoorState::Intact => println!("You are in front of a large wooden door."),
+            // It only makes sense to print this if we're coming from open.
+            DoorState::Closed => println!("The door is now closed."),
+            DoorState::Open => println!("The door is now open."),
+            DoorState::Destroyed => println!("The door shatters into many pieces."),
+            _ => (),
         }
     }
 
-    // If the hp would be reduced to zero, let the other bash_guard
-    // transition work. In general we don't want to mutate state in
-    // guards that don't pass since if no guard passes no state will
-    // be mutated at all, and that might be confusing.
-    fn bash_guard_self(&mut self, event: Option<&DoorEvent>) -> Result<()> {
-        if let Some(DoorEvent::Bash(attack)) = event {
-            let was_full = self.hit_points.current == self.hit_points.max;
-            let new_hp = self.hit_points.current - attack.damage;
+    fn exit(&mut self, _ctx: &mut Door, _event: Option<&DoorEvent>) {
+        // nothing
+    }
+}
 
-            if new_hp > 0. {
-                self.hit_points.current = new_hp;
-                if was_full {
-                    println!("The door appears to be slightly damaged.");
+#[derive(Clone)]
+struct BashGuard;
+
+impl Transition<Door> for BashGuard {
+    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+        match event {
+            DoorEvent::Bash(attack) => {
+                // Check if this damage would destroy us.
+                let new_hp = ctx.hit_points.current - attack.damage;
+                if new_hp <= 0. {
+                    ctx.hit_points.current = 0.;
+                    true
                 } else {
-                    println!("The door appears to be more damaged.");
+                    false
                 }
-                Ok(())
-            } else {
-                Err(anyhow!("guard false"))
             }
-        } else {
-            Err(anyhow!("guard event mismatch"))
+            _ => false,
         }
     }
+}
 
-    fn lock_guard(&mut self, event: Option<&DoorEvent>) -> Result<()> {
-        if let Some(DoorEvent::Lock(Some(key))) = event {
-            if key == "the right key" {
+#[derive(Clone)]
+struct BashGuardSelf;
+
+// If the hp would be reduced to zero, let the other bash_guard
+// transition work. In general we don't want to mutate state in
+// guards that don't pass since if no guard passes no state will
+// be mutated at all, and that might be confusing.
+impl Transition<Door> for BashGuardSelf {
+    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+        match event {
+            DoorEvent::Bash(attack) => {
+                let was_full = ctx.hit_points.current == ctx.hit_points.max;
+                let new_hp = ctx.hit_points.current - attack.damage;
+
+                if new_hp > 0. {
+                    // The damage would leave us intact. Update our
+                    // hit points and return true.
+                    ctx.hit_points.current = new_hp;
+                    if was_full {
+                        println!("The door appears to be slightly damaged.");
+                    } else {
+                        println!("The door appears to be more damaged.");
+                    }
+                    true
+                } else {
+                    // What is the difference with a self-transition? We
+                    // stop checking after true.
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct LockGuard {
+    key: String,
+}
+
+impl Transition<Door> for LockGuard {
+    fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
+        if let DoorEvent::Lock(Some(key)) = event {
+            if key == &self.key {
                 println!("You lock the door.");
-                Ok(())
+                true
             } else {
                 println!("That isn't the right key.");
-                Err(anyhow!("guard false"))
+                false
             }
         } else {
-            Err(anyhow!("guard event mismatch"))
-        }
-    }
-
-    fn unlock_guard(&mut self, event: Option<&DoorEvent>) -> Result<()> {
-        if let Some(DoorEvent::Unlock(Some(key))) = event {
-            if key == "the right key" {
-                println!("You unlock the door.");
-                Ok(())
-            } else {
-                println!("That isn't the right key. The lock wears slightly.");
-                self.attempts += 1;
-                Err(anyhow!("guard false"))
-            }
-        } else {
-            Err(anyhow!("guard event mismatch"))
+            false
         }
     }
 }
 
-fn main() -> Result<()> {
-    let mut door = mk_door()?;
+#[derive(Clone)]
+struct UnlockGuard {
+    key: String,
+}
 
-    door.run()?;
+impl Transition<Door> for UnlockGuard {
+    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+        if let DoorEvent::Unlock(Some(key)) = event {
+            if key == &self.key {
+                println!("You unlock the door.");
+                true
+            } else {
+                println!("That isn't the right key. The lock wears slightly.");
+                ctx.attempts += 1;
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
 
-    // TODO: start over
+#[derive(Clone)]
+struct OpenGuard;
+
+impl Transition<Door> for OpenGuard {
+    fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
+        match event {
+            DoorEvent::Open => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CloseGuard;
+
+impl Transition<Door> for CloseGuard {
+    fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
+        match event {
+            DoorEvent::Close => true,
+            _ => false,
+        }
+    }
+}
+
+// We can't easily clone Box<dyn Transition> so just dispatch on an
+// enum.
+#[derive(Clone)]
+enum DoorGuard {
+    Bash(BashGuard),
+    BashSelf(BashGuardSelf),
+    Lock(LockGuard),
+    Unlock(UnlockGuard),
+    Open(OpenGuard),
+    Close(CloseGuard),
+}
+
+impl Transition<Door> for DoorGuard {
+    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+        match self {
+            DoorGuard::Bash(g) => g.guard(ctx, event),
+            DoorGuard::BashSelf(g) => g.guard(ctx, event),
+            DoorGuard::Lock(g) => g.guard(ctx, event),
+            DoorGuard::Unlock(g) => g.guard(ctx, event),
+            DoorGuard::Open(g) => g.guard(ctx, event),
+            DoorGuard::Close(g) => g.guard(ctx, event),
+        }
+    }
+}
+
+fn main() {
+    let mut door = mk_door();
+
+    // this does nothing
+    door.run();
+
+    // TODO: start over make reset work and fix history reset
     println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
 
     let mut rl = rustyline::Editor::<()>::new();
@@ -207,9 +268,12 @@ fn main() -> Result<()> {
                     };
                     if let Some(event) = event {
                         let res = door.transition(event);
-                        if let Err(_e) = res {
+                        if !res {
                             //dbg!(_e);
-                            println!("That didn't work. The door is {}.", door.active());
+                            println!(
+                                "That didn't work. The door is {}.",
+                                door.graph.state(door.active).unwrap()
+                            );
                         }
                     }
                 }
@@ -224,11 +288,9 @@ fn main() -> Result<()> {
             Err(e) => println!("Error: {:?}", e),
         }
     }
-
-    Ok(())
 }
 
-fn mk_door() -> Result<Statechart<Door>> {
+fn mk_door() -> Statechart<Door> {
     let door = Door {
         hit_points: HitPoints {
             current: 100.,
@@ -238,51 +300,48 @@ fn mk_door() -> Result<Statechart<Door>> {
         attempts: 0,
     };
 
-    let mut g = Graph::new("door");
+    let mut g = Graph::new();
 
-    let intact = g.add_state(State::new("intact", None, Some("intact_entry"), None));
-    let locked = g.add_state(State::new("locked", Some(intact), None, None));
-    let closed = g.add_state(State::new(
-        "closed",
-        Some(intact),
-        Some("closed_entry"),
-        None,
-    ));
-    let open = g.add_state(State::new("open", Some(intact), Some("open_entry"), None));
-    let destroyed = g.add_state(State::new("destroyed", None, Some("destroyed_entry"), None));
+    let intact = g.add_state(DoorState::Intact, None);
+    let locked = g.add_state(DoorState::Locked, Some(intact));
+    let closed = g.add_state(DoorState::Closed, Some(intact));
+    let open = g.add_state(DoorState::Open, Some(intact));
+    let destroyed = g.add_state(DoorState::Destroyed, None);
 
-    // make it default to the first added state?
-    g.set_initial(intact);
-    g.get_mut(intact).set_initial(Initial::Initial(locked));
+    // Set the root node initial to "locked".
+    g.set_initial(locked);
+    // Set the intact state initial to "locked"
+    //g.graph[intact].set_initial(Initial::Initial(locked));
 
-    g.add_transition(
-        intact,
-        destroyed,
-        Transition::new("bash", Some("bash_guard"), None),
-    )?;
+    g.add_transition(intact, destroyed, DoorGuard::Bash(BashGuard {}));
 
     g.add_transition(
         intact,
         intact,
-        // don't trigger entry/exit actions on this self-transition
-        Transition::new("bash", Some("bash_guard_self"), None).set_internal(true),
-    )?;
+        // Internal transition -- the guard mutates the context but
+        // does not transition.
+        DoorGuard::BashSelf(BashGuardSelf {}).internal(),
+    );
 
     g.add_transition(
         locked,
         closed,
-        Transition::new("unlock", Some("unlock_guard"), None),
-    )?;
+        DoorGuard::Unlock(UnlockGuard {
+            key: "the right key".to_owned(),
+        }),
+    );
 
-    g.add_transition(closed, open, Transition::new("open", None, None))?;
+    g.add_transition(closed, open, DoorGuard::Open(OpenGuard {}));
 
-    g.add_transition(open, closed, Transition::new("close", None, None))?;
+    g.add_transition(open, closed, DoorGuard::Close(CloseGuard {}));
 
     g.add_transition(
         closed,
         locked,
-        Transition::new("lock", Some("lock_guard"), None),
-    )?;
+        DoorGuard::Lock(LockGuard {
+            key: "the right key".to_owned(),
+        }),
+    );
 
     Statechart::new(g, door)
 }

@@ -1,153 +1,60 @@
-#![allow(unused_imports)]
+//#![allow(unused_imports)]
 
-use anyhow::{anyhow, Context as _, Result};
-#[cfg(feature = "editor")]
-use druid::Data;
+//use anyhow::{anyhow, Context as _, Result};
 use petgraph::{
-    graph::{EdgeIndex, IndexType, NodeIndex},
+    graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
 };
-use ron::de::from_reader;
-use ron::ser::{to_string_pretty, PrettyConfig};
-use serde::{Deserialize, Serialize};
-use std::any::Any;
-use std::boxed::Box;
-use std::collections::btree_map::{BTreeMap, Entry};
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::fs::File;
-use std::io::prelude::*;
+// use ron::de::from_reader;
+// use ron::ser::{to_string_pretty, PrettyConfig};
+// use serde::{Deserialize, Serialize};
+// use std::fs::File;
+// use std::io::prelude::*;
 use std::iter::Iterator;
-use std::mem::{discriminant, Discriminant};
-//use std::ops::Deref;
-use std::ops::{Index, IndexMut};
-use std::path::{Path, PathBuf};
+//use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 // TODO: use statecharts as as states, "includes"
 // the statechart needs to implement some interface that makes it behave as a state
 
 pub type Idx = NodeIndex<u32>;
-pub type TransIdx = EdgeIndex<u32>;
+pub type Tdx = EdgeIndex<u32>;
 
-pub type ActionFn<C, E> = fn(&mut C, Option<&E>) -> Result<()>;
+/// Both states and transitions require [Clone] since they are stored in
+/// the graph inside [Arc]s which are used for clone-on-write and
+/// undo/redo operations.
+pub trait Context
+where
+    Self: Sized + Clone,
+{
+    type Event: std::fmt::Debug;
+    /// The root state uses the default.
+    type State: State<Self> + Clone + Default;
+    type Transition: Transition<Self> + Clone;
+    //type Index;
 
-pub trait Context: Sized + Clone {
-    type Event: Debug;
-
-    fn event(event: &str) -> Discriminant<Self::Event>;
-    fn action(action: &str) -> &ActionFn<Self, Self::Event>;
+    fn dispatch(&mut self, _event: &Self::Event) {}
+    fn transition(&mut self, _source: &Self::State, _target: &Self::State) {}
 }
 
 // separate state, actions (code), and events from the structure
-pub struct Statechart<T> {
-    pub context: T,
-    pub graph: Graph,
-    pub active: Option<Idx>,
+// This is runtime (not serialized)?
+pub struct Statechart<C: Context> {
+    pub context: C,
+    pub graph: Graph<C>,
+    pub active: Idx,
 }
 
-#[cfg(feature = "editor")]
-type Point = (f64, f64);
-
-#[cfg(feature = "editor")]
-type Size = (f64, f64);
-
-#[cfg(feature = "editor")]
-type Rect = (Point, Size);
-
-#[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(transparent)]
-pub struct PathData(pub Option<PathBuf>);
-
-#[cfg(feature = "editor")]
-impl PathData {
-    pub fn new(p: Option<PathBuf>) -> Self {
-        Self(p)
-    }
+//#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Graph<C: Context> {
+    // There are Arcs for undo/redo?
+    pub graph: StableDiGraph<Arc<StateState<C>>, Arc<TransitionData<C::Transition>>, u32>,
+    pub root: Idx,
 }
 
-// submit PR for Path/PathBuf?
-#[cfg(feature = "editor")]
-impl Data for PathData {
-    fn same(&self, other: &Self) -> bool {
-        match (self.0.as_ref(), other.0.as_ref()) {
-            (Some(a), Some(b)) => a == b,
-            (None, None) => true,
-            _ => false,
-        }
-    }
-}
-
-#[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone, Data)]
-#[serde(default)]
-pub struct GraphEditData {
-    #[serde(default)]
-    pub initial: Point,
-    // Location of the source file associated with this graph. This
-    // needs to be here so its saved. But maybe that precludes reusing
-    // a graph with multiple contexts?
-    #[serde(default)]
-    pub src: PathData,
-}
-
-#[cfg(feature = "editor")]
-impl GraphEditData {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Default for GraphEditData {
-    fn default() -> Self {
-        Self {
-            initial: (20., 20.),
-            src: PathData(None),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Graph {
-    pub id: String,
-    pub initial: Initial,
-    //ids: HashMap, do we need to externally reference by id?
-    graph: StableDiGraph<Arc<State>, Arc<Transition>, u32>,
-    #[cfg(feature = "editor")]
-    #[serde(default)]
-    pub edit_data: GraphEditData,
-}
-
-#[cfg(feature = "editor")]
-impl Data for Graph {
-    fn same(&self, other: &Self) -> bool {
-        if self.id == other.id
-            && self.initial == other.initial
-            && self.graph.node_count() == other.graph.node_count()
-            && self.graph.edge_count() == other.graph.edge_count()
-        {
-            // compare every state, there is no iterator for this
-            for i in self.graph.node_indices() {
-                if !self.graph[i].same(&other.graph[i]) {
-                    return false;
-                }
-            }
-
-            // compare every transition
-            for i in self.graph.edge_indices() {
-                if !self.graph[i].same(&other.graph[i]) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(/* Serialize, Deserialize,*/ Clone, Debug, Default, PartialEq, Eq)]
 pub enum Initial {
+    #[default]
     None,
     Initial(Idx),
     HistoryShallow(Idx),
@@ -174,190 +81,148 @@ impl Initial {
     }
 }
 
-#[cfg(feature = "editor")]
-impl Data for Initial {
-    fn same(&self, other: &Self) -> bool {
-        self == other
-    }
+pub trait State<C: Context> {
+    // Pass event? Pass context?
+    fn enter(&mut self, ctx: &mut C, event: Option<&C::Event>);
+    fn exit(&mut self, ctx: &mut C, event: Option<&C::Event>);
 }
 
-// rename StateEditData?
-#[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone, Data)]
-#[serde(default)]
-pub struct EditData {
-    // relative to parent
-    #[serde(default)]
-    pub rect: Rect,
-    #[serde(default)]
-    pub initial: Point,
-}
-
-#[cfg(feature = "editor")]
-impl EditData {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-#[cfg(feature = "editor")]
-impl Default for EditData {
-    fn default() -> Self {
-        Self {
-            rect: ((40., 60.), (120., 40.)),
-            // set this only after initial is set, so we can match the
-            // position to the state which is the initial?
-            initial: (20., 40.),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct State {
-    pub id: String,
+//#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Clone)]
+pub struct StateState<C>
+where
+    C: Context,
+{
     pub initial: Initial,
     pub parent: Option<Idx>,
-    pub entry: Option<String>,
-    pub exit: Option<String>,
-    #[cfg(feature = "editor")]
-    #[serde(default)]
-    pub edit_data: EditData,
+    pub state: C::State,
 }
 
-#[cfg(feature = "editor")]
-impl Data for State {
-    fn same(&self, other: &Self) -> bool {
-        self.id == other.id
-            && self.initial == other.initial
-            && self.parent == other.parent
-            && self.entry == other.entry
-            && self.exit == other.exit
-            && self.edit_data.same(&other.edit_data)
-    }
-}
-
-// the default won't be useful, we need to apply a better one in
-// layout/validation TODO:
-#[cfg(feature = "editor")]
-#[derive(Serialize, Deserialize, Debug, Clone, Data, Default)]
-pub struct TransitionEditData(pub Point);
-
-// newtype event key?
-// enum for both strings and bound version?
-// can't serialize bound version
-// wait on optimizing until macro gen?
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[cfg_attr(feature = "editor", derive(Data))]
-pub struct Transition {
-    pub event: String,
-    // this only has meaning for self-transitions
-    pub internal: bool,
-    pub guard: Option<String>,
-    pub action: Option<String>,
-    #[cfg(feature = "editor")]
-    #[serde(default)]
-    pub edit_data: TransitionEditData,
-}
-
-impl Default for Transition {
+// We can't derive this since Context isn't Default?
+impl<C: Context> Default for StateState<C> {
     fn default() -> Self {
         Self {
-            event: "event".to_string(),
-            internal: false,
-            guard: None,
-            action: None,
-            #[cfg(feature = "editor")]
-            edit_data: TransitionEditData((0., 0.)),
+            initial: Initial::default(),
+            parent: None,
+            state: C::State::default(),
         }
     }
 }
 
-// implementing index traits allows us to circumvent being unable to
-// impl Data on StableGraph
-impl Index<Idx> for Graph {
-    type Output = Arc<State>;
-
-    fn index(&self, i: Idx) -> &Self::Output {
-        &self.graph[i]
-    }
+/// An internal transition is only valid for self-transitions. The
+/// guard will be called, but enter/exit will not; and the active
+/// state will not change. This is relevant for self-transitions on
+/// parent states, which would otherwise transition from child ->
+/// parent, if external.
+#[derive(Clone)]
+pub struct TransitionData<T> {
+    transition: T,
+    internal: bool,
 }
 
-impl IndexMut<Idx> for Graph {
-    fn index_mut(&mut self, i: Idx) -> &mut Self::Output {
-        &mut self.graph[i]
-    }
-}
-
-impl Index<TransIdx> for Graph {
-    type Output = Transition;
-
-    fn index(&self, i: TransIdx) -> &Self::Output {
-        &self.graph[i]
-    }
-}
-
-impl IndexMut<TransIdx> for Graph {
-    fn index_mut(&mut self, i: TransIdx) -> &mut Self::Output {
-        Arc::make_mut(&mut self.graph[i])
-    }
-}
-
-impl Graph {
-    pub fn new(id: &str) -> Self {
+impl<T> From<T> for TransitionData<T> {
+    fn from(transition: T) -> Self {
         Self {
-            id: id.to_string(),
-            initial: Initial::None,
-            graph: StableDiGraph::default(),
-            #[cfg(feature = "editor")]
-            edit_data: GraphEditData::new(),
+            transition,
+            internal: false,
         }
     }
+}
 
-    pub fn export(&self) -> Result<String> {
-        Ok(to_string_pretty(&self, PrettyConfig::default())?)
+pub trait Internal
+where
+    Self: Sized,
+{
+    fn internal(self) -> TransitionData<Self>;
+}
+
+impl<T> Internal for T {
+    fn internal(self) -> TransitionData<T> {
+        TransitionData {
+            transition: self,
+            internal: true,
+        }
+    }
+}
+
+pub trait Transition<C: Context> {
+    fn guard(&mut self, ctx: &mut C, event: &C::Event) -> bool;
+    //fn action(&mut self); ???
+}
+
+impl<C: Context> Graph<C> {
+    pub fn new() -> Self {
+        let mut graph = StableDiGraph::default();
+        let root = graph.add_node(Arc::new(StateState::default()));
+        Self { graph, root }
     }
 
-    pub fn export_to_file(&self, path: &Path) -> Result<()> {
-        let mut file = File::create(path)?;
-        file.write_all(self.export()?.as_bytes())?;
-        Ok(())
-    }
+    // pub fn export(&self) -> Result<String> {
+    //     Ok(to_string_pretty(&self, PrettyConfig::default())?)
+    // }
 
-    pub fn import_from_file(path: &Path) -> Result<Self> {
-        Ok(from_reader(File::open(path)?)?)
-    }
+    // pub fn export_to_file(&self, path: &Path) -> Result<()> {
+    //     let mut file = File::create(path)?;
+    //     file.write_all(self.export()?.as_bytes())?;
+    //     Ok(())
+    // }
 
-    // impl Index/Mut instead? what about transitions
-    pub fn get(&self, i: Idx) -> &State {
-        &self.graph[i]
-    }
+    // pub fn import_from_file(path: &Path) -> Result<Self> {
+    //     Ok(from_reader(File::open(path)?)?)
+    // }
 
-    pub fn get_mut(&mut self, i: Idx) -> &mut State {
-        Arc::make_mut(&mut self.graph[i])
-    }
-
-    pub fn add_state<T: Into<State>>(&mut self, s: T) -> Idx {
-        let s = s.into();
-        let p = s.parent;
-        let a = self.graph.add_node(Arc::new(s));
+    pub fn add_state(&mut self, state: C::State, parent: Option<Idx>) -> Idx {
+        let a = self
+            .graph
+            .add_node(Arc::new(StateState::new(state, parent.or(Some(self.root)))));
         // the first added node becomes initial for the root
         // TODO: validation?
-        if p.is_none() && self.initial == Initial::None {
-            self.initial = Initial::Initial(a);
-        }
+        // if p.is_none() && self.initial == Initial::None {
+        //     self.initial = Initial::Initial(a);
+        // }
         a
     }
 
-    pub fn remove_state(&mut self, i: Idx) -> Option<Arc<State>> {
+    pub fn remove_state(&mut self, i: Idx) -> Option<Arc<StateState<C>>> {
         // TODO: clean up transitions? move transitions to parent?
+        // clean up history
         self.graph.remove_node(i)
+    }
+
+    /// Get a state reference directly.
+    pub fn state(&self, i: Idx) -> Option<&C::State> {
+        self.graph.node_weight(i).map(|s| &s.state)
+    }
+
+    /// Get a mutable state reference directly.   
+    pub fn state_mut(&mut self, i: Idx) -> Option<&mut C::State> {
+        // Should there be a version of this that takes a closure and
+        // compares with the old version? `update_state`? This clones
+        // every time even if nothing is changed.
+        self.graph.node_weight_mut(i).map(|s| {
+            let s = Arc::make_mut(s);
+            &mut s.state
+        })
+    }
+
+    /// Get a transition reference.
+    pub fn transition(&self, i: Tdx) -> Option<&C::Transition> {
+        self.graph.edge_weight(i).map(|t| &t.transition)
+    }
+
+    /// Get a mutable transition reference.
+    pub fn transition_mut(&mut self, i: Tdx) -> Option<&mut C::Transition> {
+        self.graph.edge_weight_mut(i).map(|t| {
+            let t = Arc::make_mut(t);
+            &mut t.transition
+        })
     }
 
     pub fn contains_state(&self, i: Idx) -> bool {
         self.graph.contains_node(i)
     }
 
-    pub fn contains_transition(&self, i: TransIdx) -> bool {
+    pub fn contains_transition(&self, i: Tdx) -> bool {
         self.graph.edge_weight(i).is_some()
     }
 
@@ -371,15 +236,15 @@ impl Graph {
         self.children(self.graph[i].parent).filter(move |s| *s != i)
     }
 
-    pub fn transitions(&self) -> impl Iterator<Item = TransIdx> + '_ {
+    pub fn transitions(&self) -> impl Iterator<Item = Tdx> + '_ {
         self.graph.edge_indices()
     }
 
-    pub fn endpoints(&self, i: TransIdx) -> Option<(Idx, Idx)> {
+    pub fn endpoints(&self, i: Tdx) -> Option<(Idx, Idx)> {
         self.graph.edge_endpoints(i)
     }
 
-    pub fn is_self_transition(&self, i: TransIdx) -> bool {
+    pub fn is_self_transition(&self, i: Tdx) -> bool {
         if let Some((a, b)) = self.endpoints(i) {
             a == b
         } else {
@@ -387,20 +252,21 @@ impl Graph {
         }
     }
 
-    pub fn set_id(&mut self, i: Option<Idx>, id: &str) {
-        if let Some(i) = i {
-            Arc::make_mut(&mut self.graph[i]).id = id.to_string();
-        } else {
-            // set graph id
-            self.id = id.to_string();
-        }
-    }
+    // pub fn set_id(&mut self, i: Option<Idx>, id: &str) {
+    //     if let Some(i) = i {
+    //         Arc::make_mut(&mut self.graph[i]).id = id.to_string();
+    //     } else {
+    //         // set graph id
+    //         self.id = id.to_string();
+    //     }
+    // }
 
-    pub fn is_unique_id(&self, i: Idx, id: &str) -> bool {
-        self.siblings(i)
-            .map(|i| &self.graph[i].id)
-            .all(|id2| id2 != id)
-    }
+    // This belongs in editor.
+    // pub fn is_unique_id(&self, i: Idx, id: &str) -> bool {
+    //     self.siblings(i)
+    //         .map(|i| &self.graph[i].id)
+    //         .all(|id2| id2 != id)
+    // }
 
     // move state, check id for uniqueness among new siblings?
     // TODO: do something with all cases of make_mut except indexing?
@@ -412,7 +278,7 @@ impl Graph {
     // is if it's used inside another statechart - TODO:
     pub fn set_initial(&mut self, i: Idx) {
         assert!(self.graph.contains_node(i));
-        self.initial = Initial::Initial(i);
+        Arc::make_mut(&mut self.graph[self.root]).initial = Initial::Initial(i);
     }
 
     // return true if b is a child of a
@@ -430,25 +296,28 @@ impl Graph {
         }
     }
 
-    pub fn initial_idx(&self, a: Option<Idx>) -> Option<Idx> {
-        if let Some(a) = a {
-            self[a].initial.idx()
-        } else {
-            self.initial.idx()
-        }
-    }
+    // Never used.
+    // pub fn initial_idx(&self, a: Option<Idx>) -> Option<Idx> {
+    //     if let Some(a) = a {
+    //         self[a].initial.idx()
+    //     } else {
+    //         self.initial.idx()
+    //     }
+    // }
 
-    pub fn add_transition(&mut self, a: Idx, b: Idx, t: Transition) -> Result<()> {
+    pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<TransitionData<C::Transition>>) {
+        let t = t.into();
+        assert!(!t.internal || a == b);
         self.graph.add_edge(a, b, Arc::new(t));
-        Ok(())
+        //Ok(())
     }
 
-    pub fn remove_transition(&mut self, i: TransIdx) -> Option<Arc<Transition>> {
+    pub fn remove_transition(&mut self, i: Tdx) -> Option<Arc<TransitionData<C::Transition>>> {
         self.graph.remove_edge(i)
     }
 
     // returns an iterator from idx -> root
-    pub fn path_iter<'a>(&'a self, i: Idx) -> PathIter<'a> {
+    pub fn path_iter<'a>(&'a self, i: Idx) -> PathIter<'a, C> {
         PathIter::new(&self, i)
     }
 
@@ -459,13 +328,14 @@ impl Graph {
         path
     }
 
-    pub fn path_str(&self, i: Idx) -> String {
-        self.path(i)
-            .iter()
-            .map(|i| self.graph[*i].id.clone())
-            .collect::<Vec<String>>()
-            .join("::")
-    }
+    // This was just used for debugging.
+    // pub fn path_str(&self, i: Idx) -> String {
+    //     self.path(i)
+    //         .iter()
+    //         .map(|i| self.graph[*i].id.clone())
+    //         .collect::<Vec<String>>()
+    //         .join("::")
+    // }
 
     pub fn parent(&self, i: Idx) -> Option<Idx> {
         self.graph[i].parent
@@ -480,264 +350,169 @@ impl Graph {
             .and_then(|(i, _)| self.parent(*i))
     }
 
-    /// Find the absolute position of a state in the graph.
-    #[cfg(feature = "editor")]
-    pub fn abs_pos(&self, a: Idx) -> Point {
-        self.path_iter(a)
-            .map(|i| self[i].edit_data.rect.0)
-            .fold((0., 0.), add)
-    }
-
-    /// Find the absolute rect of a state in the graph.
-    #[cfg(feature = "editor")]
-    pub fn abs_rect(&self, a: Idx) -> Rect {
-        (self.abs_pos(a), self[a].edit_data.rect.1)
-    }
-
-    /// Find the position of one state relative to another using
-    /// EditData. Used to draw transitions and such between any two
-    /// states in the graph.
-    #[cfg(feature = "editor")]
-    pub fn rel_pos(&self, a: Option<Idx>, b: Idx) -> Point {
-        let b = self.abs_pos(b);
-        a.map(|a| sub(b, self.abs_pos(a))).unwrap_or(b)
-    }
-
-    pub fn validate() -> Result<()> {
+    pub fn validate() -> Result<(), String> {
         // initial is set for graph/states and valid/exists/is a child of
         // no cycles in hierarchy
         // all states ids are unique among siblings
         // edit data, rects are not negative/zero
+        // root is set, exists, and no other non-parent states
+        // no orphan states?
+        // active exists/valid
         Ok(())
     }
 }
 
-fn add(a: Point, b: Point) -> Point {
-    (a.0 + b.0, a.1 + b.1)
-}
-
-fn sub(a: Point, b: Point) -> Point {
-    (a.0 - b.0, a.1 - b.1)
-}
-
 impl<C: Context> Statechart<C> {
-    pub fn new(graph: Graph, context: C) -> Result<Self> {
-        // TODO: verify graph? bindings?
-        Ok(Self {
+    pub fn new(graph: Graph<C>, context: C) -> Self {
+        // TODO: verify graph? bindings? when do we apply initial?
+        let active = graph.root;
+        Self {
             graph,
             context,
-            active: None,
-        })
-    }
-
-    // return option? id()?
-    pub fn active(&self) -> &str {
-        if let Some(idx) = self.active {
-            &self.graph.graph[idx].id
-        } else {
-            "none"
+            active,
         }
     }
 
     // TODO: how do we reset history state?
-    pub fn reset(&mut self) -> Result<()> {
-        match self.graph.initial {
-            Initial::None => Err(anyhow!("no initial state set")),
+    pub fn reset(&mut self) {
+        let root = &self.graph.graph[self.graph.root];
+        match root.initial {
+            Initial::None => panic!("no initial state set"),
             Initial::Initial(i) => {
                 // recursively find the active state
                 let initial = self.graph.get_initial(i);
                 let mut ctx = self.context.clone();
-                self.transition_to(&mut ctx, initial, None)?;
+                self.transition_to(&mut ctx, initial, None);
                 self.context = ctx;
-                Ok(())
             }
             Initial::HistoryShallow(_) | Initial::HistoryDeep(_) => {
                 // does this make sense at all?
-                Err(anyhow!("invalid initial value (history)"))
+                panic!("invalid initial value (history)");
             }
         }
     }
 
     // set initial states and return a channel?
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self) {
         self.reset()
     }
 
-    // select a transition based on the active state and an event,
-    // returns next node and whether or not the transition is internal
-    fn select(&self, ctx: &mut C, event: &C::Event) -> Result<(Idx, bool)> {
-        let d = discriminant(event);
+    // Find a transition out of the active node based on the
+    // event. Start with the active state and work through the parent
+    // states.
+    fn select(&mut self, ctx: &mut C, event: &C::Event) -> Option<(Idx, bool)> {
+        // Collect the path so we can take use mutable refs below.
+        let path = self.graph.path_iter(self.active).collect::<Vec<_>>();
 
-        if let Some(active) = self.active {
-            // we start with this index and work through its parents
-            let mut p = active;
-
-            loop {
-                let mut edges = self.graph.graph.neighbors(p).detach();
-
-                while let Some((edge, node)) = edges.next(&self.graph.graph) {
-                    // need a better display for transitions
-                    // println!(
-                    //     "{} -> {:?} -> {}",
-                    //     self.graph.path_str(p),
-                    //     event,
-                    //     self.graph.path_str(node)
-                    // );
-
-                    // guard event mismatch error should be upgraded
-                    // or removed entirely - it's boilerplate for
-                    // something that shouldn't ever happen TODO:
-
-                    let t = &self.graph.graph[edge];
-                    if C::event(&t.event) == d {
-                        // FIX: "guard false" is not an error but
-                        // everything else is, and we're ignoring it
-                        let guard_pass = t
-                            .guard
-                            .as_ref()
-                            .map_or(true, |g| C::action(&g)(ctx, Some(event)).is_ok());
-
-                        if guard_pass {
-                            if let Some(ref action) = t.action {
-                                C::action(action)(ctx, Some(event)).with_context(|| {
-                                    format!(
-                                        "action failed on {:?} with event: {:?}",
-                                        // better id for transitions?
-                                        edge,
-                                        event
-                                    )
-                                })?;
-                            }
-
-                            // need a better place for this check
-                            if t.internal && p != node {
-                                return Err(anyhow!(
-                                    "internal transition is not a self-transition: {:?} -> {:?}",
-                                    p,
-                                    node,
-                                ));
-                            }
-
-                            return Ok((node, t.internal));
-                        }
-                    }
-                }
-
-                // check parents' transitions
-                if let Some(i) = self.graph.graph[p].parent {
-                    p = i;
-                } else {
-                    return Err(anyhow!("no valid transitions"));
+        // Each potential guard can mutate the transition state.
+        let g = &mut self.graph.graph;
+        for i in path {
+            let mut edges = g.neighbors(i).detach();
+            while let Some((edge, next)) = edges.next(&g) {
+                let t = Arc::make_mut(&mut g[edge]);
+                if t.transition.guard(ctx, event) {
+                    return Some((next, t.internal));
                 }
             }
-        } else {
-            Err(anyhow!("no active state"))
         }
+
+        // No transitions found for event.
+        None
     }
 
-    pub fn transition(&mut self, event: C::Event) -> Result<()> {
+    pub fn transition(&mut self, event: C::Event) -> bool {
+        self.context.dispatch(&event);
+        // Clone so we can borrow self again.
         let mut ctx = self.context.clone();
-        let (next, internal) = self.select(&mut ctx, &event)?;
-
-        // With an internal transition we don't actually change
-        // states, so we don't do anything else except copy the
-        // context back. Should we verify the active state is
-        // not a compound state?
-        if !internal {
-            self.transition_to(&mut ctx, next, Some(event))?;
-        }
+        let next = self.select(&mut ctx, &event);
+        let res = if let Some((next, internal)) = next {
+            dbg!(internal);
+            // With an internal transition we don't actually change
+            // states, so we don't do anything else except copy the
+            // context back. Should we verify the active state is
+            // not a compound state?
+            let active = self.active;
+            if !internal {
+                self.transition_to(&mut ctx, next, Some(&event));
+                self.context.transition(
+                    &self.graph.graph[active].state,
+                    &self.graph.graph[next].state,
+                );
+            }
+            true
+        } else {
+            false
+        };
         self.context = ctx;
-        Ok(())
+        res
     }
 
     // should we be passing new and old state to each action? use Cow?
     // this mutates history when exiting states
-    pub fn transition_to(&mut self, ctx: &mut C, next: Idx, event: Option<C::Event>) -> Result<()> {
+    pub fn transition_to(&mut self, ctx: &mut C, next: Idx, event: Option<&C::Event>) {
         // list of history updates, only applied after the transition
         // succeeds
         let mut h: Vec<(Idx, Idx)> = Vec::new();
 
-        // common ancestor state
-        let mut a = None;
+        // We will traverse states up to a common ancestor (calling
+        // [State::exit] on each) and back down to the next state
+        // (calling [State::enter] on each). When does this return
+        // None given there is always a root? FIX.
+        let a = self.graph.common_ancestor(self.active, next);
 
-        // this can change based on the initial state for next
-        let mut next = next;
+        let not_a = |i: &Idx| a.map_or(true, |a| *i != a);
 
-        if let Some(active) = self.active {
-            // traverse states up to a common ancestor (calling
-            // exit on each) and back down to the next state
-            // (calling entry)
-            a = self.graph.common_ancestor(active, next);
-
-            // path from active -> a (minus a)
-            let p1 = self
-                .graph
-                .path_iter(active)
-                .take_while(|i| a.map_or(true, |a| *i != a));
-
-            let mut last = active;
-            p1.map(|i| {
-                let s = &self.graph.graph[i];
-                if let Some(ref exit) = s.exit {
-                    C::action(exit)(ctx, event.as_ref()).with_context(|| {
-                        format!(
-                            "exit failed on {:?} with event: {:?}",
-                            i,
-                            //self.graph.path_str(*i),
-                            event
-                        )
-                    })?
-                }
-                // track history when exiting a state
-                match s.initial {
-                    Initial::HistoryShallow(_) => h.push((i, last)),
-                    Initial::HistoryDeep(_) => h.push((i, active)),
-                    _ => (),
-                };
-                // you can't have a history with no child
-                // states, and we're not checking that
-                // here - FIX?
-                last = i;
-
-                Ok(())
-            })
-            .collect::<Result<_>>()?;
-
-            // let a = vec!["a", "b", "c"];
-            // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
-
-            // recurse initial states, if the active state is None
-            // we've already done this, so we can skip it
-            let initial = self.graph.get_initial(next);
-            assert!(self.graph.is_child(next, initial));
-            next = initial;
-        }
-
-        // path from a -> next (minus a)
-        let p2 = self
+        // Path from the active state to the common ancestor. Don't
+        // include the common ancestor since we are not entering or
+        // exiting it. Collect so we can take mutable refs to states
+        // below.
+        let p1 = self
             .graph
-            .path_iter(next)
-            .take_while(|i| a.map_or(true, |a| *i != a))
-            // collect so we can reverse
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev();
+            .path_iter(self.active)
+            .take_while(not_a)
+            .collect::<Vec<_>>();
 
-        p2.map(|i| {
-            let s = &self.graph.graph[i];
-            if let Some(ref entry) = s.entry {
-                C::action(entry)(ctx, event.as_ref()).with_context(|| {
-                    format!(
-                        "entry failed on {:?} with event: {:?}",
-                        i,
-                        //self.graph.path_str(*i),
-                        event
-                    )
-                })?
-            }
-            Ok(())
-        })
-        .collect::<Result<_>>()?;
+        let initial = self.graph.get_initial(next);
+        assert!(self.graph.is_child(next, initial));
+
+        // Path from the common ancestor to the next node (including
+        // the initial state).
+        let mut p2 = self
+            .graph
+            .path_iter(initial)
+            .take_while(not_a)
+            .collect::<Vec<_>>();
+        p2.reverse();
+
+        let g = &mut self.graph.graph;
+
+        let mut last = self.active;
+        for i in p1 {
+            let s = Arc::make_mut(&mut g[i]);
+            s.state.exit(ctx, event);
+            // track history when exiting a state
+            match s.initial {
+                Initial::HistoryShallow(_) => h.push((i, last)),
+                Initial::HistoryDeep(_) => h.push((i, self.active)),
+                _ => (),
+            };
+            // you can't have a history with no child
+            // states, and we're not checking that
+            // here - FIX?
+            last = i;
+            //Ok(())
+        }
+        //.collect::<Result<_>>()?;
+
+        // let a = vec!["a", "b", "c"];
+        // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
+
+        for i in p2 {
+            let s = Arc::make_mut(&mut g[i]);
+            s.state.enter(ctx, event);
+            //Ok(())
+        }
+        //.collect::<Result<_>>()?;
 
         // apply history
         for (idx, prev) in h {
@@ -749,19 +524,19 @@ impl<C: Context> Statechart<C> {
         }
 
         // set active state
-        self.active = Some(next);
+        self.active = next;
 
-        Ok(())
+        //Ok(())
     }
 }
 
-pub struct PathIter<'a> {
-    graph: &'a Graph,
+pub struct PathIter<'a, C: Context> {
+    graph: &'a Graph<C>,
     idx: Option<Idx>,
 }
 
-impl<'a> PathIter<'a> {
-    pub fn new(graph: &'a Graph, idx: Idx) -> Self {
+impl<'a, C: Context> PathIter<'a, C> {
+    pub fn new(graph: &'a Graph<C>, idx: Idx) -> Self {
         Self {
             graph,
             idx: Some(idx),
@@ -769,7 +544,7 @@ impl<'a> PathIter<'a> {
     }
 }
 
-impl<'a> Iterator for PathIter<'a> {
+impl<'a, C: Context> Iterator for PathIter<'a, C> {
     type Item = Idx;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -782,25 +557,20 @@ impl<'a> Iterator for PathIter<'a> {
     }
 }
 
-impl State {
+impl<C> StateState<C>
+where
+    C: Context,
+{
     // entry/exit defaults to path?
     // if we use path, moving the state requires renaming functions
     // if we only use id then all ids must be globally unique
     // TODO:
-    pub fn new<S: Into<String>>(
-        id: S,
-        parent: Option<Idx>,
-        entry: Option<&str>,
-        exit: Option<&str>,
-    ) -> Self {
+    // we can't set initial yet since children don't exist FIX?
+    pub fn new(state: C::State, parent: Option<Idx>) -> Self {
         Self {
-            id: id.into(),
-            initial: Initial::None,
+            state,
             parent,
-            entry: entry.map(String::from),
-            exit: exit.map(String::from),
-            #[cfg(feature = "editor")]
-            edit_data: EditData::new(),
+            initial: Initial::None,
         }
     }
 
@@ -813,6 +583,7 @@ impl State {
         self.initial = initial;
     }
 
+    // TODO move to initial
     // TODO: validate initial is child
     pub fn set_initial_idx(&mut self, i: Idx) {
         self.initial = match self.initial {
@@ -822,51 +593,11 @@ impl State {
             Initial::HistoryShallow(_) => Initial::HistoryShallow(i),
         };
     }
-
-    // use set_id in Graph to change this
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::new("untitled", None, None, None)
-    }
-}
-
-impl From<&str> for State {
-    fn from(id: &str) -> Self {
-        State::new(id, None, None, None)
-    }
-}
-
-impl Transition {
-    pub fn new(event: &str, guard: Option<&str>, action: Option<&str>) -> Self {
-        Self {
-            event: event.to_string(),
-            guard: guard.map(String::from),
-            action: action.map(String::from),
-            ..Default::default()
-        }
-    }
-
-    #[cfg(feature = "editor")]
-    pub fn at(mut self, p: Point) -> Self {
-        self.edit_data = TransitionEditData(p);
-        self
-    }
-
-    // TODO: only self-transitions can be internal but we can't check that here
-    pub fn set_internal(mut self, internal: bool) -> Self {
-        self.internal = internal;
-        self
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    //use super::*;
 
     // make this work with any graph TODO:
     //struct TestContext;
