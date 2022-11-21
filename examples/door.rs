@@ -9,7 +9,16 @@ struct HitPoints {
     max: f32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+impl Default for HitPoints {
+    fn default() -> Self {
+        Self {
+            current: 100.,
+            max: 100.,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 struct Door {
     hit_points: HitPoints,
     key: String,
@@ -309,7 +318,7 @@ fn mk_door() -> Statechart<Door> {
     let destroyed = g.add_state(DoorState::Destroyed, None);
 
     // Set the root node initial to "locked".
-    g.set_initial(locked);
+    g.set_root_initial(locked);
     // Set the intact state initial to "locked"
     //g.graph[intact].set_initial(Initial::Initial(locked));
 

@@ -12,7 +12,9 @@ use petgraph::{
 // use std::io::prelude::*;
 use std::iter::Iterator;
 //use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use crate::undo::*;
+
+mod undo;
 
 // TODO: use statecharts as as states, "includes"
 // the statechart needs to implement some interface that makes it behave as a state
@@ -25,7 +27,7 @@ pub type Tdx = EdgeIndex<u32>;
 /// undo/redo operations.
 pub trait Context
 where
-    Self: Sized + Clone,
+    Self: Sized + Clone + Default,
 {
     type Event: std::fmt::Debug;
     /// The root state uses the default.
@@ -48,8 +50,9 @@ pub struct Statechart<C: Context> {
 //#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Graph<C: Context> {
     // There are Arcs for undo/redo?
-    pub graph: StableDiGraph<Arc<StateState<C>>, Arc<TransitionData<C::Transition>>, u32>,
+    pub graph: StableDiGraph<StateState<C>, TransitionData<C::Transition>, u32>,
     pub root: Idx,
+    undo: Undo<C>,
 }
 
 #[derive(/* Serialize, Deserialize,*/ Clone, Debug, Default, PartialEq, Eq)]
@@ -69,6 +72,16 @@ impl Initial {
         }
     }
 
+    // TODO: validate initial is child
+    pub fn set_idx(&mut self, i: Idx) {
+        *self = match self {
+            Initial::None => Initial::Initial(i),
+            Initial::Initial(_) => Initial::Initial(i),
+            Initial::HistoryDeep(_) => Initial::HistoryDeep(i),
+            Initial::HistoryShallow(_) => Initial::HistoryShallow(i),
+        }
+    }
+
     pub fn step(self) -> Self {
         match self {
             // can't step from none
@@ -78,6 +91,12 @@ impl Initial {
             // can't step to none? how do we unset?
             Initial::HistoryDeep(i) => Initial::Initial(i),
         }
+    }
+}
+
+impl From<Idx> for Initial {
+    fn from(i: Idx) -> Self {
+        Initial::Initial(i)
     }
 }
 
@@ -153,8 +172,12 @@ pub trait Transition<C: Context> {
 impl<C: Context> Graph<C> {
     pub fn new() -> Self {
         let mut graph = StableDiGraph::default();
-        let root = graph.add_node(Arc::new(StateState::default()));
-        Self { graph, root }
+        let root = graph.add_node(StateState::default());
+        Self {
+            graph,
+            root,
+            undo: Undo::default(),
+        }
     }
 
     // pub fn export(&self) -> Result<String> {
@@ -172,50 +195,44 @@ impl<C: Context> Graph<C> {
     // }
 
     pub fn add_state(&mut self, state: C::State, parent: Option<Idx>) -> Idx {
-        let a = self
-            .graph
-            .add_node(Arc::new(StateState::new(state, parent.or(Some(self.root)))));
-        // the first added node becomes initial for the root
-        // TODO: validation?
-        // if p.is_none() && self.initial == Initial::None {
-        //     self.initial = Initial::Initial(a);
-        // }
-        a
+        let s = StateState::new(state, parent.or(Some(self.root)));
+        let i = self.graph.add_node(s.clone());
+        self.add_undo(Op::AddState(i, s));
+        i
     }
 
-    pub fn remove_state(&mut self, i: Idx) -> Option<Arc<StateState<C>>> {
+    pub fn remove_state(&mut self, i: Idx) {
+        // Cannot remove the root.
+        assert!(i != self.root);
         // TODO: clean up transitions? move transitions to parent?
         // clean up history
-        self.graph.remove_node(i)
+
+        // petgraph by default removes all edges to and from this
+        // node, which we want to avoid since we want the undo
+        // history.
+
+        // TODO: undo transaction
+        if let Some(s) = self.graph.remove_node(i) {
+            self.add_undo(Op::RemoveState(i, s))
+        }
     }
 
-    /// Get a state reference directly.
+    /// Returns a state reference for index.
     pub fn state(&self, i: Idx) -> Option<&C::State> {
         self.graph.node_weight(i).map(|s| &s.state)
     }
 
-    /// Get a mutable state reference directly.   
-    pub fn state_mut(&mut self, i: Idx) -> Option<&mut C::State> {
-        // Should there be a version of this that takes a closure and
-        // compares with the old version? `update_state`? This clones
-        // every time even if nothing is changed.
-        self.graph.node_weight_mut(i).map(|s| {
-            let s = Arc::make_mut(s);
-            &mut s.state
-        })
-    }
-
-    /// Get a transition reference.
+    /// Returns a transition reference for index.
     pub fn transition(&self, i: Tdx) -> Option<&C::Transition> {
         self.graph.edge_weight(i).map(|t| &t.transition)
     }
 
-    /// Get a mutable transition reference.
-    pub fn transition_mut(&mut self, i: Tdx) -> Option<&mut C::Transition> {
-        self.graph.edge_weight_mut(i).map(|t| {
-            let t = Arc::make_mut(t);
-            &mut t.transition
-        })
+    /// Update state.
+    pub fn update_state(&mut self, i: Idx, state: C::State) {
+        let s1 = self.graph[i].clone();
+        self.graph[i].state = state;
+        let s2 = self.graph[i].clone();
+        self.add_undo(Op::UpdateState(i, s1, s2));
     }
 
     pub fn contains_state(&self, i: Idx) -> bool {
@@ -252,37 +269,47 @@ impl<C: Context> Graph<C> {
         }
     }
 
-    // pub fn set_id(&mut self, i: Option<Idx>, id: &str) {
-    //     if let Some(i) = i {
-    //         Arc::make_mut(&mut self.graph[i]).id = id.to_string();
-    //     } else {
-    //         // set graph id
-    //         self.id = id.to_string();
-    //     }
-    // }
+    pub fn set_parent(&mut self, i: Idx, parent: Option<Idx>) {
+        // Make sure the new parent isn't a child.
+        if let Some(p) = parent {
+            assert!(!self.in_path(i, p));
+        }
 
-    // This belongs in editor.
-    // pub fn is_unique_id(&self, i: Idx, id: &str) -> bool {
-    //     self.siblings(i)
-    //         .map(|i| &self.graph[i].id)
-    //         .all(|id2| id2 != id)
-    // }
-
-    // move state, check id for uniqueness among new siblings?
-    // TODO: do something with all cases of make_mut except indexing?
-    pub fn set_parent(&mut self, i: Idx, p: Option<Idx>) {
-        Arc::make_mut(&mut self.graph[i]).parent = p;
+        // TODO: Op::UpdateParent?
+        let s1 = self.graph[i].clone();
+        self.graph[i].parent = parent;
+        let s2 = self.graph[i].clone();
+        self.add_undo(Op::UpdateState(i, s1, s2));
     }
 
-    // the only reason we'd want history at the root of a statechart
-    // is if it's used inside another statechart - TODO:
-    pub fn set_initial(&mut self, i: Idx) {
+    /// Set initial for the root state (the default state for the
+    /// graph). `set_graph_initial`?
+    pub fn set_root_initial(&mut self, initial: impl Into<Initial>) {
+        self.set_initial(self.root, initial);
+    }
+
+    pub fn set_initial(&mut self, i: Idx, initial: impl Into<Initial>) {
+        let initial = initial.into();
         assert!(self.graph.contains_node(i));
-        Arc::make_mut(&mut self.graph[self.root]).initial = Initial::Initial(i);
+        // Make sure the initial state (if any) is a child.
+        if let Some(initial_idx) = initial.idx() {
+            assert!(self.is_child(i, initial_idx));
+        }
+
+        // TODO: Op::UpdateInitial?
+        let s1 = self.graph[i].clone();
+        self.graph[i].initial = initial;
+        let s2 = self.graph[i].clone();
+        self.add_undo(Op::UpdateState(i, s1, s2));
     }
 
-    // return true if b is a child of a
+    // Return true if b is a child of a.
     pub fn is_child(&self, a: Idx, b: Idx) -> bool {
+        a != b && self.in_path(a, b)
+    }
+
+    // Return true if a is in the path of b.
+    pub fn in_path(&self, a: Idx, b: Idx) -> bool {
         self.path_iter(b).find(|i| *i == a).is_some()
     }
 
@@ -296,24 +323,19 @@ impl<C: Context> Graph<C> {
         }
     }
 
-    // Never used.
-    // pub fn initial_idx(&self, a: Option<Idx>) -> Option<Idx> {
-    //     if let Some(a) = a {
-    //         self[a].initial.idx()
-    //     } else {
-    //         self.initial.idx()
-    //     }
-    // }
-
     pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<TransitionData<C::Transition>>) {
         let t = t.into();
         assert!(!t.internal || a == b);
-        self.graph.add_edge(a, b, Arc::new(t));
+        self.graph.add_edge(a, b, t);
         //Ok(())
     }
 
-    pub fn remove_transition(&mut self, i: Tdx) -> Option<Arc<TransitionData<C::Transition>>> {
+    pub fn remove_transition(&mut self, i: Tdx) -> Option<TransitionData<C::Transition>> {
         self.graph.remove_edge(i)
+    }
+
+    pub fn update_transition(&mut self, i: Tdx, t: C::Transition) {
+        self.graph[i].transition = t;
     }
 
     // returns an iterator from idx -> root
@@ -409,7 +431,7 @@ impl<C: Context> Statechart<C> {
         for i in path {
             let mut edges = g.neighbors(i).detach();
             while let Some((edge, next)) = edges.next(&g) {
-                let t = Arc::make_mut(&mut g[edge]);
+                let t = &mut g[edge];
                 if t.transition.guard(ctx, event) {
                     return Some((next, t.internal));
                 }
@@ -488,7 +510,7 @@ impl<C: Context> Statechart<C> {
 
         let mut last = self.active;
         for i in p1 {
-            let s = Arc::make_mut(&mut g[i]);
+            let s = &mut g[i];
             s.state.exit(ctx, event);
             // track history when exiting a state
             match s.initial {
@@ -508,7 +530,7 @@ impl<C: Context> Statechart<C> {
         // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
 
         for i in p2 {
-            let s = Arc::make_mut(&mut g[i]);
+            let s = &mut g[i];
             s.state.enter(ctx, event);
             //Ok(())
         }
@@ -516,7 +538,7 @@ impl<C: Context> Statechart<C> {
 
         // apply history
         for (idx, prev) in h {
-            let s = Arc::make_mut(&mut self.graph.graph[idx]);
+            let s = &mut self.graph.graph[idx];
             match s.initial {
                 Initial::HistoryShallow(ref mut i) | Initial::HistoryDeep(ref mut i) => *i = prev,
                 _ => (),
@@ -561,10 +583,6 @@ impl<C> StateState<C>
 where
     C: Context,
 {
-    // entry/exit defaults to path?
-    // if we use path, moving the state requires renaming functions
-    // if we only use id then all ids must be globally unique
-    // TODO:
     // we can't set initial yet since children don't exist FIX?
     pub fn new(state: C::State, parent: Option<Idx>) -> Self {
         Self {
@@ -573,39 +591,43 @@ where
             initial: Initial::None,
         }
     }
-
-    pub fn with_parent(mut self, p: Option<Idx>) -> Self {
-        self.parent = p;
-        self
-    }
-
-    pub fn set_initial(&mut self, initial: Initial) {
-        self.initial = initial;
-    }
-
-    // TODO move to initial
-    // TODO: validate initial is child
-    pub fn set_initial_idx(&mut self, i: Idx) {
-        self.initial = match self.initial {
-            Initial::None => Initial::Initial(i),
-            Initial::Initial(_) => Initial::Initial(i),
-            Initial::HistoryDeep(_) => Initial::HistoryDeep(i),
-            Initial::HistoryShallow(_) => Initial::HistoryShallow(i),
-        };
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    //use super::*;
+    use super::*;
 
-    // make this work with any graph TODO:
-    //struct TestContext;
+    impl State<TestContext> for String {
+        fn enter(&mut self, _ctx: &mut TestContext, _event: Option<&()>) {}
+        fn exit(&mut self, _ctx: &mut TestContext, _event: Option<&()>) {}
+    }
 
-    // #[test]
-    // fn set_id() {
-    //     let mut g = Graph::new("test");
-    //     assert!(g.add_state("child1").is_ok());
-    //     assert!(g.add_state("child1").is_err());
-    // }
+    impl Transition<TestContext> for () {
+        fn guard(&mut self, _ctx: &mut TestContext, _event: &()) -> bool {
+            todo!()
+        }
+    }
+
+    #[derive(Clone, Default)]
+    pub(crate) struct TestContext;
+    impl Context for TestContext {
+        type Event = ();
+        type State = String;
+        type Transition = ();
+    }
+
+    pub(crate) fn test_graph() -> Graph<TestContext> {
+        Graph::new()
+    }
+
+    #[test]
+    fn is_child() {
+        let mut g = test_graph();
+        let a = g.add_state("a".into(), None);
+        let b = g.add_state("b".into(), Some(a));
+
+        assert!(g.is_child(a, b));
+        assert!(!g.is_child(a, a));
+        assert!(!g.is_child(b, a));
+    }
 }
