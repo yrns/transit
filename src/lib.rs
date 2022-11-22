@@ -323,19 +323,36 @@ impl<C: Context> Graph<C> {
         }
     }
 
-    pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<TransitionData<C::Transition>>) {
+    pub fn add_transition(
+        &mut self,
+        a: Idx,
+        b: Idx,
+        t: impl Into<TransitionData<C::Transition>>,
+    ) -> Tdx {
         let t = t.into();
         assert!(!t.internal || a == b);
-        self.graph.add_edge(a, b, t);
-        //Ok(())
+        let i = self.graph.add_edge(a, b, t.clone());
+        self.add_undo(Op::AddTransition(i, (a, b, t)));
+        i
     }
 
     pub fn remove_transition(&mut self, i: Tdx) -> Option<TransitionData<C::Transition>> {
-        self.graph.remove_edge(i)
+        self.graph
+            .edge_endpoints(i)
+            .zip(self.graph.remove_edge(i))
+            .map(|((a, b), t)| {
+                self.add_undo(Op::RemoveTransition(i, (a, b, t.clone())));
+                t
+            })
     }
 
     pub fn update_transition(&mut self, i: Tdx, t: C::Transition) {
-        self.graph[i].transition = t;
+        if let Some((a, b)) = self.graph.edge_endpoints(i) {
+            let t0 = self.graph[i].clone();
+            self.graph[i].transition = t;
+            let t1 = self.graph[i].clone();
+            self.add_undo(Op::UpdateTransition(i, (a, b, t0), (a, b, t1)));
+        }
     }
 
     // returns an iterator from idx -> root

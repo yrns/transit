@@ -1,14 +1,16 @@
 use crate::*;
 
+// (a -> b, edge)
+pub type TOp<T> = (Idx, Idx, TransitionData<T>);
+
 #[derive(Clone)]
 pub enum Op<C: Context> {
     AddState(Idx, StateState<C>),
     UpdateState(Idx, StateState<C>, StateState<C>),
     RemoveState(Idx, StateState<C>),
-
-    AddTransition(Idx),
-    UpdateTransition(Idx, TransitionData<C>),
-    RemoveTransition(Idx, TransitionData<C>),
+    AddTransition(Tdx, TOp<C::Transition>),
+    UpdateTransition(Tdx, TOp<C::Transition>, TOp<C::Transition>),
+    RemoveTransition(Tdx, TOp<C::Transition>),
     // For grouping state removals with transitions?
     //Transaction(Vec<Op<C>>),
 }
@@ -26,17 +28,37 @@ impl<C: Context> Op<C> {
             Op::UpdateState(i, s1, _s2) => {
                 g.graph[*i] = s1.clone();
             }
-            // The index may be different which may be a problem? We
-            // need ghost states to save indices from the history.
+            // The index may be different which may be a problem? Do
+            // we need ghost states to save indices from the history?
             Op::RemoveState(i, s) => {
                 let i2 = g.graph.add_node(s.clone());
                 if *i != i2 {
                     dbg!(i, i2);
                 }
             }
-            Op::AddTransition(_) => todo!(),
-            Op::UpdateTransition(_, _) => todo!(),
-            Op::RemoveTransition(_, _) => todo!(),
+            Op::AddTransition(i, _t) => {
+                let _t = g
+                    .graph
+                    .remove_edge(*i)
+                    .expect("add transition op does not exist!");
+            }
+            Op::UpdateTransition(i, (a, b, t1), _) => {
+                // There is no API for updating an existing
+                // transaction so we add/remove (see
+                // https://github.com/petgraph/petgraph/pull/103).
+                let _ = g
+                    .graph
+                    .remove_edge(*i)
+                    .expect("update transition op does not exist!");
+                let i2 = g.graph.add_edge(*a, *b, t1.clone());
+                assert_eq!(*i, i2);
+            }
+            Op::RemoveTransition(i, (a, b, t)) => {
+                let i2 = g.graph.add_edge(*a, *b, t.clone());
+                if *i != i2 {
+                    dbg!(i, i2);
+                }
+            }
         }
     }
 
@@ -49,9 +71,9 @@ impl<C: Context> Op<C> {
             Op::AddState(i, s) => Op::RemoveState(i, s),
             Op::UpdateState(i, s1, s2) => Op::UpdateState(i, s2, s1),
             Op::RemoveState(i, s) => Op::AddState(i, s),
-            Op::AddTransition(_) => todo!(),
-            Op::UpdateTransition(_, _) => todo!(),
-            Op::RemoveTransition(_, _) => todo!(),
+            Op::AddTransition(i, t) => Op::RemoveTransition(i, t),
+            Op::UpdateTransition(i, a, b) => Op::UpdateTransition(i, b, a),
+            Op::RemoveTransition(i, t) => Op::AddTransition(i, t),
         }
     }
 }
@@ -144,5 +166,19 @@ mod tests {
         assert_eq!(g.state(a).unwrap(), "a");
         g.undo(); // undo add
         assert_eq!(g.state(a), None);
+    }
+
+    #[test]
+    fn ghosts() {
+        let mut g = test_graph();
+        let a = g.add_state("a".into(), None);
+        let _b = g.add_state("b".into(), None);
+        g.remove_state(a);
+        let c = g.add_state("c".into(), None);
+        assert_eq!(a, c);
+        g.undo(); // undo add c
+        g.undo(); // undo remove a
+        assert_eq!(g.state(a).unwrap(), "a");
+        assert_eq!(a, c);
     }
 }
