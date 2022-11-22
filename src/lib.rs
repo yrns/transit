@@ -4,6 +4,7 @@
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
+    visit::EdgeRef,
 };
 // use ron::de::from_reader;
 // use ron::ser::{to_string_pretty, PrettyConfig};
@@ -72,9 +73,8 @@ impl Initial {
         }
     }
 
-    // TODO: validate initial is child
-    pub fn set_idx(&mut self, i: Idx) {
-        *self = match self {
+    pub fn set_idx(self, i: Idx) -> Self {
+        match self {
             Initial::None => Initial::Initial(i),
             Initial::Initial(_) => Initial::Initial(i),
             Initial::HistoryDeep(_) => Initial::HistoryDeep(i),
@@ -201,17 +201,63 @@ impl<C: Context> Graph<C> {
         i
     }
 
-    pub fn remove_state(&mut self, i: Idx) {
+    // TODO: undo transaction
+    pub fn remove_state(&mut self, i: Idx, keep_transitions: bool, keep_children: bool) {
         // Cannot remove the root.
         assert!(i != self.root);
+
         // TODO: clean up transitions? move transitions to parent?
-        // clean up history
+
+        // Kept things go to the parent state (if not root).
+        let parent = self
+            .graph
+            .node_weight(i)
+            .and_then(|s| s.parent)
+            .filter(|i| *i != self.root);
+
+        // Clean up child states.
+        for child in self.children(Some(i)).collect::<Vec<_>>() {
+            if keep_children {
+                self.set_parent(child, parent);
+            } else {
+                self.remove_state(child, keep_transitions, false)
+            }
+        }
+
+        // Clean up initial/history.
+        for p in self
+            .path_iter(i)
+            .filter(|p| self.graph[*p].initial.idx() == Some(i))
+            .collect::<Vec<_>>()
+        {
+            self.set_initial_idx(p, parent);
+        }
 
         // petgraph by default removes all edges to and from this
         // node, which we want to avoid since we want the undo
         // history.
+        let edges = self
+            .graph
+            .edges(i)
+            .map(|edge| (edge.id(), edge.source(), edge.target()))
+            .collect::<Vec<_>>();
+        match (keep_transitions, parent) {
+            // We don't keep any transitions to or from the root
+            // (parent is None).
+            (true, Some(parent)) => {
+                for (edge, a, b) in edges {
+                    let a = if a == i { parent } else { a };
+                    let b = if b == i { parent } else { b };
+                    self.move_transition(edge, a, b);
+                }
+            }
+            _ => {
+                for (edge, _, _) in edges {
+                    self.remove_transition(edge);
+                }
+            }
+        }
 
-        // TODO: undo transaction
         if let Some(s) = self.graph.remove_node(i) {
             self.add_undo(Op::RemoveState(i, s))
         }
@@ -303,6 +349,17 @@ impl<C: Context> Graph<C> {
         self.add_undo(Op::UpdateState(i, s1, s2));
     }
 
+    // Sets the initial index, preserving the initial variant. If
+    // `initial` is None, sets it to Initial::None.
+    pub fn set_initial_idx(&mut self, i: Idx, initial: Option<Idx>) {
+        self.set_initial(
+            i,
+            initial
+                .map(|i0| self.graph[i].initial.clone().set_idx(i0))
+                .unwrap_or_default(),
+        )
+    }
+
     // Return true if b is a child of a.
     pub fn is_child(&self, a: Idx, b: Idx) -> bool {
         a != b && self.in_path(a, b)
@@ -323,6 +380,7 @@ impl<C: Context> Graph<C> {
         }
     }
 
+    // TODO: check root? validation?
     pub fn add_transition(
         &mut self,
         a: Idx,
@@ -353,6 +411,24 @@ impl<C: Context> Graph<C> {
             let t1 = self.graph[i].clone();
             self.add_undo(Op::UpdateTransition(i, (a, b, t0), (a, b, t1)));
         }
+    }
+
+    // There is no API for updating an existing edge so we add/remove
+    // (see https://github.com/petgraph/petgraph/pull/103).
+    pub(crate) fn move_transition_internal(&mut self, i: Tdx, a: Idx, b: Idx) -> Option<Tdx> {
+        self.graph.remove_edge(i).map(|t| {
+            let i2 = self.graph.add_edge(a, b, t);
+            assert_eq!(i, i2);
+            i2
+        })
+    }
+
+    pub fn move_transition(&mut self, i: Tdx, a: Idx, b: Idx) -> Option<Tdx> {
+        self.graph.edge_endpoints(i).and_then(|(a0, b0)| {
+            let t0 = self.graph[i].clone();
+            self.add_undo(Op::UpdateTransition(i, (a0, b0, t0.clone()), (a, b, t0)));
+            self.move_transition_internal(i, a, b)
+        })
     }
 
     // returns an iterator from idx -> root

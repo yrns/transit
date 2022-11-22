@@ -42,16 +42,10 @@ impl<C: Context> Op<C> {
                     .remove_edge(*i)
                     .expect("add transition op does not exist!");
             }
+            // TODO: handle internal?
             Op::UpdateTransition(i, (a, b, t1), _) => {
-                // There is no API for updating an existing
-                // transaction so we add/remove (see
-                // https://github.com/petgraph/petgraph/pull/103).
-                let _ = g
-                    .graph
-                    .remove_edge(*i)
-                    .expect("update transition op does not exist!");
-                let i2 = g.graph.add_edge(*a, *b, t1.clone());
-                assert_eq!(*i, i2);
+                g.graph[*i] = t1.clone();
+                let _ = g.move_transition_internal(*i, *a, *b);
             }
             Op::RemoveTransition(i, (a, b, t)) => {
                 let i2 = g.graph.add_edge(*a, *b, t.clone());
@@ -131,7 +125,7 @@ mod tests {
         let mut g = test_graph();
         let a = g.add_state("a".into(), None);
         assert_eq!(g.state(a).unwrap(), "a");
-        g.remove_state(a);
+        g.remove_state(a, false, false);
         assert!(g.undo()); // undo remove
         assert_eq!(g.state(a).unwrap(), "a");
         assert!(g.undo()); // undo add
@@ -173,7 +167,7 @@ mod tests {
         let mut g = test_graph();
         let a = g.add_state("a".into(), None);
         let _b = g.add_state("b".into(), None);
-        g.remove_state(a);
+        g.remove_state(a, false, false);
         let c = g.add_state("c".into(), None);
         assert_eq!(a, c);
         g.undo(); // undo add c
