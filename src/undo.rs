@@ -72,7 +72,7 @@ impl<C: Context> Op<C> {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Undo<C: Context> {
     undos: Vec<Op<C>>,
     redos: Vec<Op<C>>,

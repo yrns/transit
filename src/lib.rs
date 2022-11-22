@@ -1,19 +1,14 @@
 //#![allow(unused_imports)]
 
-//use anyhow::{anyhow, Context as _, Result};
+use crate::undo::*;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
     visit::{EdgeRef, IntoNodeReferences},
 };
-// use ron::de::from_reader;
-// use ron::ser::{to_string_pretty, PrettyConfig};
-// use serde::{Deserialize, Serialize};
-// use std::fs::File;
-// use std::io::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, iter::Iterator};
-//use std::path::{Path, PathBuf};
-use crate::undo::*;
+use thiserror::Error;
 
 mod undo;
 
@@ -23,9 +18,7 @@ mod undo;
 pub type Idx = NodeIndex<u32>;
 pub type Tdx = EdgeIndex<u32>;
 
-/// Both states and transitions require [Clone] since they are stored in
-/// the graph inside [Arc]s which are used for clone-on-write and
-/// undo/redo operations.
+/// Both states and transitions require [Clone] for undo/redo operations.
 pub trait Context
 where
     Self: Sized + Clone + Default,
@@ -40,22 +33,27 @@ where
     fn transition(&mut self, _source: &Self::State, _target: &Self::State) {}
 }
 
-// separate state, actions (code), and events from the structure
-// This is runtime (not serialized)?
+// TODO: Serialize?
 pub struct Statechart<C: Context> {
     pub context: C,
     pub graph: Graph<C>,
     pub active: Idx,
 }
 
-//#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Graph<C: Context> {
+    #[serde(bound(
+        serialize = "C::State: Serialize, C::Transition: Serialize",
+        deserialize = "C::State: Deserialize<'de>, C::Transition: Deserialize<'de>"
+    ))]
     pub(crate) graph: StableDiGraph<StateState<C>, TransitionData<C::Transition>, u32>,
     pub root: Idx,
+    // Make this an option?
+    #[serde(skip_serializing, skip_deserializing)]
     undo: Undo<C>,
 }
 
-#[derive(/* Serialize, Deserialize,*/ Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Initial {
     #[default]
     None,
@@ -100,13 +98,11 @@ impl From<Idx> for Initial {
 }
 
 pub trait State<C: Context> {
-    // Pass event? Pass context?
     fn enter(&mut self, ctx: &mut C, event: Option<&C::Event>);
     fn exit(&mut self, ctx: &mut C, event: Option<&C::Event>);
 }
 
-//#[derive(Serialize, Deserialize, Debug, Clone)]
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct StateState<C>
 where
     C: Context,
@@ -116,23 +112,12 @@ where
     pub state: C::State,
 }
 
-// We can't derive this since Context isn't Default?
-impl<C: Context> Default for StateState<C> {
-    fn default() -> Self {
-        Self {
-            initial: Initial::default(),
-            parent: None,
-            state: C::State::default(),
-        }
-    }
-}
-
 /// An internal transition is only valid for self-transitions. The
 /// guard will be called, but enter/exit will not; and the active
 /// state will not change. This is relevant for self-transitions on
 /// parent states, which would otherwise transition from child ->
 /// parent, if external.
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TransitionData<T> {
     transition: T,
     internal: bool,
@@ -179,20 +164,6 @@ impl<C: Context> Graph<C> {
         }
     }
 
-    // pub fn export(&self) -> Result<String> {
-    //     Ok(to_string_pretty(&self, PrettyConfig::default())?)
-    // }
-
-    // pub fn export_to_file(&self, path: &Path) -> Result<()> {
-    //     let mut file = File::create(path)?;
-    //     file.write_all(self.export()?.as_bytes())?;
-    //     Ok(())
-    // }
-
-    // pub fn import_from_file(path: &Path) -> Result<Self> {
-    //     Ok(from_reader(File::open(path)?)?)
-    // }
-
     pub fn add_state(&mut self, state: C::State, parent: Option<Idx>) -> Idx {
         let s = StateState::new(state, parent.or(Some(self.root)));
         let i = self.graph.add_node(s.clone());
@@ -204,8 +175,6 @@ impl<C: Context> Graph<C> {
     pub fn remove_state(&mut self, i: Idx, keep_transitions: bool, keep_children: bool) {
         // Cannot remove the root.
         assert!(i != self.root);
-
-        // TODO: clean up transitions? move transitions to parent?
 
         // Kept things go to the parent state (if not root).
         let parent = self
@@ -514,6 +483,52 @@ impl<C: Context> Graph<C> {
 
         // Active exists/valid? Needs to be in Statechart.
         Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ExportError {
+    #[error("io error")]
+    Io(#[from] std::io::Error),
+    #[error("ron error")]
+    Ron(#[from] ron::Error),
+}
+
+impl<C> Graph<C>
+where
+    C: Context,
+    C::State: Serialize,
+    C::Transition: Serialize,
+{
+    pub fn export(&self) -> Result<String, ExportError> {
+        Ok(ron::ser::to_string_pretty(&self, Default::default())?)
+    }
+
+    pub fn export_to_file(&self, path: &std::path::Path) -> Result<(), ExportError> {
+        use std::io::Write;
+
+        let mut file = std::fs::File::create(path)?;
+        file.write_all(self.export()?.as_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ImportError {
+    #[error("io error")]
+    Io(#[from] std::io::Error),
+    #[error("ron error")]
+    Ron(#[from] ron::error::SpannedError),
+}
+
+impl<C> Graph<C>
+where
+    C: Context,
+    C::State: for<'de> Deserialize<'de>,
+    C::Transition: for<'de> Deserialize<'de>,
+{
+    pub fn import_from_file(path: &std::path::Path) -> Result<Self, ImportError> {
+        Ok(ron::de::from_reader(std::fs::File::open(path)?)?)
     }
 }
 
