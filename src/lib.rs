@@ -486,6 +486,12 @@ impl<C: Context> Graph<C> {
     }
 }
 
+impl<C: Context> Default for Graph<C> {
+    fn default() -> Self {
+        Graph::new()
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ExportError {
     #[error("io error")]
