@@ -4,14 +4,14 @@
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
-    visit::EdgeRef,
+    visit::{EdgeRef, IntoNodeReferences},
 };
 // use ron::de::from_reader;
 // use ron::ser::{to_string_pretty, PrettyConfig};
 // use serde::{Deserialize, Serialize};
 // use std::fs::File;
 // use std::io::prelude::*;
-use std::iter::Iterator;
+use std::{collections::HashSet, iter::Iterator};
 //use std::path::{Path, PathBuf};
 use crate::undo::*;
 
@@ -50,8 +50,7 @@ pub struct Statechart<C: Context> {
 
 //#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Graph<C: Context> {
-    // There are Arcs for undo/redo?
-    pub graph: StableDiGraph<StateState<C>, TransitionData<C::Transition>, u32>,
+    pub(crate) graph: StableDiGraph<StateState<C>, TransitionData<C::Transition>, u32>,
     pub root: Idx,
     undo: Undo<C>,
 }
@@ -465,14 +464,55 @@ impl<C: Context> Graph<C> {
             .and_then(|(i, _)| self.parent(*i))
     }
 
-    pub fn validate() -> Result<(), String> {
-        // initial is set for graph/states and valid/exists/is a child of
-        // no cycles in hierarchy
-        // all states ids are unique among siblings
-        // edit data, rects are not negative/zero
-        // root is set, exists, and no other non-parent states
-        // no orphan states?
-        // active exists/valid
+    /// Check for problems with the graph. None of these conditions
+    /// should be possible to achieve with the public API.
+    pub fn validate(&self) -> Result<(), String> {
+        // Root.
+        let root = self.graph.node_weight(self.root);
+        match root {
+            Some(root) if root.parent.is_some() => {
+                return Err(format!("root parent is {:?}", root.parent))
+            }
+            None => return Err(format!("missing root state: {:?}", self.root)),
+            _ => (),
+        }
+
+        for (i, s) in self.graph.node_references() {
+            // Parent is set for non-root states.
+            if i != self.root && s.parent.is_none() {
+                return Err(format!("non-root node has no parent! ({:?})", i));
+            }
+
+            // Initial.
+            if let Some(initial) = s.initial.idx() {
+                if !self.graph.contains_node(i) {
+                    return Err(format!(
+                        "initial state ({:?}) missing for: {:?}",
+                        initial, i
+                    ));
+                }
+                // Initial state is a child.
+                if !self.is_child(i, initial) {
+                    return Err(format!(
+                        "initial state ({:?}) is not a child of: {:?}",
+                        initial, i
+                    ));
+                }
+            }
+
+            // Check for cycles.
+            let mut path_set = HashSet::new();
+            let _ = self.path_iter(i).try_for_each(|p| {
+                if path_set.contains(&p) {
+                    Err(format!("cycle {:?} in path for {:?}", p, i))
+                } else {
+                    path_set.insert(p);
+                    Ok(())
+                }
+            })?;
+        }
+
+        // Active exists/valid? Needs to be in Statechart.
         Ok(())
     }
 }
@@ -722,5 +762,14 @@ mod tests {
         assert!(g.is_child(a, b));
         assert!(!g.is_child(a, a));
         assert!(!g.is_child(b, a));
+    }
+
+    #[test]
+    fn validate() {
+        let mut g = test_graph();
+        let a = g.add_state("a".into(), None);
+        let b = g.add_state("b".into(), Some(a));
+        g.graph[a].parent = Some(b);
+        assert!(g.validate().is_err());
     }
 }
