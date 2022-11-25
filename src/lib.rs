@@ -5,6 +5,7 @@ use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
     visit::{EdgeRef, IntoNodeReferences},
+    Direction,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, iter::Iterator};
@@ -33,7 +34,9 @@ where
     fn transition(&mut self, _source: &Self::State, _target: &Self::State) {}
 }
 
-// TODO: Serialize?
+// TODO: Serialize? Context needs to be separate from the graph so
+// multiple contexts can share one graph. Same for state and
+// transition contexts which are mutable currently.
 pub struct Statechart<C: Context> {
     pub context: C,
     pub graph: Graph<C>,
@@ -257,6 +260,7 @@ impl<C: Context> Graph<C> {
         self.graph.edge_weight(i).is_some()
     }
 
+    // Why is this an option? For the root?
     pub fn children(&self, p: Option<Idx>) -> impl Iterator<Item = Idx> + '_ {
         self.graph
             .node_indices()
@@ -265,6 +269,31 @@ impl<C: Context> Graph<C> {
 
     pub fn siblings(&self, i: Idx) -> impl Iterator<Item = Idx> + '_ {
         self.children(self.graph[i].parent).filter(move |s| *s != i)
+    }
+
+    fn state_transitions(
+        &self,
+        i: Idx,
+        direction: Direction,
+    ) -> impl Iterator<Item = (Tdx, Idx, &<C as Context>::Transition, bool)> {
+        self.graph.edges_directed(i, direction).map(|e| {
+            let t = e.weight();
+            (e.id(), e.target(), &t.transition, t.internal)
+        })
+    }
+
+    pub fn transitions_out(
+        &self,
+        i: Idx,
+    ) -> impl Iterator<Item = (Tdx, Idx, &<C as Context>::Transition, bool)> {
+        self.state_transitions(i, Direction::Outgoing)
+    }
+
+    pub fn transitions_in(
+        &self,
+        i: Idx,
+    ) -> impl Iterator<Item = (Tdx, Idx, &<C as Context>::Transition, bool)> {
+        self.state_transitions(i, Direction::Incoming)
     }
 
     pub fn transitions(&self) -> impl Iterator<Item = Tdx> + '_ {
@@ -283,6 +312,7 @@ impl<C: Context> Graph<C> {
         }
     }
 
+    // Check i != root? Why is this still an Option?
     pub fn set_parent(&mut self, i: Idx, parent: Option<Idx>) {
         // Make sure the new parent isn't a child.
         if let Some(p) = parent {
@@ -480,6 +510,8 @@ impl<C: Context> Graph<C> {
                 }
             })?;
         }
+
+        // Check all internal transitions are self-transitions?
 
         // Active exists/valid? Needs to be in Statechart.
         Ok(())
