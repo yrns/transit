@@ -1,4 +1,5 @@
-use eframe::epaint::CubicBezierShape;
+use egui::epaint::CubicBezierShape;
+use egui::*;
 
 #[derive(Default, Clone)]
 pub enum Selection {
@@ -24,6 +25,7 @@ pub struct State {
     //exit: String,
     // relative to root?
     rect: egui::Rect,
+    min_size: Vec2,
     #[allow(unused)]
     collapsed: bool,
     #[allow(unused)]
@@ -38,6 +40,9 @@ impl Default for State {
         State {
             id: "untitled".into(),
             rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::Vec2::INFINITY),
+            // This should really be the size of the header? Or the
+            // collapsed header?
+            min_size: Self::DEFAULT_SIZE,
             collapsed: false,
             pan: egui::Vec2::ZERO,
             zoom: 1.0,
@@ -99,6 +104,7 @@ pub enum Command {
     RemoveState(transit::Idx, bool),
     UpdateState,
     MoveState(transit::Idx, transit::Idx, egui::Pos2),
+    ResizeState(transit::Idx, egui::Vec2),
     AddTransition,
     RemoveTransition,
     UpdateTransition,
@@ -141,6 +147,29 @@ fn offset_rect(rect: egui::Rect, offset: egui::Vec2) -> egui::Rect {
     egui::Rect::from_min_size(rect.min + offset, rect.size())
 }
 
+// These two functions are copied from egui::resize which isn't public...
+fn paint_resize_corner(ui: &mut Ui, response: &Response) {
+    let stroke = ui.style().interact(response).fg_stroke;
+    paint_resize_corner_with_style(ui, &response.rect, stroke, Align2::RIGHT_BOTTOM);
+}
+
+fn paint_resize_corner_with_style(ui: &mut Ui, rect: &Rect, stroke: Stroke, corner: Align2) {
+    let painter = ui.painter();
+    let cp = painter.round_pos_to_pixels(corner.pos_in_rect(rect));
+    let mut w = 2.0;
+
+    while w <= rect.width() && w <= rect.height() {
+        painter.line_segment(
+            [
+                pos2(cp.x - w * corner.x().to_sign(), cp.y),
+                pos2(cp.x, cp.y - w * corner.y().to_sign()),
+            ],
+            stroke,
+        );
+        w += 4.0;
+    }
+}
+
 impl Statechart<EditContext> {
     pub fn new(id: impl Into<String>) -> Self {
         let id = id.into();
@@ -176,6 +205,16 @@ impl Statechart<EditContext> {
                         self.graph.update_state(idx, state);
                     }
                 }
+                Command::ResizeState(idx, delta) => {
+                    if let Some(state) = self.graph.state(idx) {
+                        let mut state = state.clone();
+                        state.rect = Rect::from_min_size(
+                            state.rect.min,
+                            state.min_size.max(state.rect.size() + delta),
+                        );
+                        self.graph.update_state(idx, state);
+                    }
+                }
                 _ => (),
             }
         }
@@ -190,6 +229,14 @@ impl Statechart<EditContext> {
         self.show_state(self.graph.root, rect.min.to_vec2(), drag, ui, &mut commands);
 
         commands
+    }
+
+    pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
+        let resize_size = Vec2::splat(ui.visuals().resize_corner_size);
+        let resize_rect = egui::Rect::from_min_size(rect.max - resize_size, resize_size);
+        let resize_response = ui.interact(resize_rect, id.with("resize"), egui::Sense::drag());
+        paint_resize_corner(ui, &resize_response);
+        resize_response
     }
 
     pub fn show_state(
@@ -210,6 +257,14 @@ impl Statechart<EditContext> {
                 let p = ui.input().pointer.interact_pos().unwrap_or_default();
                 egui::Rect::from_min_size(p - *drag_offset, state.rect.size())
             }
+            Drag::Resize(i, delta) if *i == idx => {
+                // Include the offset and the resize delta.
+                Rect::from_min_size(
+                    state.rect.min + offset,
+                    state.min_size.max(state.rect.size() + *delta),
+                )
+            }
+            // Just the offset.
             _ => offset_rect(state.rect, offset),
         };
 
@@ -217,24 +272,31 @@ impl Statechart<EditContext> {
         //     dbg!(id);
         // }
 
-        // Use all available space for the root, don't draw background.
+        // Use all available space for the root, don't draw
+        // background.
+        let stroke_width = 2.0;
         let inner_rect = if root {
             rect.intersect(ui.max_rect())
         } else {
             ui.painter().rect(
                 rect,
                 4.0,
-                egui::Color32::WHITE,
-                egui::Stroke::new(2.0, egui::Color32::BLACK),
+                ui.visuals().widgets.active.bg_fill,
+                ui.visuals().widgets.active.bg_stroke,
             );
 
-            rect.shrink(8.0)
+            // Remove this and put space around header only.
+            rect.shrink(4.0)
         };
         let mut child_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
+        let clip_rect = rect.shrink(stroke_width * 0.5);
+        child_ui.set_clip_rect(clip_rect);
 
         // children should not be able to cover the header, draw this last
         if child_ui
             .horizontal(|ui| {
+                ui.set_clip_rect(clip_rect);
+
                 // initial first? drag to select? or select from list?
 
                 // should be editable
@@ -254,6 +316,34 @@ impl Statechart<EditContext> {
         {
             //dbg!("header hover");
         }
+
+        // Resize.
+        match drag {
+            Drag::None => {
+                let response = self.show_resize(id, inner_rect, ui);
+                if response.drag_started() {
+                    dbg!("drag_started");
+                    *drag = Drag::Resize(idx, response.drag_delta());
+                }
+            }
+            Drag::Resize(idx, delta) => {
+                let response = self.show_resize(id, inner_rect, ui);
+                if response.dragged() {
+                    *drag = Drag::Resize(*idx, *delta + response.drag_delta());
+                } else if response.drag_released() {
+                    dbg!("drag_released");
+                    commands.push(Command::ResizeState(*idx, *delta));
+                    *drag = Drag::None
+                }
+            }
+            _ => (),
+        }
+
+        // ui.painter().arrow(
+        //     rect.max - egui::Vec2::new(10.0, 10.0),
+        //     egui::Vec2::new(8.0, 8.0),
+        //     egui::Stroke::new(1.0, egui::Color32::BLACK),
+        // );
 
         for (tdx, target, t, internal) in self.graph.transitions_out(idx) {
             self.show_transition(state.port_position(t.port1), tdx, target, t, internal, ui);
