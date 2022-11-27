@@ -354,14 +354,13 @@ impl Statechart<EditContext> {
         }
 
         // Background interaction, dragging states and context menu.
-
-        // ui.input().pointer.primary_released() doesn't work?
         if drag.in_drag() {
+            // ui.input().pointer.primary_released() doesn't work?
             if ui.input().pointer.any_released() {
                 match (&drag, ui.input().pointer.interact_pos()) {
                     (Drag::State(i, offset), Some(p)) => {
-                        // Cannot drag into ourself.
-                        if rect.contains(p) && *i != idx {
+                        // Cannot drag into any state in our path.
+                        if rect.contains(p) && !self.graph.in_path(*i, idx) {
                             // Place the state relative to the parent with the offset.
                             let p = (p - rect.min - *offset).to_pos2();
                             commands.push(Command::MoveState(*i, idx, p));
