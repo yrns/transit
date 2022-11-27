@@ -318,25 +318,25 @@ impl Statechart<EditContext> {
         }
 
         // Resize.
-        match drag {
-            Drag::None => {
-                let response = self.show_resize(id, inner_rect, ui);
-                if response.drag_started() {
-                    dbg!("drag_started");
-                    *drag = Drag::Resize(idx, response.drag_delta());
+        if !root {
+            match drag {
+                Drag::None => {
+                    let response = self.show_resize(id, inner_rect, ui);
+                    if response.drag_started() {
+                        *drag = Drag::Resize(idx, response.drag_delta());
+                    }
                 }
-            }
-            Drag::Resize(idx, delta) => {
-                let response = self.show_resize(id, inner_rect, ui);
-                if response.dragged() {
-                    *drag = Drag::Resize(*idx, *delta + response.drag_delta());
-                } else if response.drag_released() {
-                    dbg!("drag_released");
-                    commands.push(Command::ResizeState(*idx, *delta));
-                    *drag = Drag::None
+                Drag::Resize(idx, ref mut delta) => {
+                    let response = self.show_resize(id, inner_rect, ui);
+                    if response.dragged() {
+                        *delta += response.drag_delta();
+                    } else if response.drag_released() {
+                        commands.push(Command::ResizeState(*idx, *delta));
+                        *drag = Drag::None
+                    }
                 }
+                _ => (),
             }
-            _ => (),
         }
 
         // ui.painter().arrow(
