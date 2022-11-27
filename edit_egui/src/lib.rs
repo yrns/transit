@@ -384,7 +384,7 @@ impl Statechart<EditContext> {
                 egui::Sense::click()
             };
 
-            let state_response = ui.interact(state.rect, id, sense);
+            let state_response = ui.interact(rect, id, sense);
             let dragged = state_response.dragged_by(egui::PointerButton::Primary);
 
             if dragged {
