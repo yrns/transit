@@ -289,14 +289,14 @@ impl Statechart<EditContext> {
             rect.shrink(4.0)
         };
         let mut child_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
+
+        // Intersect our clip rect with the parent's.
         let clip_rect = rect.shrink(stroke_width * 0.5);
-        child_ui.set_clip_rect(clip_rect);
+        child_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
 
         // children should not be able to cover the header, draw this last
         if child_ui
             .horizontal(|ui| {
-                ui.set_clip_rect(clip_rect);
-
                 // initial first? drag to select? or select from list?
 
                 // should be editable
@@ -350,7 +350,16 @@ impl Statechart<EditContext> {
         }
 
         for child in self.graph.children(Some(idx)) {
-            self.show_state(child, rect.min.to_vec2(), drag, &mut child_ui, commands);
+            match drag {
+                // If the child state is being dragged, unset the clip
+                // rect so it can be dragged out.
+                Drag::State(i, _) if *i == child => {
+                    child_ui.set_clip_rect(ui.max_rect());
+                    self.show_state(child, rect.min.to_vec2(), drag, &mut child_ui, commands);
+                    child_ui.set_clip_rect(clip_rect);
+                }
+                _ => self.show_state(child, rect.min.to_vec2(), drag, &mut child_ui, commands),
+            }
         }
 
         // Background interaction, dragging states and context menu.
