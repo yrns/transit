@@ -304,10 +304,10 @@ impl Statechart<EditContext> {
 
                 // hover should show source/location by name? click to
                 // select fns from source?
-                if ui.button("enter").clicked() {
+                if ui.small_button("enter").clicked() {
                     dbg!("clicked enter");
                 };
-                if ui.button("exit").clicked() {
+                if ui.small_button("exit").clicked() {
                     dbg!("clicked exit");
                 }
             })
