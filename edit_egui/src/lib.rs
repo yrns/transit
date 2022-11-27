@@ -278,12 +278,18 @@ impl Statechart<EditContext> {
         let inner_rect = if root {
             rect.intersect(ui.max_rect())
         } else {
-            ui.painter().rect(
-                rect,
-                4.0,
-                ui.visuals().widgets.active.bg_fill,
-                ui.visuals().widgets.active.bg_stroke,
-            );
+            let hovered = ui.rect_contains_pointer(rect);
+            let w = &ui.visuals().widgets;
+            let wv = match drag {
+                Drag::State(i, _) if *i == idx => w.active,
+                _ if hovered => w.hovered,
+                _ => w.inactive,
+            };
+            // Use the fg_stroke since the default dark theme has no
+            // bg_stroke for inactive, which makes all the contained
+            // states indiscernible.
+            ui.painter()
+                .rect(rect, wv.rounding, wv.bg_fill, wv.fg_stroke);
 
             // Remove this and put space around header only.
             rect.shrink(4.0)
