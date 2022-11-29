@@ -11,6 +11,7 @@ pub enum Selection {
 
 #[derive(Default)]
 pub struct Statechart<C: transit::Context> {
+    // Use root id?
     pub id: String,
     pub path: Option<std::path::PathBuf>,
     //statechart: transit::Statechart<C>,
@@ -122,8 +123,9 @@ pub enum Command {
     SetGuard,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum Drag {
+    #[default]
     None,
     State(transit::Idx, egui::Vec2),
     Resize(transit::Idx, egui::Vec2),
@@ -233,9 +235,12 @@ impl Statechart<EditContext> {
         }
     }
 
-    pub fn show(&self, drag: &mut Drag, ui: &mut egui::Ui) -> Vec<Command> {
+    pub fn show(&self, ui: &mut egui::Ui) -> Vec<Command> {
         let rect = ui.max_rect();
         ui.allocate_rect(rect, egui::Sense::hover());
+
+        // Keep drag state in temp storage.
+        let mut drag = ui.ctx().data().get_temp(ui.id()).unwrap_or_default();
         let mut commands = Vec::new();
 
         // Show root and recursively show children.
@@ -243,10 +248,13 @@ impl Statechart<EditContext> {
             self.graph.root,
             rect.min.to_vec2(),
             0,
-            drag,
+            &mut drag,
             ui,
             &mut commands,
         );
+
+        // Save drag state.
+        ui.ctx().data().insert_temp(ui.id(), drag);
 
         commands
     }

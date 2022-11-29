@@ -1,6 +1,8 @@
 use edit_egui::*;
 use eframe::egui;
 
+// TODO wasm https://github.com/emilk/eframe_template
+
 fn main() {
     //tracing_subscriber::fmt::init();
 
@@ -14,14 +16,12 @@ fn main() {
 
 struct Transit {
     statechart: Statechart<EditContext>,
-    drag: Drag,
 }
 
 impl Default for Transit {
     fn default() -> Self {
         Self {
             statechart: edit_egui::Statechart::new("untitled"),
-            drag: Drag::None,
         }
     }
 }
@@ -29,7 +29,7 @@ impl Default for Transit {
 impl eframe::App for Transit {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            let commands = self.statechart.show(&mut self.drag, ui);
+            let commands = self.statechart.show(ui);
             self.statechart.process_commands(commands);
         });
     }
