@@ -1,5 +1,6 @@
-use egui::epaint::{CubicBezierShape, Vertex};
-use egui::*;
+// TODO: make a separte crate for the bin and only depend on egui here
+use eframe::egui::epaint::{CubicBezierShape, Vertex};
+use eframe::egui::*;
 
 #[derive(Default, Clone)]
 pub enum Selection {
@@ -9,16 +10,21 @@ pub enum Selection {
     Transition(transit::Tdx),
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
 pub struct Statechart<C: transit::Context> {
     // Use root id?
     pub id: String,
     pub path: Option<std::path::PathBuf>,
     //statechart: transit::Statechart<C>,
+    #[serde(skip)]
     pub graph: transit::Graph<C>,
+    // This should be in temp?
+    #[serde(skip)]
     pub selection: Selection,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone)]
 pub struct State {
     id: String,
@@ -29,12 +35,12 @@ pub struct State {
     /// position can be found for this state.
     parent_root_offset: Vec2,
     /// Rect relative to parent.
-    rect: egui::Rect,
+    rect: Rect,
     min_size: Vec2,
     #[allow(unused)]
     collapsed: bool,
     #[allow(unused)]
-    pan: egui::Vec2,
+    pan: Vec2,
     #[allow(unused)]
     zoom: f32,
 }
@@ -45,28 +51,30 @@ impl Default for State {
         State {
             id: "untitled".into(),
             parent_root_offset: Vec2::ZERO,
-            rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::Vec2::INFINITY),
+            rect: Rect::from_min_size(pos2(0.0, 0.0), Vec2::INFINITY),
             // This should really be the size of the header? Or the
             // collapsed header?
             min_size: Self::DEFAULT_SIZE,
             collapsed: false,
-            pan: egui::Vec2::ZERO,
+            pan: Vec2::ZERO,
             zoom: 1.0,
         }
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Transition {
     // event? label?
-    c1: egui::Pos2,
-    c2: egui::Pos2,
+    c1: Pos2,
+    c2: Pos2,
     // Source port index.
     port1: usize,
     /// Destination port index.
     port2: usize,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Default)]
 pub struct EditContext {}
 
@@ -106,13 +114,13 @@ impl transit::Transition<EditContext> for Transition {
 
 #[derive(Debug)]
 pub enum Command {
-    AddState(transit::Idx, egui::Pos2),
+    AddState(transit::Idx, Pos2),
     RemoveState(transit::Idx, bool),
     UpdateState,
     /// Source, target, position (relative to parent), offset of the
     /// parent (relative to root).
-    MoveState(transit::Idx, transit::Idx, egui::Pos2, egui::Vec2),
-    ResizeState(transit::Idx, egui::Vec2),
+    MoveState(transit::Idx, transit::Idx, Pos2, Vec2),
+    ResizeState(transit::Idx, Vec2),
     AddTransition(transit::Idx, transit::Idx, Transition),
     RemoveTransition,
     UpdateTransition,
@@ -127,20 +135,20 @@ pub enum Command {
 pub enum Drag {
     #[default]
     None,
-    State(transit::Idx, egui::Vec2),
-    Resize(transit::Idx, egui::Vec2),
-    Initial(transit::Idx, egui::Vec2),
+    State(transit::Idx, Vec2),
+    Resize(transit::Idx, Vec2),
+    Initial(transit::Idx, Vec2),
     AddTransition(transit::Idx, Transition, Option<(transit::Idx, usize)>),
-    TransitionSource(transit::Tdx, egui::Vec2),
-    TransitionTarget(transit::Tdx, egui::Vec2),
-    TransitionControl(transit::Tdx, egui::Vec2, bool),
+    TransitionSource(transit::Tdx, Vec2),
+    TransitionTarget(transit::Tdx, Vec2),
+    TransitionControl(transit::Tdx, Vec2, bool),
 }
 
 impl Drag {
-    pub fn sense(&self) -> egui::Sense {
+    pub fn sense(&self) -> Sense {
         match self {
-            Drag::None => egui::Sense::click_and_drag(),
-            _ => egui::Sense::hover(),
+            Drag::None => Sense::click_and_drag(),
+            _ => Sense::hover(),
         }
     }
 
@@ -154,8 +162,8 @@ impl Drag {
 
 // USE TRANSLATE
 #[inline]
-fn offset_rect(rect: egui::Rect, offset: egui::Vec2) -> egui::Rect {
-    egui::Rect::from_min_size(rect.min + offset, rect.size())
+fn offset_rect(rect: Rect, offset: Vec2) -> Rect {
+    Rect::from_min_size(rect.min + offset, rect.size())
 }
 
 // These two functions are copied from egui::resize which isn't public...
@@ -190,6 +198,20 @@ impl Statechart<EditContext> {
         }
     }
 
+    pub fn load(&mut self) -> Result<(), String> {
+        if let Some(path) = &self.path {
+            self.graph = transit::Graph::import_from_file(&path).unwrap();
+        }
+        Ok(())
+    }
+
+    pub fn save(&mut self) -> Result<(), String> {
+        if let Some(path) = &self.path {
+            self.graph.export_to_file(&path).unwrap();
+        }
+        Ok(())
+    }
+
     pub fn process_commands(&mut self, commands: Vec<Command>) {
         for c in commands {
             match c {
@@ -197,7 +219,7 @@ impl Statechart<EditContext> {
                     self.graph.add_state(
                         State {
                             id: "untitled".into(),
-                            rect: egui::Rect::from_min_size(pos, State::DEFAULT_SIZE),
+                            rect: Rect::from_min_size(pos, State::DEFAULT_SIZE),
                             ..Default::default()
                         },
                         Some(parent),
@@ -207,7 +229,7 @@ impl Statechart<EditContext> {
                 Command::MoveState(idx, parent, offset, parent_root_offset) => {
                     if let Some(state) = self.graph.state(idx) {
                         let mut state = state.clone();
-                        state.rect = egui::Rect::from_min_size(offset, state.rect.size());
+                        state.rect = Rect::from_min_size(offset, state.rect.size());
                         state.parent_root_offset = parent_root_offset;
 
                         // TODO: merge undos
@@ -235,9 +257,9 @@ impl Statechart<EditContext> {
         }
     }
 
-    pub fn show(&self, ui: &mut egui::Ui) -> Vec<Command> {
+    pub fn show(&self, ui: &mut Ui) -> Vec<Command> {
         let rect = ui.max_rect();
-        ui.allocate_rect(rect, egui::Sense::hover());
+        ui.allocate_rect(rect, Sense::hover());
 
         // Keep drag state in temp storage.
         let mut drag = ui.ctx().data().get_temp(ui.id()).unwrap_or_default();
@@ -261,8 +283,8 @@ impl Statechart<EditContext> {
 
     pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
         let resize_size = Vec2::splat(ui.visuals().resize_corner_size);
-        let resize_rect = egui::Rect::from_min_size(rect.max - resize_size, resize_size);
-        let resize_response = ui.interact(resize_rect, id.with("resize"), egui::Sense::drag());
+        let resize_rect = Rect::from_min_size(rect.max - resize_size, resize_size);
+        let resize_response = ui.interact(resize_rect, id.with("resize"), Sense::drag());
         paint_resize_corner(ui, &resize_response);
         resize_response
     }
@@ -271,13 +293,13 @@ impl Statechart<EditContext> {
         &self,
         idx: transit::Idx,
         // Parent rect min.
-        offset: egui::Vec2,
+        offset: Vec2,
         depth: usize,
         drag: &mut Drag,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
         commands: &mut Vec<Command>,
     ) {
-        let id = egui::Id::new(idx);
+        let id = Id::new(idx);
         let state = self.graph.state(idx).unwrap();
         let root = idx == self.graph.root;
         let interact_pos = ui.input().pointer.interact_pos();
@@ -285,7 +307,7 @@ impl Statechart<EditContext> {
         let rect = match drag {
             Drag::State(i, drag_offset) if *i == idx => {
                 let p = interact_pos.unwrap_or_default();
-                egui::Rect::from_min_size(p - *drag_offset, state.rect.size())
+                Rect::from_min_size(p - *drag_offset, state.rect.size())
             }
             Drag::Resize(i, delta) if *i == idx => {
                 // Include the offset and the resize delta.
@@ -376,9 +398,9 @@ impl Statechart<EditContext> {
         }
 
         // ui.painter().arrow(
-        //     rect.max - egui::Vec2::new(10.0, 10.0),
-        //     egui::Vec2::new(8.0, 8.0),
-        //     egui::Stroke::new(1.0, egui::Color32::BLACK),
+        //     rect.max - Vec2::new(10.0, 10.0),
+        //     Vec2::new(8.0, 8.0),
+        //     Stroke::new(1.0, Color32::BLACK),
         // );
 
         for (tdx, target, t, internal) in self.graph.transitions_out(idx) {
@@ -403,11 +425,11 @@ impl Statechart<EditContext> {
                 t.c2 = end + vec2(-dx, 0.0);
                 // We recalculate the end position every frame but not
                 // port2?
-                let stroke = egui::Stroke::new(2.0, egui::Color32::WHITE);
+                let stroke = Stroke::new(2.0, Color32::WHITE);
                 let bezier = CubicBezierShape::from_points_stroke(
                     [start, t.c1, t.c2, end],
                     false,
-                    egui::Color32::TRANSPARENT,
+                    Color32::TRANSPARENT,
                     stroke,
                 );
 
@@ -483,13 +505,13 @@ impl Statechart<EditContext> {
         } else {
             // Can't drag the root state.
             let sense = if !root {
-                egui::Sense::click_and_drag()
+                Sense::click_and_drag()
             } else {
-                egui::Sense::click()
+                Sense::click()
             };
 
             let state_response = ui.interact(rect, id, sense);
-            let dragged = state_response.dragged_by(egui::PointerButton::Primary);
+            let dragged = state_response.dragged_by(PointerButton::Primary);
 
             if dragged {
                 if let Some(p) = interact_pos {
@@ -559,14 +581,14 @@ impl Statechart<EditContext> {
     // sample drag to "paint" the curve?
     pub fn show_transition(
         &self,
-        start: egui::Pos2,
+        start: Pos2,
         _tdx: transit::Tdx,
         target: transit::Idx,
         t: &Transition,
         _internal: bool,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
     ) -> Option<Command> {
-        let color = egui::Color32::WHITE;
+        let color = Color32::WHITE;
         // draw port at start, dragging moves transition start
         ui.painter().circle_filled(start, 4.0, color);
 
@@ -574,14 +596,14 @@ impl Statechart<EditContext> {
 
         // draw curve, label, guard, internal toggle
 
-        let stroke = egui::Stroke::new(2.0, color);
+        let stroke = Stroke::new(2.0, color);
 
         let end = self.graph.state(target).unwrap().port_in(t.port2);
 
         let bezier = CubicBezierShape::from_points_stroke(
             [start, t.c1, t.c2, end],
             false,
-            egui::Color32::TRANSPARENT,
+            Color32::TRANSPARENT,
             stroke,
         );
 
@@ -618,15 +640,15 @@ impl Statechart<EditContext> {
 }
 
 impl State {
-    const DEFAULT_SIZE: egui::Vec2 = egui::vec2(256.0, 64.0);
+    const DEFAULT_SIZE: Vec2 = vec2(256.0, 64.0);
 
     // Scale based on number of ports and vertical size? We have to
     // select the transition first to drag?
-    pub fn port_in(&self, port: usize) -> egui::Pos2 {
-        self.rect.min + self.parent_root_offset + egui::vec2(0.0, 10.0 * (port + 1) as f32)
+    pub fn port_in(&self, port: usize) -> Pos2 {
+        self.rect.min + self.parent_root_offset + vec2(0.0, 10.0 * (port + 1) as f32)
     }
 
-    pub fn port_out(&self, port: usize) -> egui::Pos2 {
-        self.rect.right_top() + self.parent_root_offset + egui::vec2(0.0, 10.0 * (port + 1) as f32)
+    pub fn port_out(&self, port: usize) -> Pos2 {
+        self.rect.right_top() + self.parent_root_offset + vec2(0.0, 10.0 * (port + 1) as f32)
     }
 }
