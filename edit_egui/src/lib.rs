@@ -413,16 +413,21 @@ impl Statechart<EditContext> {
                 // If the child state is being dragged, unset the clip
                 // rect so it can be dragged out.
                 Drag::State(i, _) if *i == child => {
-                    child_ui.set_clip_rect(ui.max_rect());
-                    self.show_state(
-                        child,
-                        rect.min.to_vec2(),
-                        depth + 1,
-                        drag,
-                        &mut child_ui,
-                        commands,
-                    );
-                    child_ui.set_clip_rect(clip_rect);
+                    // Draw in a layer so it draws on top.
+                    let max_rect = ui.max_rect();
+                    let layer_id = LayerId::new(Order::Tooltip, id);
+                    child_ui.with_layer_id(layer_id, |mut ui| {
+                        ui.set_clip_rect(max_rect);
+                        self.show_state(
+                            child,
+                            rect.min.to_vec2(),
+                            depth + 1,
+                            drag,
+                            &mut ui,
+                            commands,
+                        );
+                        ui.set_clip_rect(clip_rect);
+                    });
                 }
                 _ => self.show_state(
                     child,
