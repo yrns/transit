@@ -1,11 +1,11 @@
 //#![allow(unused_imports)]
 
 use crate::undo::*;
+pub use petgraph::Direction;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
     visit::{EdgeRef, IntoNodeReferences},
-    Direction,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, iter::Iterator};
@@ -271,7 +271,7 @@ impl<C: Context> Graph<C> {
         self.children(self.graph[i].parent).filter(move |s| *s != i)
     }
 
-    fn state_transitions(
+    pub fn state_transitions(
         &self,
         i: Idx,
         direction: Direction,
