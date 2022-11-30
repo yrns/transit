@@ -1,7 +1,10 @@
 // TODO: make a separte crate for the bin and only depend on egui here
+use editabel::Editabel;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
 use transit::{ExportError, ImportError};
+
+mod editabel;
 
 #[derive(Default, Clone)]
 pub enum Selection {
@@ -24,7 +27,7 @@ pub struct Statechart<C: transit::Context> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct State {
     id: String,
     // These needs to be pulled from a contained struct.
@@ -115,7 +118,7 @@ impl transit::Transition<EditContext> for Transition {
 pub enum Command {
     AddState(transit::Idx, Pos2),
     RemoveState(transit::Idx, bool),
-    UpdateState,
+    UpdateState(transit::Idx, State),
     /// Source, target, position (relative to parent), offset of the
     /// parent (relative to root).
     MoveState(transit::Idx, transit::Idx, Pos2, Vec2),
@@ -245,6 +248,7 @@ impl Statechart<EditContext> {
                         self.graph.update_state(idx, state);
                     }
                 }
+                Command::UpdateState(idx, state) => self.graph.update_state(idx, state),
                 Command::AddTransition(a, b, t) => {
                     self.graph.add_transition(a, b, t);
                 }
@@ -322,9 +326,8 @@ impl Statechart<EditContext> {
 
         // Use all available space for the root, don't draw
         // background.
-        let stroke_width = 2.0;
-        let inner_rect = if root {
-            rect.intersect(ui.max_rect())
+        let (inner_rect, stroke_width) = if root {
+            (rect.intersect(ui.max_rect()), 0.0)
         } else {
             let hovered = ui.rect_contains_pointer(rect);
             let w = &ui.visuals().widgets;
@@ -336,25 +339,35 @@ impl Statechart<EditContext> {
             // Use the fg_stroke since the default dark theme has no
             // bg_stroke for inactive, which makes all the contained
             // states indiscernible.
-            ui.painter()
-                .rect(rect, wv.rounding, wv.bg_fill, wv.fg_stroke);
+            let stroke = wv.fg_stroke;
+            ui.painter().rect(rect, wv.rounding, wv.bg_fill, stroke);
 
-            // Remove this and put space around header only.
-            rect.shrink(4.0)
+            (rect, stroke.width)
         };
         let mut child_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
 
-        // Intersect our clip rect with the parent's.
+        // Inset the clip_rect so things don't draw over the stroke.
         let clip_rect = rect.shrink(stroke_width * 0.5);
+
+        // Intersect our clip rect with the parent's.
         child_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
 
-        // children should not be able to cover the header, draw this last
-        if child_ui
-            .horizontal(|ui| {
+        // Inset the header from the inner_rect.
+        let header_rect = Rect::from_two_pos(inner_rect.min + Vec2::splat(4.0), inner_rect.max);
+
+        // TODO: children should not be able to cover the header, draw
+        // this last
+
+        // TODO: header_rect should be the min resize?
+        let _header_rect = child_ui.allocate_ui_at_rect(header_rect, |ui| {
+            ui.horizontal(|ui| {
                 // initial first? drag to select? or select from list?
 
-                // should be editable
-                ui.label(&state.id);
+                if let Some(id) = Editabel::show(&state.id, ui).inner {
+                    let mut state = state.clone();
+                    state.id = id;
+                    commands.push(Command::UpdateState(idx, state))
+                }
 
                 // hover should show source/location by name? click to
                 // select fns from source?
@@ -366,10 +379,8 @@ impl Statechart<EditContext> {
                 }
             })
             .response
-            .hovered()
-        {
-            //dbg!("header hover");
-        }
+            .rect;
+        });
 
         // Resize.
         if !root {
