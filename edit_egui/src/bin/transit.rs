@@ -14,18 +14,10 @@ fn main() {
     );
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 struct Transit {
     statechart: Statechart<EditContext>,
-}
-
-impl Default for Transit {
-    fn default() -> Self {
-        Self {
-            statechart: edit_egui::Statechart::new("untitled"),
-        }
-    }
 }
 
 fn load(s: &mut Statechart<EditContext>) {
@@ -50,7 +42,7 @@ impl Transit {
 
     fn file_save_as(&mut self) {
         if let Some(p) = rfd::FileDialog::new()
-            .set_file_name(&self.statechart.id)
+            .set_file_name(&self.statechart.id())
             .add_filter("ron", &["ron"])
             .save_file()
         {

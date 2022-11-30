@@ -14,8 +14,6 @@ pub enum Selection {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
 pub struct Statechart<C: transit::Context> {
-    // Use root id?
-    pub id: String,
     pub path: Option<std::path::PathBuf>,
     //statechart: transit::Statechart<C>,
     #[serde(skip)]
@@ -191,12 +189,9 @@ fn paint_resize_corner_with_style(ui: &mut Ui, rect: &Rect, stroke: Stroke, corn
 }
 
 impl Statechart<EditContext> {
-    pub fn new(id: impl Into<String>) -> Self {
-        let id = id.into();
-        Self {
-            id,
-            ..Default::default()
-        }
+    /// Id of the root state.
+    pub fn id(&self) -> &str {
+        &self.graph.root().id
     }
 
     pub fn load(&mut self) -> Result<(), ImportError> {

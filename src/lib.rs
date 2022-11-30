@@ -167,6 +167,10 @@ impl<C: Context> Graph<C> {
         }
     }
 
+    pub fn root(&self) -> &C::State {
+        &self.graph[self.root].state
+    }
+
     pub fn add_state(&mut self, state: C::State, parent: Option<Idx>) -> Idx {
         let s = StateState::new(state, parent.or(Some(self.root)));
         let i = self.graph.add_node(s.clone());
