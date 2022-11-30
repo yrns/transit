@@ -85,15 +85,20 @@ impl eframe::App for Transit {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Need unique ids for each open statechart.
+        let mut clear_state = false;
+
         #[cfg(not(target_arch = "wasm32"))]
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
+                        clear_state = true;
                         self.statechart = Default::default();
                         ui.close_menu();
                     }
                     if ui.button("Open...").clicked() {
+                        clear_state = true;
                         self.file_open();
                         ui.close_menu();
                     }
@@ -120,6 +125,11 @@ impl eframe::App for Transit {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            if clear_state {
+                // TODO: StatechartData? You can't be in-drag when
+                // using the menus, but we want to clear selection too.
+                ctx.data().remove::<Drag>(ui.id());
+            }
             let commands = self.statechart.show(ui);
             self.statechart.process_commands(commands);
         });
