@@ -4,40 +4,65 @@ pub struct Editabel;
 
 #[derive(Clone)]
 pub enum EditabelState {
-    Closed,
-    Open(String, f32),
+    Closed(f32),
+    Open(String, f32, bool),
 }
 
+impl Default for EditabelState {
+    fn default() -> Self {
+        Self::Closed(0.0)
+    }
+}
+
+/// This shows as a Label, but changes to a TextEdit when
+/// double-clicked. When enter is pressed it returns the new text and
+/// reverts to a Label. This takes up the minimal space when not
+/// editing.
 impl Editabel {
     pub fn show(text: &str, ui: &mut Ui) -> InnerResponse<Option<String>> {
-        let state: Option<EditabelState> = ui.data().get_temp(ui.id());
+        let state: EditabelState = ui.data().get_temp(ui.id()).unwrap_or_default();
         match state {
-            None | Some(EditabelState::Closed) => {
+            EditabelState::Closed(width) => {
                 let response = ui.add(Label::new(text).sense(Sense::click()));
+
+                let t = ui.ctx().animate_bool(ui.id(), false);
+                ui.add_space(t * width);
+
                 if response.double_clicked() {
+                    // Next frame select all?
                     ui.data().insert_temp(
                         ui.id(),
-                        EditabelState::Open(text.to_owned(), response.rect.width()),
+                        EditabelState::Open(text.to_owned(), response.rect.width(), true),
                     );
                 }
                 InnerResponse::new(None, response)
             }
-            Some(EditabelState::Open(mut text, width)) => {
+            EditabelState::Open(mut text, width, request_focus) => {
+                let t = ui.ctx().animate_bool(ui.id(), true);
+                let extra = t * 24.0;
+
                 let output = TextEdit::singleline(&mut text)
-                    .desired_width(width + 24.0)
+                    .desired_width(width + extra)
                     .cursor_at_end(true)
                     .show(ui);
 
-                if output.response.lost_focus() && ui.input().key_pressed(Key::Enter) {
-                    ui.data().insert_temp(ui.id(), EditabelState::Closed);
-                    InnerResponse::new(Some(text), output.response)
+                let response = output.response;
+
+                if request_focus {
+                    ui.memory().request_focus(response.id);
+                }
+
+                // Return new text on enter (else revert).
+                if response.lost_focus() {
+                    ui.data().insert_temp(ui.id(), EditabelState::Closed(width));
+                    InnerResponse::new(ui.input().key_pressed(Key::Enter).then_some(text), response)
                 } else {
-                    if output.response.changed() {
-                        // make it bigger?
+                    // Write new text if changed, or unsetting request_focus.
+                    if response.changed() || request_focus {
                         ui.data()
-                            .insert_temp(ui.id(), EditabelState::Open(text, width));
+                            .insert_temp(ui.id(), EditabelState::Open(text, width, false));
                     }
-                    InnerResponse::new(None, output.response)
+                    InnerResponse::new(None, response)
                 }
             }
         }
