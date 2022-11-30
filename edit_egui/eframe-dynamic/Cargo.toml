@@ -10,6 +10,7 @@ persistence = ["eframe/persistence"]
 
 [dependencies]
 eframe = { version = "0.19.0", features = ["wgpu"] }
+rfd = "0.10.0"
 
 [lib]
 crate-type = ["dylib"]

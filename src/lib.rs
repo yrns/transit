@@ -526,9 +526,9 @@ impl<C: Context> Default for Graph<C> {
 
 #[derive(Error, Debug)]
 pub enum ExportError {
-    #[error("io error")]
+    #[error("{0}")]
     Io(#[from] std::io::Error),
-    #[error("ron error")]
+    #[error("{0}")]
     Ron(#[from] ron::Error),
 }
 
@@ -553,9 +553,9 @@ where
 
 #[derive(Error, Debug)]
 pub enum ImportError {
-    #[error("io error")]
+    #[error("{0}")]
     Io(#[from] std::io::Error),
-    #[error("ron error")]
+    #[error("{0}")]
     Ron(#[from] ron::error::SpannedError),
 }
 

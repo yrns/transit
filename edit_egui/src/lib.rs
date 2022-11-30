@@ -1,6 +1,7 @@
 // TODO: make a separte crate for the bin and only depend on egui here
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
+use transit::{ExportError, ImportError};
 
 #[derive(Default, Clone)]
 pub enum Selection {
@@ -198,16 +199,16 @@ impl Statechart<EditContext> {
         }
     }
 
-    pub fn load(&mut self) -> Result<(), String> {
+    pub fn load(&mut self) -> Result<(), ImportError> {
         if let Some(path) = &self.path {
-            self.graph = transit::Graph::import_from_file(&path).unwrap();
+            self.graph = transit::Graph::import_from_file(&path)?;
         }
         Ok(())
     }
 
-    pub fn save(&mut self) -> Result<(), String> {
+    pub fn save(&mut self) -> Result<(), ExportError> {
         if let Some(path) = &self.path {
-            self.graph.export_to_file(&path).unwrap();
+            self.graph.export_to_file(&path)?;
         }
         Ok(())
     }

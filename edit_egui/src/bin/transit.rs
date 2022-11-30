@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-
 use edit_egui::*;
-use eframe::egui;
+use eframe::{egui, rfd};
 
 // TODO wasm https://github.com/emilk/eframe_template
 
@@ -30,16 +28,53 @@ impl Default for Transit {
     }
 }
 
+fn load(s: &mut Statechart<EditContext>) {
+    match s.load() {
+        Err(e) => println!("failed to load {:?}: {}", s.path, e),
+        _ => (),
+    }
+}
+
 impl Transit {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         if let Some(storage) = cc.storage {
             let mut transit: Transit =
                 eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             // This imports the graph from the last saved path.
-            transit.statechart.load().unwrap();
+            load(&mut transit.statechart);
             transit
         } else {
             Self::default()
+        }
+    }
+
+    fn file_save_as(&mut self) {
+        if let Some(p) = rfd::FileDialog::new()
+            .set_file_name(&self.statechart.id)
+            .add_filter("ron", &["ron"])
+            .save_file()
+        {
+            println!("saving to {:?}", p);
+            self.statechart.path = Some(p);
+            self.save();
+        }
+    }
+
+    fn save(&mut self) {
+        match self.statechart.save() {
+            Err(e) => println!("failed to save {:?}: {}", &self.statechart.path, e),
+            _ => (),
+        }
+    }
+
+    fn file_open(&mut self) {
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter("ron", &["ron"])
+            .pick_file()
+        {
+            self.statechart = Default::default();
+            self.statechart.path = Some(p);
+            load(&mut self.statechart);
         }
     }
 }
@@ -55,33 +90,25 @@ impl eframe::App for Transit {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
-                        // TODO
+                        self.statechart = Default::default();
+                        ui.close_menu();
+                    }
+                    if ui.button("Open...").clicked() {
+                        self.file_open();
                         ui.close_menu();
                     }
                     if ui.button("Save").clicked() {
-                        // TODO: file dialog + error handling
                         match &self.statechart.path {
                             Some(p) => {
                                 println!("saving to {:?}", p);
-                                self.statechart.save().unwrap();
+                                self.save()
                             }
-                            None => {
-                                let p = PathBuf::new()
-                                    .with_file_name(&self.statechart.id)
-                                    .with_extension("ron");
-                                if p.exists() {
-                                    println!("path already exists! {:?}", p);
-                                } else {
-                                    println!("saving to {:?}", p);
-                                    self.statechart.path = Some(p);
-                                    self.statechart.save().unwrap();
-                                }
-                            }
+                            None => self.file_save_as(),
                         }
                         ui.close_menu();
                     }
                     if ui.button("Save as...").clicked() {
-                        // TODO
+                        self.file_save_as();
                         ui.close_menu();
                     }
                     if ui.button("Quit").clicked() {
