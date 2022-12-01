@@ -158,12 +158,6 @@ impl Drag {
     }
 }
 
-// USE TRANSLATE
-#[inline]
-fn offset_rect(rect: Rect, offset: Vec2) -> Rect {
-    Rect::from_min_size(rect.min + offset, rect.size())
-}
-
 // These two functions are copied from egui::resize which isn't public...
 fn paint_resize_corner(ui: &mut Ui, response: &Response) {
     let stroke = ui.style().interact(response).fg_stroke;
@@ -311,7 +305,7 @@ impl Statechart<EditContext> {
                 Rect::from_min_size(state.rect.min + offset, state.rect.size() + *delta)
             }
             // Just the offset.
-            _ => offset_rect(state.rect, offset),
+            _ => state.rect.translate(offset),
         };
 
         // if ui.memory().is_being_dragged(id) {
