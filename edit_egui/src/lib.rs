@@ -2,6 +2,7 @@
 use editabel::Editabel;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
+use eframe::epaint::RectShape;
 use transit::{ExportError, ImportError};
 
 mod editabel;
@@ -154,6 +155,13 @@ impl Drag {
         match self {
             Drag::None => false,
             _ => true,
+        }
+    }
+
+    pub fn dragging(&self, idx: transit::Idx) -> bool {
+        match self {
+            Drag::State(i, _) if *i == idx => true,
+            _ => false,
         }
     }
 }
@@ -319,35 +327,84 @@ impl Statechart<EditContext> {
         //     dbg!(id);
         // }
 
-        // Use all available space for the root, don't draw
-        // background.
-        let (inner_rect, stroke_width) = if root {
-            (rect.intersect(ui.max_rect()), 0.0)
+        // Use all available space for the root, don't draw background.
+        let inner_rect = if root {
+            rect.intersect(ui.max_rect())
         } else {
-            let hovered = ui.rect_contains_pointer(rect);
-            let w = &ui.visuals().widgets;
-            let wv = match drag {
-                Drag::State(i, _) if *i == idx => w.active,
-                _ if hovered => w.hovered,
-                _ => w.inactive,
-            };
-            // Use the fg_stroke since the default dark theme has no
-            // bg_stroke for inactive, which makes all the contained
-            // states indiscernible.
-            let stroke = wv.fg_stroke;
-            ui.painter().rect(rect, wv.rounding, wv.bg_fill, stroke);
-
-            (rect, stroke.width)
+            rect
         };
+
+        // Reserve background shape.
+        let bg = ui.painter().add(Shape::Noop);
 
         // The inner_ui only serves to convey the clip_rect to children.
         let mut inner_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
 
-        // Inset the clip_rect so things don't draw over the stroke.
-        let clip_rect = rect.shrink(stroke_width * 0.5);
+        // Inset the clip_rect so things don't draw over the
+        // stroke. The default theme stroke(s) is generally 1.0?
+        let clip_rect = rect.shrink(if root { 0.0 } else { 1.0 });
 
         // Intersect our clip rect with the parent's.
         inner_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
+
+        // TODO move all state drop target handling to root, add hover
+        // info w/ depth to drag variants that target states here
+
+        // Background interaction, dragging states and context menu.
+
+        // Can't drag the root state.
+        let sense = if !root {
+            Sense::click_and_drag()
+        } else {
+            Sense::click()
+        };
+
+        let mut state_response = ui.interact(inner_rect, id, sense);
+        let dragged = state_response.dragged_by(PointerButton::Primary);
+
+        if dragged {
+            if let Some(p) = interact_pos {
+                if ui.input().modifiers.shift {
+                    // New transition, drag to target.
+                    let port1 = self.free_port(idx, transit::Direction::Outgoing);
+                    *drag = Drag::AddTransition(
+                        idx,
+                        // TODO use a builder instead of default
+                        Transition {
+                            port1,
+                            ..Default::default()
+                        },
+                        None,
+                    );
+                } else {
+                    // Save the pointer offset from the state origin.
+                    *drag = Drag::State(idx, p - rect.min);
+                }
+            }
+        }
+
+        // Context menu on right click.
+        if !drag.in_drag() {
+            state_response = state_response.context_menu(|ui| {
+                if ui.button("Add state").clicked() {
+                    // Position is the original click, relative to parent.
+                    let pos = ui.min_rect().min - rect.min;
+                    commands.push(Command::AddState(idx, pos.to_pos2()));
+                    ui.close_menu();
+                }
+                // Can't remove the root state.
+                if idx != self.graph.root {
+                    if ui.button("Remove state").clicked() {
+                        commands.push(Command::RemoveState(idx, true));
+                        ui.close_menu();
+                    }
+                    if ui.button("Remove state (recursive)").clicked() {
+                        commands.push(Command::RemoveState(idx, false));
+                        ui.close_menu();
+                    }
+                }
+            });
+        }
 
         // Inset the header from the inner_rect.
         let header_inset = Vec2::splat(4.0);
@@ -356,7 +413,6 @@ impl Statechart<EditContext> {
         // TODO: children should not be able to cover the header, draw
         // this last
 
-        // TODO: header_rect should be the min resize?
         let header_response = inner_ui
             .allocate_ui_at_rect(header_rect, |ui| {
                 ui.horizontal(|ui| {
@@ -407,12 +463,6 @@ impl Statechart<EditContext> {
             }
         }
 
-        // ui.painter().arrow(
-        //     rect.max - Vec2::new(10.0, 10.0),
-        //     Vec2::new(8.0, 8.0),
-        //     Stroke::new(1.0, Color32::BLACK),
-        // );
-
         for (tdx, target, t, internal) in self.graph.transitions_out(idx) {
             self.show_transition(state.port_out(t.port1), tdx, target, t, internal, ui);
         }
@@ -448,6 +498,7 @@ impl Statechart<EditContext> {
             _ => (),
         }
 
+        // Show child states.
         for child in self.graph.children(Some(idx)) {
             match drag {
                 // If the child state is being dragged, unset the clip
@@ -479,89 +530,51 @@ impl Statechart<EditContext> {
             }
         }
 
-        // TODO move all state drop target handling to root, add hover
-        // info w/ depth to drag variants that target states here
+        if !root {
+            // TODO: selection
+            let style = ui
+                .style()
+                .interact_selectable(&state_response, drag.dragging(idx));
+            // Use the fg_stroke since the default dark theme has no bg_stroke for inactive, which makes all the contained states indiscernible.
+            let stroke = style.fg_stroke;
+            ui.painter().set(
+                bg,
+                RectShape {
+                    rect,
+                    rounding: style.rounding,
+                    fill: style.bg_fill,
+                    stroke,
+                },
+            );
+        }
 
-        // Background interaction, dragging states and context menu.
-        if drag.in_drag() {
-            // ui.input().pointer.primary_released() doesn't work?
-            if ui.input().pointer.any_released() {
-                match (&drag, interact_pos) {
-                    (Drag::State(i, offset), Some(p)) => {
-                        // Cannot drag into any state in our path.
-                        if rect.contains(p) && !self.graph.in_path(*i, idx) {
-                            let parent_root_offset = rect.min.to_vec2();
-                            // Place the state relative to the parent with the offset.
-                            let p = p - parent_root_offset - *offset;
-                            commands.push(Command::MoveState(*i, idx, p, parent_root_offset));
-                            *drag = Drag::None;
-                        } else if root {
-                            // If we haven't found a place to put this
-                            // state and we're at the root, cancel it.
-                            println!("cancel drag?");
-                            *drag = Drag::None;
-                        }
-                    }
-                    (Drag::AddTransition(i, t, _), Some(p)) => {
-                        if rect.contains(p) {
-                            commands.push(Command::AddTransition(*i, idx, t.clone()));
-                            *drag = Drag::None;
-                        }
-                    }
-                    _ => (),
-                }
-            }
-        } else {
-            // Can't drag the root state.
-            let sense = if !root {
-                Sense::click_and_drag()
-            } else {
-                Sense::click()
-            };
-
-            let state_response = ui.interact(rect, id, sense);
-            let dragged = state_response.dragged_by(PointerButton::Primary);
-
-            if dragged {
-                if let Some(p) = interact_pos {
-                    if ui.input().modifiers.shift {
-                        // New transition, drag to target.
-                        let port1 = self.free_port(idx, transit::Direction::Outgoing);
-                        *drag = Drag::AddTransition(
-                            idx,
-                            // TODO use a builder instead of default
-                            Transition {
-                                port1,
-                                ..Default::default()
-                            },
-                            None,
-                        );
-                    } else {
-                        // Save the pointer offset from the state origin.
-                        *drag = Drag::State(idx, p - rect.min);
+        // Handle drop targets after showing child states so the drop
+        // target is always the deepest child state.
+        // ui.input().pointer.primary_released() doesn't work?
+        if ui.input().pointer.any_released() {
+            match (&drag, interact_pos) {
+                (Drag::State(i, offset), Some(p)) => {
+                    // Cannot drag into any state in our path.
+                    if rect.contains(p) && !self.graph.in_path(*i, idx) {
+                        let parent_root_offset = rect.min.to_vec2();
+                        // Place the state relative to the parent with the offset.
+                        let p = p - parent_root_offset - *offset;
+                        commands.push(Command::MoveState(*i, idx, p, parent_root_offset));
+                        *drag = Drag::None;
+                    } else if root {
+                        // If we haven't found a place to put this
+                        // state and we're at the root, cancel it.
+                        println!("cancel drag?");
+                        *drag = Drag::None;
                     }
                 }
-            } else {
-                // Context menu on right click.
-                state_response.context_menu(|ui| {
-                    if ui.button("Add state").clicked() {
-                        // Position is the original click, relative to parent.
-                        let pos = ui.min_rect().min - rect.min;
-                        commands.push(Command::AddState(idx, pos.to_pos2()));
-                        ui.close_menu();
+                (Drag::AddTransition(i, t, _), Some(p)) => {
+                    if rect.contains(p) {
+                        commands.push(Command::AddTransition(*i, idx, t.clone()));
+                        *drag = Drag::None;
                     }
-                    // Can't remove the root state.
-                    if idx != self.graph.root {
-                        if ui.button("Remove state").clicked() {
-                            commands.push(Command::RemoveState(idx, true));
-                            ui.close_menu();
-                        }
-                        if ui.button("Remove state (recursive)").clicked() {
-                            commands.push(Command::RemoveState(idx, false));
-                            ui.close_menu();
-                        }
-                    }
-                });
+                }
+                _ => (),
             }
         }
     }
