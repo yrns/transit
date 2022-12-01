@@ -252,6 +252,13 @@ impl Statechart<EditContext> {
         let rect = ui.max_rect();
         ui.allocate_rect(rect, Sense::hover());
 
+        // Toggle debug.
+        if ui.input().key_pressed(Key::D) {
+            ui.ctx().set_debug_on_hover(!ui.ctx().debug_on_hover());
+            ui.style_mut().debug.show_blocking_widget = true;
+            ui.style_mut().debug.show_interactive_widgets = true;
+        }
+
         // Keep drag state in temp storage.
         let mut drag = ui.ctx().data().get_temp(ui.id()).unwrap_or_default();
         let mut commands = Vec::new();
