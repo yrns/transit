@@ -38,7 +38,6 @@ pub struct State {
     parent_root_offset: Vec2,
     /// Rect relative to parent.
     rect: Rect,
-    min_size: Vec2,
     #[allow(unused)]
     collapsed: bool,
     #[allow(unused)]
@@ -54,9 +53,6 @@ impl Default for State {
             id: "untitled".into(),
             parent_root_offset: Vec2::ZERO,
             rect: Rect::from_min_size(pos2(0.0, 0.0), Vec2::INFINITY),
-            // This should really be the size of the header? Or the
-            // collapsed header?
-            min_size: Self::DEFAULT_SIZE,
             collapsed: false,
             pan: Vec2::ZERO,
             zoom: 1.0,
@@ -245,10 +241,7 @@ impl Statechart<EditContext> {
                 Command::ResizeState(idx, delta) => {
                     if let Some(state) = self.graph.state(idx) {
                         let mut state = state.clone();
-                        state.rect = Rect::from_min_size(
-                            state.rect.min,
-                            state.min_size.max(state.rect.size() + delta),
-                        );
+                        state.rect = Rect::from_min_size(state.rect.min, state.rect.size() + delta);
                         self.graph.update_state(idx, state);
                     }
                 }
@@ -315,10 +308,7 @@ impl Statechart<EditContext> {
             }
             Drag::Resize(i, delta) if *i == idx => {
                 // Include the offset and the resize delta.
-                Rect::from_min_size(
-                    state.rect.min + offset,
-                    state.min_size.max(state.rect.size() + *delta),
-                )
+                Rect::from_min_size(state.rect.min + offset, state.rect.size() + *delta)
             }
             // Just the offset.
             _ => offset_rect(state.rect, offset),
@@ -359,13 +349,14 @@ impl Statechart<EditContext> {
         inner_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
 
         // Inset the header from the inner_rect.
-        let header_rect = Rect::from_two_pos(inner_rect.min + Vec2::splat(4.0), inner_rect.max);
+        let header_inset = Vec2::splat(4.0);
+        let header_rect = Rect::from_min_max(inner_rect.min + header_inset, inner_rect.max);
 
         // TODO: children should not be able to cover the header, draw
         // this last
 
         // TODO: header_rect should be the min resize?
-        let header_rect = inner_ui
+        let header_response = inner_ui
             .allocate_ui_at_rect(header_rect, |ui| {
                 ui.horizontal(|ui| {
                     // initial first? drag to select? or select from list?
@@ -384,8 +375,8 @@ impl Statechart<EditContext> {
                     }
                 });
             })
-            .response
-            .rect;
+            .response;
+        let header_rect = header_response.rect;
 
         // Resize.
         if !root {
@@ -393,14 +384,19 @@ impl Statechart<EditContext> {
                 Drag::None => {
                     let response = self.show_resize(id, inner_rect, &mut inner_ui);
                     if response.drag_started() {
+                        // This needs the same treatment for minimum size?
                         *drag = Drag::Resize(idx, response.drag_delta());
                     }
                 }
                 Drag::Resize(idx, ref mut delta) => {
                     let response = self.show_resize(id, inner_rect, &mut inner_ui);
                     if response.dragged() {
-                        // TODO handle min_size here
-                        *delta += response.drag_delta();
+                        // Find the minimum delta such that we don't
+                        // resize smaller than the header size
+                        // (including inset).
+                        let min = header_rect.expand2(header_inset).size();
+                        let size = state.rect.size();
+                        *delta = (min - size).max(*delta + response.drag_delta());
                     } else if response.drag_released() {
                         commands.push(Command::ResizeState(*idx, *delta));
                         *drag = Drag::None
