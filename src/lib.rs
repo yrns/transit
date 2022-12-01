@@ -391,6 +391,8 @@ impl<C: Context> Graph<C> {
     ) -> Tdx {
         let t = t.into();
         assert!(!t.internal || a == b);
+        // Can't transition to or from root.
+        assert!(a != self.root && b != self.root);
         let i = self.graph.add_edge(a, b, t.clone());
         self.add_undo(Op::AddTransition(i, (a, b, t)));
         i

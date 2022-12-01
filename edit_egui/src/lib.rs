@@ -197,6 +197,10 @@ impl Statechart<EditContext> {
         &self.graph.root().id
     }
 
+    pub fn root_rect(&self) -> Rect {
+        self.graph.root().rect
+    }
+
     pub fn load(&mut self) -> Result<(), ImportError> {
         if let Some(path) = &self.path {
             self.graph = transit::Graph::import_from_file(&path)?;
@@ -344,13 +348,15 @@ impl Statechart<EditContext> {
 
             (rect, stroke.width)
         };
-        let mut child_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
+
+        // The inner_ui only serves to convey the clip_rect to children.
+        let mut inner_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
 
         // Inset the clip_rect so things don't draw over the stroke.
         let clip_rect = rect.shrink(stroke_width * 0.5);
 
         // Intersect our clip rect with the parent's.
-        child_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
+        inner_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
 
         // Inset the header from the inner_rect.
         let header_rect = Rect::from_two_pos(inner_rect.min + Vec2::splat(4.0), inner_rect.max);
@@ -359,41 +365,41 @@ impl Statechart<EditContext> {
         // this last
 
         // TODO: header_rect should be the min resize?
-        let _header_rect = child_ui.allocate_ui_at_rect(header_rect, |ui| {
-            ui.horizontal(|ui| {
-                // initial first? drag to select? or select from list?
+        let header_rect = inner_ui
+            .allocate_ui_at_rect(header_rect, |ui| {
+                ui.horizontal(|ui| {
+                    // initial first? drag to select? or select from list?
 
-                if let Some(id) = Editabel::show(&state.id, ui).inner {
-                    let mut state = state.clone();
-                    state.id = id;
-                    commands.push(Command::UpdateState(idx, state))
-                }
+                    if let Some(id) = Editabel::show(&state.id, ui).inner {
+                        commands.push(Command::UpdateState(idx, state.clone().with_id(id)))
+                    }
 
-                // hover should show source/location by name? click to
-                // select fns from source?
-                if ui.small_button("enter").clicked() {
-                    dbg!("clicked enter");
-                };
-                if ui.small_button("exit").clicked() {
-                    dbg!("clicked exit");
-                }
+                    // hover should show source/location by name? click to
+                    // select fns from source?
+                    if ui.small_button("enter").clicked() {
+                        dbg!("clicked enter");
+                    };
+                    if ui.small_button("exit").clicked() {
+                        dbg!("clicked exit");
+                    }
+                });
             })
             .response
             .rect;
-        });
 
         // Resize.
         if !root {
             match drag {
                 Drag::None => {
-                    let response = self.show_resize(id, inner_rect, ui);
+                    let response = self.show_resize(id, inner_rect, &mut inner_ui);
                     if response.drag_started() {
                         *drag = Drag::Resize(idx, response.drag_delta());
                     }
                 }
                 Drag::Resize(idx, ref mut delta) => {
-                    let response = self.show_resize(id, inner_rect, ui);
+                    let response = self.show_resize(id, inner_rect, &mut inner_ui);
                     if response.dragged() {
+                        // TODO handle min_size here
                         *delta += response.drag_delta();
                     } else if response.drag_released() {
                         commands.push(Command::ResizeState(*idx, *delta));
@@ -451,10 +457,9 @@ impl Statechart<EditContext> {
                 // rect so it can be dragged out.
                 Drag::State(i, _) if *i == child => {
                     // Draw in a layer so it draws on top.
-                    let max_rect = ui.max_rect();
                     let layer_id = LayerId::new(Order::Tooltip, id);
-                    child_ui.with_layer_id(layer_id, |mut ui| {
-                        ui.set_clip_rect(max_rect);
+                    inner_ui.with_layer_id(layer_id, |mut ui| {
+                        ui.set_clip_rect(self.root_rect());
                         self.show_state(
                             child,
                             rect.min.to_vec2(),
@@ -471,7 +476,7 @@ impl Statechart<EditContext> {
                     rect.min.to_vec2(),
                     depth + 1,
                     drag,
-                    &mut child_ui,
+                    &mut inner_ui,
                     commands,
                 ),
             }
@@ -648,6 +653,11 @@ impl Statechart<EditContext> {
 
 impl State {
     const DEFAULT_SIZE: Vec2 = vec2(256.0, 64.0);
+
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = id.into();
+        self
+    }
 
     // Scale based on number of ports and vertical size? We have to
     // select the transition first to drag?
