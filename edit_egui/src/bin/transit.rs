@@ -72,6 +72,12 @@ impl Transit {
 }
 
 impl eframe::App for Transit {
+    // Prompt for save?
+    fn on_close_event(&mut self) -> bool {
+        dbg!("on close");
+        true // can close
+    }
+
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
