@@ -271,6 +271,14 @@ impl<C: Context> Graph<C> {
             .filter(move |i| self.graph[*i].parent == p)
     }
 
+    // Once we filter we can't reverse?
+    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &StateState<C>)> {
+        self.graph
+            .node_references()
+            .rev()
+            .filter(move |(_i, s)| s.parent == Some(p))
+    }
+
     pub fn siblings(&self, i: Idx) -> impl Iterator<Item = Idx> + '_ {
         self.children(self.graph[i].parent).filter(move |s| *s != i)
     }

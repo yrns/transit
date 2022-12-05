@@ -130,16 +130,19 @@ pub enum Command {
     SetGuard,
 }
 
+// Drag target index and depth.
+pub type DragTarget = Option<(transit::Idx, usize)>;
+
 #[derive(Clone, Debug, Default)]
 pub enum Drag {
     #[default]
     None,
-    State(transit::Idx, Vec2),
+    State(transit::Idx, Vec2, DragTarget, Vec2),
     Resize(transit::Idx, Vec2),
-    Initial(transit::Idx, Vec2),
-    AddTransition(transit::Idx, Transition, Option<(transit::Idx, usize)>),
-    TransitionSource(transit::Tdx, Vec2),
-    TransitionTarget(transit::Tdx, Vec2),
+    Initial(transit::Idx, Vec2, DragTarget),
+    AddTransition(transit::Idx, Transition, DragTarget),
+    TransitionSource(transit::Tdx, Vec2, DragTarget),
+    TransitionTarget(transit::Tdx, Vec2, DragTarget),
     TransitionControl(transit::Tdx, Vec2, bool),
 }
 
@@ -160,10 +163,30 @@ impl Drag {
 
     pub fn dragging(&self, idx: transit::Idx) -> bool {
         match self {
-            Drag::State(i, _) if *i == idx => true,
+            Drag::State(i, ..) if *i == idx => true,
             _ => false,
         }
     }
+
+    pub fn is_target(&self, idx: transit::Idx) -> bool {
+        let target = match self {
+            Drag::State(_, _, t, _)
+            | Drag::Initial(_, _, t)
+            | Drag::AddTransition(_, _, t)
+            | Drag::TransitionSource(_, _, t)
+            | Drag::TransitionTarget(_, _, t) => t,
+            _ => &None,
+        };
+        target.map(|(t, _)| t == idx).unwrap_or_default()
+    }
+}
+
+pub enum Connection<'t> {
+    // Where are the control points stored?
+    Initial(transit::Idx, transit::Idx),
+    DragInitial,
+    Transition(transit::Tdx, &'t Transition, bool),
+    DragTransition(&'t Transition),
 }
 
 // These two functions are copied from egui::resize which isn't public...
@@ -215,6 +238,7 @@ impl Statechart<EditContext> {
 
     pub fn process_commands(&mut self, commands: Vec<Command>) {
         for c in commands {
+            //dbg!(&c);
             match c {
                 Command::AddState(parent, pos) => {
                     self.graph.add_state(
@@ -281,6 +305,24 @@ impl Statechart<EditContext> {
             &mut commands,
         );
 
+        // Resolve drag. ui.input().pointer.primary_released() doesn't work?
+        if ui.input().pointer.any_released() {
+            match drag {
+                Drag::State(src, offset, Some((target, _)), parent_root_offset) => {
+                    if let Some(p) = ui.input().pointer.interact_pos() {
+                        // Place the state relative to the parent with the offset.
+                        let p = p - parent_root_offset - offset;
+                        commands.push(Command::MoveState(src, target, p, parent_root_offset));
+                    }
+                }
+                Drag::AddTransition(src, t, Some((target, _))) => {
+                    commands.push(Command::AddTransition(src, target, t.clone()));
+                }
+                _ => (),
+            }
+            drag = Drag::None;
+        }
+
         // Save drag state.
         ui.ctx().data().insert_temp(ui.id(), drag);
 
@@ -293,6 +335,21 @@ impl Statechart<EditContext> {
         let resize_response = ui.interact(resize_rect, id.with("resize"), Sense::drag());
         paint_resize_corner(ui, &resize_response);
         resize_response
+    }
+
+    /// Returns a state rect including drag state.
+    pub fn state_rect(&self, idx: transit::Idx, drag: &Drag, ui: &Ui) -> Option<Rect> {
+        self.graph.state(idx).and_then(|s| match drag {
+            Drag::State(i, offset, ..) if *i == idx => ui
+                .input()
+                .pointer
+                .interact_pos()
+                .map(|p| Rect::from_min_size(p - *offset, s.rect().size())),
+            Drag::Resize(i, delta) if *i == idx => {
+                Some(Rect::from_min_size(s.rect().min, s.rect.size() + *delta))
+            }
+            _ => Some(s.rect()),
+        })
     }
 
     pub fn show_state(
@@ -311,7 +368,7 @@ impl Statechart<EditContext> {
         let interact_pos = ui.input().pointer.interact_pos();
 
         let rect = match drag {
-            Drag::State(i, drag_offset) if *i == idx => {
+            Drag::State(i, drag_offset, ..) if *i == idx => {
                 let p = interact_pos.unwrap_or_default();
                 Rect::from_min_size(p - *drag_offset, state.rect.size())
             }
@@ -322,10 +379,6 @@ impl Statechart<EditContext> {
             // Just the offset.
             _ => state.rect.translate(offset),
         };
-
-        // if ui.memory().is_being_dragged(id) {
-        //     dbg!(id);
-        // }
 
         // Use all available space for the root, don't draw background.
         let inner_rect = if root {
@@ -347,10 +400,7 @@ impl Statechart<EditContext> {
         // Intersect our clip rect with the parent's.
         inner_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
 
-        // TODO move all state drop target handling to root, add hover
-        // info w/ depth to drag variants that target states here
-
-        // Background interaction, dragging states and context menu.
+        self.set_drag_target(idx, offset, depth, drag, &inner_ui);
 
         // Can't drag the root state.
         let sense = if !root {
@@ -359,52 +409,8 @@ impl Statechart<EditContext> {
             Sense::click()
         };
 
+        // Background interaction, dragging states and context menu.
         let mut state_response = ui.interact(inner_rect, id, sense);
-        let dragged = state_response.dragged_by(PointerButton::Primary);
-
-        if dragged {
-            if let Some(p) = interact_pos {
-                if ui.input().modifiers.shift {
-                    // New transition, drag to target.
-                    let port1 = self.free_port(idx, transit::Direction::Outgoing);
-                    *drag = Drag::AddTransition(
-                        idx,
-                        // TODO use a builder instead of default
-                        Transition {
-                            port1,
-                            ..Default::default()
-                        },
-                        None,
-                    );
-                } else {
-                    // Save the pointer offset from the state origin.
-                    *drag = Drag::State(idx, p - rect.min);
-                }
-            }
-        }
-
-        // Context menu on right click.
-        if !drag.in_drag() {
-            state_response = state_response.context_menu(|ui| {
-                if ui.button("Add state").clicked() {
-                    // Position is the original click, relative to parent.
-                    let pos = ui.min_rect().min - rect.min;
-                    commands.push(Command::AddState(idx, pos.to_pos2()));
-                    ui.close_menu();
-                }
-                // Can't remove the root state.
-                if idx != self.graph.root {
-                    if ui.button("Remove state").clicked() {
-                        commands.push(Command::RemoveState(idx, true));
-                        ui.close_menu();
-                    }
-                    if ui.button("Remove state (recursive)").clicked() {
-                        commands.push(Command::RemoveState(idx, false));
-                        ui.close_menu();
-                    }
-                }
-            });
-        }
 
         // Inset the header from the inner_rect.
         let header_inset = Vec2::splat(4.0);
@@ -464,119 +470,199 @@ impl Statechart<EditContext> {
         }
 
         for (tdx, target, t, internal) in self.graph.transitions_out(idx) {
-            self.show_transition(state.port_out(t.port1), tdx, target, t, internal, ui);
+            let start = port_out(rect, t.port1);
+            let end = port_in(self.state_rect(target, drag, &inner_ui).unwrap(), t.port2);
+            self.show_connection(start, end, Connection::Transition(tdx, t, internal), ui);
         }
 
-        // New transaction in progress. We could do this in root too,
-        // to draw last and not check the index.
+        // New transition in progress. We could do this in root too, to draw last and not check the
+        // index.
         match drag {
             Drag::AddTransition(source, t, target) if *source == idx => {
-                let source_state = self.graph.state(*source).unwrap();
-                let start = source_state.port_out(t.port1);
+                let start = port_out(rect, t.port1);
                 let end = match target {
                     Some((target, _)) => {
-                        let target_state = self.graph.state(*target).unwrap();
-                        target_state.port_in(t.port2)
+                        // Since we are dragging already we don't need state_rect.
+                        let target = self.graph.state(*target).unwrap();
+                        port_in(target.rect(), t.port2)
                     }
+                    // else, root?
                     None => interact_pos.unwrap(),
                 };
-                let dx = (end - start).x * 0.3;
-                t.c1 = start + vec2(dx, 0.0);
-                t.c2 = end + vec2(-dx, 0.0);
-                // We recalculate the end position every frame but not
-                // port2?
-                let stroke = Stroke::new(2.0, Color32::WHITE);
-                let bezier = CubicBezierShape::from_points_stroke(
-                    [start, t.c1, t.c2, end],
-                    false,
-                    Color32::TRANSPARENT,
-                    stroke,
-                );
 
-                ui.painter().add(bezier);
+                // Make up control points based on the start and end.
+                let d = (end - start) * 0.3;
+                t.c1 = start + vec2(d.x, -d.y);
+                t.c2 = end + vec2(-d.x, d.y);
+
+                self.show_connection(start, end, Connection::DragTransition(t), ui);
             }
             _ => (),
         }
 
         // Show child states.
         for child in self.graph.children(Some(idx)) {
-            match drag {
-                // If the child state is being dragged, unset the clip
-                // rect so it can be dragged out.
-                Drag::State(i, _) if *i == child => {
-                    // Draw in a layer so it draws on top.
-                    let layer_id = LayerId::new(Order::Tooltip, id);
-                    inner_ui.with_layer_id(layer_id, |mut ui| {
-                        ui.set_clip_rect(self.root_rect());
-                        self.show_state(
-                            child,
-                            rect.min.to_vec2(),
-                            depth + 1,
-                            drag,
-                            &mut ui,
-                            commands,
-                        );
-                        ui.set_clip_rect(clip_rect);
-                    });
-                }
-                _ => self.show_state(
+            // If the child state is being dragged, unset the clip
+            // rect so it can be dragged out.
+            if drag.dragging(child) {
+                // Draw in a layer so it draws on top.
+                let layer_id = LayerId::new(Order::Tooltip, id);
+                inner_ui.with_layer_id(layer_id, |mut ui| {
+                    ui.set_clip_rect(self.root_rect());
+                    self.show_state(
+                        child,
+                        rect.min.to_vec2(),
+                        depth + 1,
+                        drag,
+                        &mut ui,
+                        commands,
+                    );
+                    ui.set_clip_rect(clip_rect);
+                });
+            } else {
+                self.show_state(
                     child,
                     rect.min.to_vec2(),
                     depth + 1,
                     drag,
                     &mut inner_ui,
                     commands,
-                ),
+                );
             }
         }
 
+        // New drags. There is no `drag_started_by`. We should not get a drag here if a drag is
+        // started in a child state, but we check `in_drag` anyway since `dragged` is continuous.
+        let dragged = state_response.dragged_by(PointerButton::Primary);
+        if dragged && !drag.in_drag() {
+            if let Some(p) = interact_pos {
+                if ui.input().modifiers.shift {
+                    // New transition, drag to target.
+                    let port1 = self.free_port(idx, transit::Direction::Outgoing);
+                    *drag = Drag::AddTransition(
+                        idx,
+                        // Use a builder instead of default? No guarantees on port2 being set or zero.
+                        Transition {
+                            port1,
+                            ..Default::default()
+                        },
+                        None,
+                    );
+                } else {
+                    // Save the pointer offset from the state origin. Zero is never correct for the
+                    // parent offest, so maybe it should be an Option like target?
+                    *drag = Drag::State(idx, p - rect.min, None, Vec2::ZERO);
+                }
+            }
+        }
+
+        // Context menu on right click.
+        if !drag.in_drag() {
+            state_response = state_response.context_menu(|ui| {
+                if ui.button("Add state").clicked() {
+                    // Position is the original click, relative to parent.
+                    let pos = ui.min_rect().min - rect.min;
+                    commands.push(Command::AddState(idx, pos.to_pos2()));
+                    ui.close_menu();
+                }
+                // Can't remove the root state.
+                if idx != self.graph.root {
+                    if ui.button("Remove state").clicked() {
+                        commands.push(Command::RemoveState(idx, true));
+                        ui.close_menu();
+                    }
+                    if ui.button("Remove state (recursive)").clicked() {
+                        commands.push(Command::RemoveState(idx, false));
+                        ui.close_menu();
+                    }
+                }
+            });
+        }
+
+        // TODO: Make a background for the root so we can show drag_valid.
         if !root {
             // TODO: selection
-            let style = ui
-                .style()
-                .interact_selectable(&state_response, drag.dragging(idx));
-            // Use the fg_stroke since the default dark theme has no bg_stroke for inactive, which makes all the contained states indiscernible.
-            let stroke = style.fg_stroke;
+            let style = ui.style();
+            let mut widget_visuals = style.interact_selectable(&state_response, drag.dragging(idx));
+
+            // Alternate background colors based on depth. The default dark theme is very dark here,
+            // closer to the window background.
+            if depth % 2 == 1 && widget_visuals == style.visuals.widgets.inactive {
+                widget_visuals.bg_fill = style.visuals.faint_bg_color;
+            }
+
+            let stroke = if drag.is_target(idx) {
+                // The default stroke for selection is thin, so make it more prominent here to show
+                // the drag target.
+                let mut stroke = ui.style().visuals.selection.stroke;
+                stroke.width = 4.0;
+                stroke
+            } else {
+                // Use the fg_stroke since the default dark theme has no bg_stroke for inactive,
+                // which makes all the contained states indiscernible.
+                widget_visuals.fg_stroke
+            };
             ui.painter().set(
                 bg,
                 RectShape {
                     rect,
-                    rounding: style.rounding,
-                    fill: style.bg_fill,
+                    rounding: widget_visuals.rounding,
+                    fill: widget_visuals.bg_fill,
                     stroke,
                 },
             );
         }
+    }
 
-        // Handle drop targets after showing child states so the drop
-        // target is always the deepest child state.
-        // ui.input().pointer.primary_released() doesn't work?
-        if ui.input().pointer.any_released() {
-            match (&drag, interact_pos) {
-                (Drag::State(i, offset), Some(p)) => {
-                    // Cannot drag into any state in our path.
-                    if rect.contains(p) && !self.graph.in_path(*i, idx) {
-                        let parent_root_offset = rect.min.to_vec2();
-                        // Place the state relative to the parent with the offset.
-                        let p = p - parent_root_offset - *offset;
-                        commands.push(Command::MoveState(*i, idx, p, parent_root_offset));
-                        *drag = Drag::None;
-                    } else if root {
-                        // If we haven't found a place to put this
-                        // state and we're at the root, cancel it.
-                        println!("cancel drag?");
-                        *drag = Drag::None;
-                    }
+    /// Each state sets the drag target for its children. The topmost child that contains the
+    /// pointer becomes the target. This is similiar to egui's builtin handling of overlapping
+    /// interactions. We can't set the target inside each child recursively because they aren't
+    /// aware of siblings or their ordering. In order to reduce the amount of work done here that is
+    /// thrown away we could recurse from the root once before drawing anything.
+    pub fn set_drag_target(
+        &self,
+        idx: transit::Idx,
+        parent_offset: Vec2,
+        depth: usize,
+        drag: &mut Drag,
+        ui: &Ui,
+    ) {
+        match drag {
+            Drag::State(dragged_idx, _drag_offset, target, offset) => {
+                // Root clears the target by setting itself initially (any state can be dragged to
+                // root).
+                if depth == 0 {
+                    *target = Some((idx, depth));
+                    *offset = parent_offset;
                 }
-                (Drag::AddTransition(i, t, _), Some(p)) => {
-                    if rect.contains(p) {
-                        commands.push(Command::AddTransition(*i, idx, t.clone()));
-                        *drag = Drag::None;
-                    }
+
+                if let Some((t, p)) = self.graph.children_rev(idx).find_map(|(i, s)| {
+                    let rect = s.state.rect;
+                    (ui.rect_contains_pointer(rect.translate(parent_offset))
+                        // The drag target cannot be in the path of the dragged state (cycles).
+                        && !self.graph.in_path(*dragged_idx, i))
+                    .then_some((i, rect.min.to_vec2()))
+                }) {
+                    *target = Some((t, depth + 1));
+                    *offset = parent_offset + p;
                 }
-                _ => (),
             }
-        }
+            Drag::AddTransition(_, _, target) => {
+                if depth == 0 {
+                    // No transition can target the root.
+                    *target = None;
+                }
+
+                if let Some((t, _)) = self
+                    .graph
+                    .children_rev(idx)
+                    .find(|(_i, s)| ui.rect_contains_pointer(s.state.rect.translate(parent_offset)))
+                {
+                    *target = Some((t, depth + 1))
+                }
+            }
+            _ => (),
+        };
     }
 
     // Do self-transitions show up twice?
@@ -601,13 +687,11 @@ impl Statechart<EditContext> {
     // https://github.com/emilk/egui/discussions/1959 clicking the curve
 
     // sample drag to "paint" the curve?
-    pub fn show_transition(
+    pub fn show_connection(
         &self,
         start: Pos2,
-        _tdx: transit::Tdx,
-        target: transit::Idx,
-        t: &Transition,
-        _internal: bool,
+        end: Pos2,
+        conn: Connection,
         ui: &mut Ui,
     ) -> Option<Command> {
         let color = Color32::WHITE;
@@ -620,10 +704,17 @@ impl Statechart<EditContext> {
 
         let stroke = Stroke::new(2.0, color);
 
-        let end = self.graph.state(target).unwrap().port_in(t.port2);
+        let (c1, c2) = match conn {
+            Connection::Transition(_, t, _) | Connection::DragTransition(t) => (t.c1, t.c2),
+            _ => {
+                // Initial?
+                let dx = (end - start).x * 0.3;
+                (start + vec2(dx, 0.0), end + vec2(-dx, 0.0))
+            }
+        };
 
         let bezier = CubicBezierShape::from_points_stroke(
-            [start, t.c1, t.c2, end],
+            [start, c1, c2, end],
             false,
             Color32::TRANSPARENT,
             stroke,
@@ -633,32 +724,50 @@ impl Statechart<EditContext> {
 
         ui.painter().add(bezier);
 
-        let mut mesh = Mesh::default();
-        mesh.add_triangle(0, 1, 2);
-        let rect = Rect::from_min_size(pos2(-8.0, -4.0), vec2(8.0, 8.0));
-        mesh.vertices.push(Vertex {
-            pos: rect.left_top(),
-            color,
-            ..Default::default()
-        });
-        mesh.vertices.push(Vertex {
-            pos: rect.right_center(),
-            color,
-            ..Default::default()
-        });
-        mesh.vertices.push(Vertex {
-            pos: rect.left_bottom(),
-            color,
-            ..Default::default()
-        });
+        ui.painter().circle_filled(c1, 2.0, Color32::LIGHT_YELLOW);
+        ui.painter().circle_filled(c2, 2.0, Color32::LIGHT_YELLOW);
+
+        let mut mesh = arrow(8.0, color);
         mesh.translate(end.to_vec2());
         ui.painter().add(mesh);
-        //ui.painter().arrow(origin, vec, stroke)
-
-        // draw port at end
 
         None
     }
+}
+
+fn arrow(size: f32, color: Color32) -> Mesh {
+    let mut mesh = Mesh::default();
+
+    mesh.add_triangle(0, 1, 2);
+
+    let rect = Rect::from_center_size(pos2(0.0, 0.0), Vec2::splat(size));
+
+    mesh.vertices.push(Vertex {
+        pos: rect.left_top(),
+        color,
+        ..Default::default()
+    });
+    mesh.vertices.push(Vertex {
+        pos: rect.right_center(),
+        color,
+        ..Default::default()
+    });
+    mesh.vertices.push(Vertex {
+        pos: rect.left_bottom(),
+        color,
+        ..Default::default()
+    });
+    mesh
+}
+
+// Scale based on number of ports and vertical size? We have to
+// select the transition first to drag?
+pub fn port_in(rect: Rect, port: usize) -> Pos2 {
+    rect.min + vec2(0.0, 10.0 * (port + 1) as f32)
+}
+
+pub fn port_out(rect: Rect, port: usize) -> Pos2 {
+    rect.right_top() + vec2(0.0, 10.0 * (port + 1) as f32)
 }
 
 impl State {
@@ -669,13 +778,7 @@ impl State {
         self
     }
 
-    // Scale based on number of ports and vertical size? We have to
-    // select the transition first to drag?
-    pub fn port_in(&self, port: usize) -> Pos2 {
-        self.rect.min + self.parent_root_offset + vec2(0.0, 10.0 * (port + 1) as f32)
-    }
-
-    pub fn port_out(&self, port: usize) -> Pos2 {
-        self.rect.right_top() + self.parent_root_offset + vec2(0.0, 10.0 * (port + 1) as f32)
+    pub fn rect(&self) -> Rect {
+        self.rect.translate(self.parent_root_offset)
     }
 }
