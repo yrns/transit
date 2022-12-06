@@ -64,7 +64,9 @@ impl Default for State {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Transition {
-    // event? label?
+    // event? guard name?
+    #[serde(default)]
+    id: String,
     c1: Vec2,
     c2: Vec2,
     // Source port index.
@@ -122,8 +124,8 @@ pub enum Command {
     ResizeState(transit::Idx, Vec2),
     AddTransition(transit::Idx, transit::Idx, Transition),
     RemoveTransition,
-    UpdateTransition,
-    MoveTransition,
+    UpdateTransition(transit::Tdx, Transition),
+    MoveTransition(transit::Tdx, transit::Idx, transit::Idx),
     SetInitial,
     SetEnter,
     SetExit,
@@ -275,7 +277,10 @@ impl Statechart<EditContext> {
                 Command::AddTransition(a, b, t) => {
                     self.graph.add_transition(a, b, t);
                 }
-                _ => (),
+                Command::UpdateTransition(tdx, t) => {
+                    self.graph.update_transition(tdx, t);
+                }
+                _ => println!("unhandled command: {:?}", c),
             }
         }
     }
@@ -315,8 +320,18 @@ impl Statechart<EditContext> {
                         commands.push(Command::MoveState(src, target, p, parent_root_offset));
                     }
                 }
-                Drag::AddTransition(src, t, Some((target, _))) => {
-                    commands.push(Command::AddTransition(src, target, t.clone()));
+                Drag::AddTransition(src, mut t, Some((target, _))) => {
+                    // TEMP label
+                    t.id = format!(
+                        "{} > {}",
+                        self.graph.state(src).map(|s| s.id.as_str()).unwrap_or("?"),
+                        self.graph
+                            .state(target)
+                            .map(|s| s.id.as_str())
+                            .unwrap_or("?"),
+                    );
+
+                    commands.push(Command::AddTransition(src, target, t));
                 }
                 _ => (),
             }
@@ -472,7 +487,13 @@ impl Statechart<EditContext> {
         for (tdx, target, t, internal) in self.graph.transitions_out(idx) {
             let start = port_out(rect, t.port1);
             let end = port_in(self.state_rect(target, drag, &inner_ui).unwrap(), t.port2);
-            self.show_connection(start, end, Connection::Transition(tdx, t, internal), ui);
+            self.show_connection(
+                start,
+                end,
+                Connection::Transition(tdx, t, internal),
+                ui,
+                commands,
+            );
         }
 
         // New transition in progress. We could do this in root too, to draw last and not check the
@@ -495,7 +516,7 @@ impl Statechart<EditContext> {
                 t.c1 = vec2(d.x, -d.y);
                 t.c2 = vec2(-d.x, d.y);
 
-                self.show_connection(start, end, Connection::DragTransition(t), ui);
+                self.show_connection(start, end, Connection::DragTransition(t), ui, commands);
             }
             _ => (),
         }
@@ -647,7 +668,7 @@ impl Statechart<EditContext> {
                     *offset = parent_offset + p;
                 }
             }
-            Drag::AddTransition(_, t, target) => {
+            Drag::AddTransition(_src, t, target) => {
                 if depth == 0 {
                     // No transition can target the root.
                     *target = None;
@@ -695,7 +716,19 @@ impl Statechart<EditContext> {
         end: Pos2,
         conn: Connection,
         ui: &mut Ui,
-    ) -> Option<Command> {
+        commands: &mut Vec<Command>,
+    ) {
+        let mut ui = ui.child_ui_with_id_source(
+            ui.max_rect(),
+            *ui.layout(),
+            match conn {
+                Connection::Initial(src, ..) => Id::new(src).with("initial"),
+                Connection::DragInitial => ui.id().with("drag_initial"),
+                Connection::Transition(tdx, ..) => Id::new(tdx),
+                Connection::DragTransition(_) => ui.id().with("drag_transition"),
+            },
+        );
+
         let color = Color32::WHITE;
         // draw port at start, dragging moves transition start
         ui.painter().circle_filled(start, 4.0, color);
@@ -738,7 +771,30 @@ impl Statechart<EditContext> {
         mesh.translate(end.to_vec2());
         ui.painter().add(mesh);
 
-        None
+        match conn {
+            Connection::Transition(tdx, t, _internal) => {
+                let rect = Rect::from_center_size(
+                    bezier.sample(0.5),
+                    // What width?
+                    Vec2::new(128.0, ui.style().spacing.interact_size.y),
+                );
+
+                ui.allocate_ui_at_rect(rect, |ui| {
+                    if ui
+                        .horizontal(|ui| {
+                            if let Some(id) = Editabel::show(&t.id, ui).inner {
+                                commands.push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
+                            }
+                        })
+                        .response
+                        .clicked()
+                    {
+                        dbg!("clicked");
+                    }
+                });
+            }
+            _ => {}
+        }
     }
 }
 
@@ -787,5 +843,12 @@ impl State {
 
     pub fn rect(&self) -> Rect {
         self.rect.translate(self.parent_root_offset)
+    }
+}
+
+impl Transition {
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = id.into();
+        self
     }
 }
