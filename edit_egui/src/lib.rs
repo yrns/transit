@@ -647,18 +647,20 @@ impl Statechart<EditContext> {
                     *offset = parent_offset + p;
                 }
             }
-            Drag::AddTransition(_, _, target) => {
+            Drag::AddTransition(_, t, target) => {
                 if depth == 0 {
                     // No transition can target the root.
                     *target = None;
                 }
 
-                if let Some((t, _)) = self
+                if let Some((i, _)) = self
                     .graph
                     .children_rev(idx)
                     .find(|(_i, s)| ui.rect_contains_pointer(s.state.rect.translate(parent_offset)))
                 {
-                    *target = Some((t, depth + 1))
+                    // Find a free incoming port.
+                    t.port2 = self.free_port(i, transit::Direction::Incoming);
+                    *target = Some((i, depth + 1))
                 }
             }
             _ => (),
