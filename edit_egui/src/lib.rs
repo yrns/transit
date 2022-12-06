@@ -65,8 +65,8 @@ impl Default for State {
 #[derive(Clone, Debug, Default)]
 pub struct Transition {
     // event? label?
-    c1: Pos2,
-    c2: Pos2,
+    c1: Vec2,
+    c2: Vec2,
     // Source port index.
     port1: usize,
     /// Destination port index.
@@ -491,9 +491,9 @@ impl Statechart<EditContext> {
                 };
 
                 // Make up control points based on the start and end.
-                let d = (end - start) * 0.3;
-                t.c1 = start + vec2(d.x, -d.y);
-                t.c2 = end + vec2(-d.x, d.y);
+                let d = (end - start) * 0.5;
+                t.c1 = vec2(d.x, -d.y);
+                t.c2 = vec2(-d.x, d.y);
 
                 self.show_connection(start, end, Connection::DragTransition(t), ui);
             }
@@ -710,10 +710,15 @@ impl Statechart<EditContext> {
             Connection::Transition(_, t, _) | Connection::DragTransition(t) => (t.c1, t.c2),
             _ => {
                 // Initial?
-                let dx = (end - start).x * 0.3;
-                (start + vec2(dx, 0.0), end + vec2(-dx, 0.0))
+                //let dx = (end - start).x * 0.3;
+                //(start + vec2(dx, 0.0), end + vec2(-dx, 0.0))
+                (Vec2::ZERO, Vec2::ZERO)
             }
         };
+
+        // Control points are relative to the start and end, respectively.
+        let c1 = start + c1;
+        let c2 = end + c2;
 
         let bezier = CubicBezierShape::from_points_stroke(
             [start, c1, c2, end],
