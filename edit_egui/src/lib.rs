@@ -146,6 +146,7 @@ pub enum Drag {
     TransitionSource(transit::Tdx, Vec2, DragTarget),
     TransitionTarget(transit::Tdx, Vec2, DragTarget),
     TransitionControl(transit::Tdx, Vec2, bool),
+    TransitionId(transit::Tdx, Vec2),
 }
 
 impl Drag {
@@ -181,14 +182,29 @@ impl Drag {
         };
         target.map(|(t, _)| t == idx).unwrap_or_default()
     }
+
+    /// Is the drag greater than some minimum?
+    pub fn min_drag(&self) -> bool {
+        match self {
+            Drag::None => false, // ?
+            Drag::AddTransition(..) => true,
+            Drag::State(_, d, _, _)
+            | Drag::Resize(_, d)
+            | Drag::Initial(_, d, _)
+            | Drag::TransitionSource(_, d, _)
+            | Drag::TransitionTarget(_, d, _)
+            | Drag::TransitionControl(_, d, _)
+            | Drag::TransitionId(_, d) => d.x >= 1.0 || d.y > 1.0,
+        }
+    }
 }
 
-pub enum Connection<'t> {
+pub enum Connection<'a, 'b> {
     // Where are the control points stored?
     Initial(transit::Idx, transit::Idx),
     DragInitial,
-    Transition(transit::Tdx, &'t Transition, bool),
-    DragTransition(&'t Transition),
+    Transition(transit::Tdx, &'a Transition, bool, &'b mut Drag),
+    DragTransition(&'a Transition),
 }
 
 // These two functions are copied from egui::resize which isn't public...
@@ -439,7 +455,7 @@ impl Statechart<EditContext> {
                 ui.horizontal(|ui| {
                     // initial first? drag to select? or select from list?
 
-                    if let Some(id) = Editabel::show(&state.id, ui).inner {
+                    if let Some(id) = Editabel::new().show(&state.id, ui).inner {
                         commands.push(Command::UpdateState(idx, state.clone().with_id(id)))
                     }
 
@@ -490,7 +506,7 @@ impl Statechart<EditContext> {
             self.show_connection(
                 start,
                 end,
-                Connection::Transition(tdx, t, internal),
+                Connection::Transition(tdx, t, internal, drag),
                 ui,
                 commands,
             );
@@ -707,9 +723,14 @@ impl Statechart<EditContext> {
         free
     }
 
-    // https://github.com/emilk/egui/discussions/1959 clicking the curve
+    // Clicking the curve for selection? https://github.com/emilk/egui/discussions/1959
 
-    // sample drag to "paint" the curve?
+    // Sample drag to "paint" the curve?
+
+    // Dragging the label offsets both control points equally, which leads to situations where the
+    // position of the label doesn't follow the pointer. Using something like
+    // [[https://docs.rs/lyon_geom/1.0.4/lyon_geom/cubic_bezier/struct.CubicBezierSegment.html#method.drag]]
+    // might solve this.
     pub fn show_connection(
         &self,
         start: Pos2,
@@ -740,7 +761,15 @@ impl Statechart<EditContext> {
         let stroke = Stroke::new(2.0, color);
 
         let (c1, c2) = match conn {
-            Connection::Transition(_, t, _) | Connection::DragTransition(t) => (t.c1, t.c2),
+            Connection::Transition(tdx, t, _, ref drag) => {
+                // Include the drag (from last frame).
+                match drag {
+                    Drag::TransitionId(i, delta) if *i == tdx => (t.c1 + *delta, t.c2 + *delta),
+                    _ => (t.c1, t.c2),
+                }
+            }
+
+            Connection::DragTransition(t) => (t.c1, t.c2),
             _ => {
                 // Initial?
                 //let dx = (end - start).x * 0.3;
@@ -772,7 +801,7 @@ impl Statechart<EditContext> {
         ui.painter().add(mesh);
 
         match conn {
-            Connection::Transition(tdx, t, _internal) => {
+            Connection::Transition(tdx, t, _internal, drag) => {
                 let rect = Rect::from_center_size(
                     bezier.sample(0.5),
                     // What width?
@@ -780,17 +809,47 @@ impl Statechart<EditContext> {
                 );
 
                 ui.allocate_ui_at_rect(rect, |ui| {
-                    if ui
+                    let _response = ui
                         .horizontal(|ui| {
-                            if let Some(id) = Editabel::show(&t.id, ui).inner {
+                            let InnerResponse { inner, response } =
+                                Editabel::sense(Sense::click_and_drag()).show(&t.id, ui);
+                            if let Some(id) = inner {
                                 commands.push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
                             }
+                            if response.double_clicked() {
+                                dbg!("double");
+                            } else {
+                                // set_drag / validation w/ response? all these checks are redundant
+                                if response.drag_started() {
+                                    if !drag.in_drag() {
+                                        *drag = Drag::TransitionId(tdx, Vec2::ZERO);
+                                    } // else, error?
+                                } else if response.dragged() {
+                                    if let Drag::TransitionId(i, ref mut delta) = drag {
+                                        if *i == tdx {
+                                            *delta += response.drag_delta()
+                                        }
+                                    } // else, error?
+                                } else if response.drag_released() {
+                                    if drag.min_drag() {
+                                        match drag {
+                                            Drag::TransitionId(i, delta) if *i == tdx => {
+                                                let mut t = t.clone();
+                                                t.c1 += *delta;
+                                                t.c2 += *delta;
+                                                commands.push(Command::UpdateTransition(tdx, t));
+                                            }
+                                            _ => (), // error?
+                                        }
+                                    }
+                                    *drag = Drag::None
+                                } else if response.clicked() {
+                                    dbg!("clicked label");
+                                    // selection?
+                                }
+                            }
                         })
-                        .response
-                        .clicked()
-                    {
-                        dbg!("clicked");
-                    }
+                        .response;
                 });
             }
             _ => {}

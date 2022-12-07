@@ -1,6 +1,8 @@
 use eframe::egui::*;
 
-pub struct Editabel;
+pub struct Editabel {
+    sense: Sense,
+}
 
 #[derive(Clone)]
 pub enum EditabelState {
@@ -19,11 +21,21 @@ impl Default for EditabelState {
 /// reverts to a Label. This takes up the minimal space when not
 /// editing.
 impl Editabel {
-    pub fn show(text: &str, ui: &mut Ui) -> InnerResponse<Option<String>> {
+    pub fn new() -> Self {
+        Self {
+            sense: Sense::click(),
+        }
+    }
+
+    pub fn sense(sense: Sense) -> Self {
+        Self { sense }
+    }
+
+    pub fn show(&self, text: &str, ui: &mut Ui) -> InnerResponse<Option<String>> {
         let state: EditabelState = ui.data().get_temp(ui.id()).unwrap_or_default();
         match state {
             EditabelState::Closed(width) => {
-                let response = ui.add(Label::new(text).sense(Sense::click()));
+                let response = ui.add(Label::new(text).sense(self.sense));
 
                 let t = ui.ctx().animate_bool(ui.id(), false);
                 ui.add_space(t * width);
