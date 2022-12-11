@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 // TODO: make a separte crate for the bin and only depend on egui here
 use editabel::Editabel;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
@@ -34,9 +36,6 @@ pub struct State {
     // These needs to be pulled from a contained struct.
     //enter: String,
     //exit: String,
-    /// Offset of the parent (relative to root) such that a global
-    /// position can be found for this state.
-    parent_root_offset: Vec2,
     /// Rect relative to parent.
     rect: Rect,
     #[allow(unused)]
@@ -52,7 +51,6 @@ impl Default for State {
     fn default() -> Self {
         State {
             id: "untitled".into(),
-            parent_root_offset: Vec2::ZERO,
             rect: Rect::from_min_size(pos2(0.0, 0.0), Vec2::INFINITY),
             collapsed: false,
             pan: Vec2::ZERO,
@@ -120,7 +118,7 @@ pub enum Command {
     UpdateState(transit::Idx, State),
     /// Source, target, position (relative to parent), offset of the
     /// parent (relative to root).
-    MoveState(transit::Idx, transit::Idx, Pos2, Vec2),
+    MoveState(transit::Idx, transit::Idx, Pos2),
     ResizeState(transit::Idx, Vec2),
     AddTransition(transit::Idx, transit::Idx, Transition),
     RemoveTransition,
@@ -140,7 +138,7 @@ pub type DragTarget = Option<(transit::Idx, usize)>;
 pub enum Drag {
     #[default]
     None,
-    State(transit::Idx, (Pos2, Vec2), DragTarget, Vec2),
+    State(transit::Idx, Vec2, DragTarget, Vec2),
     Resize(transit::Idx, Vec2),
     Initial(transit::Idx, Vec2, DragTarget),
     AddTransition(transit::Idx, Transition, DragTarget),
@@ -196,21 +194,31 @@ impl Drag {
         match self {
             Drag::None => false, // ?
             Drag::AddTransition(..) => true,
-            // Compare original drag position to the current pointer.
-            Drag::State(_, (p0, _), _, _) => ui
-                .input()
-                .pointer
-                .interact_pos()
-                .map(|p| (p - *p0).max_elem() >= 1.0)
-                .unwrap_or_default(),
+            // Compare original press to the current pointer. This only works if the drag is in
+            // progress, not after the pointer is released.
+            Drag::State(..) => {
+                let p = &ui.input().pointer;
+                p.press_origin()
+                    .zip(p.interact_pos())
+                    .map(|(p0, p1)| (p1 - p0).abs().max_elem() >= 1.0)
+                    .unwrap_or_default()
+            }
             Drag::Resize(_, d)
             | Drag::Initial(_, d, _)
             | Drag::TransitionSource(_, d, _)
             | Drag::TransitionTarget(_, d, _)
             | Drag::TransitionControl(_, d, _)
-            | Drag::TransitionId(_, d) => d.max_elem() >= 1.0,
+            | Drag::TransitionId(_, d) => d.abs().max_elem() >= 1.0,
         }
     }
+}
+
+/// Mutable data, passed to each call of show_state.
+#[derive(Default)]
+pub struct EditData {
+    rects: nohash_hasher::IntMap<usize, Rect>,
+    drag: Drag,
+    commands: Vec<Command>,
 }
 
 pub enum Connection<'a, 'b> {
@@ -250,10 +258,6 @@ impl Statechart<EditContext> {
         &self.graph.root().id
     }
 
-    pub fn root_rect(&self) -> Rect {
-        self.graph.root().rect
-    }
-
     pub fn load(&mut self) -> Result<(), ImportError> {
         if let Some(path) = &self.path {
             self.graph = transit::Graph::import_from_file(&path)?;
@@ -282,22 +286,21 @@ impl Statechart<EditContext> {
         for c in commands {
             //dbg!(&c);
             match c {
-                Command::AddState(parent, pos) => {
+                Command::AddState(parent, p) => {
                     self.graph.add_state(
                         State {
                             id: "untitled".into(),
-                            rect: Rect::from_min_size(pos, State::DEFAULT_SIZE),
+                            rect: Rect::from_min_size(p, State::DEFAULT_SIZE),
                             ..Default::default()
                         },
                         Some(parent),
                     );
                 }
                 Command::RemoveState(idx, rec) => self.graph.remove_state(idx, !rec, !rec),
-                Command::MoveState(idx, parent, offset, parent_root_offset) => {
+                Command::MoveState(idx, parent, offset) => {
                     if let Some(state) = self.graph.state(idx) {
                         let mut state = state.clone();
                         state.rect = Rect::from_min_size(offset, state.rect.size());
-                        state.parent_root_offset = parent_root_offset;
 
                         // TODO: merge undos
                         if self.graph.parent(idx) != Some(parent) {
@@ -340,29 +343,29 @@ impl Statechart<EditContext> {
             ui.style_mut().debug.show_interactive_widgets = true;
         }
 
-        // Keep drag state in temp storage.
-        let mut drag = ui.ctx().data().get_temp(ui.id()).unwrap_or_default();
-        let mut commands = Vec::new();
+        // Keep edit data in temp storage.
+        let edit_data = ui.data().get_temp(ui.id());
+        let edit_data = edit_data.unwrap_or_else(|| {
+            let data = Arc::new(Mutex::new(EditData::default()));
+            ui.data().insert_temp(ui.id(), data.clone());
+            data
+        });
+        let mut edit_data = edit_data.lock().unwrap();
 
         // Show root and recursively show children.
-        self.show_state(
-            self.graph.root,
-            rect.min.to_vec2(),
-            0,
-            &mut drag,
-            ui,
-            &mut commands,
-        );
+        self.show_state(self.graph.root, rect.min.to_vec2(), 0, &mut edit_data, ui);
+
+        let drag = edit_data.drag.clone(); // remove clone
 
         // Resolve drag. ui.input().pointer.primary_released() doesn't work?
         if ui.input().pointer.any_released() {
-            //if drag.min_drag(ui) {
             match drag {
-                Drag::State(src, (_, offset), Some((target, _)), parent_root_offset) => {
+                //_ if !drag.min_drag(ui) => (),
+                Drag::State(src, offset, Some((target, _)), parent_root_offset) => {
                     if let Some(p) = ui.input().pointer.interact_pos() {
                         // Place the state relative to the parent with the offset.
                         let p = p - parent_root_offset - offset;
-                        commands.push(Command::MoveState(src, target, p, parent_root_offset));
+                        edit_data.commands.push(Command::MoveState(src, target, p));
                     }
                 }
                 Drag::AddTransition(src, mut t, Some((target, _))) => {
@@ -376,18 +379,16 @@ impl Statechart<EditContext> {
                             .unwrap_or("?"),
                     );
 
-                    commands.push(Command::AddTransition(src, target, t));
+                    edit_data
+                        .commands
+                        .push(Command::AddTransition(src, target, t));
                 }
                 _ => (),
             }
-            //}
-            drag = Drag::None;
+            edit_data.drag = Drag::None;
         }
 
-        // Save drag state.
-        ui.ctx().data().insert_temp(ui.id(), drag);
-
-        commands
+        std::mem::take(&mut edit_data.commands)
     }
 
     pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
@@ -398,55 +399,40 @@ impl Statechart<EditContext> {
         resize_response
     }
 
-    /// Returns a state rect including drag state.
-    pub fn state_rect(&self, idx: transit::Idx, drag: &Drag, ui: &Ui) -> Option<Rect> {
-        self.graph.state(idx).and_then(|s| match drag {
-            Drag::State(i, (_, offset), ..) if *i == idx => ui
-                .input()
-                .pointer
-                .interact_pos()
-                .map(|p| Rect::from_min_size(p - *offset, s.rect().size())),
-            Drag::Resize(i, delta) if *i == idx => {
-                Some(Rect::from_min_size(s.rect().min, s.rect.size() + *delta))
-            }
-            _ => Some(s.rect()),
-        })
-    }
-
     pub fn show_state(
         &self,
         idx: transit::Idx,
         // Parent rect min.
         offset: Vec2,
         depth: usize,
-        drag: &mut Drag,
+        edit_data: &mut EditData,
         ui: &mut Ui,
-        commands: &mut Vec<Command>,
     ) {
         let id = Id::new(idx);
         let state = self.graph.state(idx).unwrap();
         let root = idx == self.graph.root;
         let interact_pos = ui.input().pointer.interact_pos();
 
-        let rect = match drag {
-            Drag::State(i, (_, drag_offset), ..) if *i == idx => {
+        // let drag = &mut edit_data.drag;
+        // let commands = &mut edit_data.commands;
+
+        let rect = match edit_data.drag {
+            // Use all available space for the root.
+            _ if root => state.rect.intersect(ui.max_rect()),
+            Drag::State(i, drag_offset, ..) if i == idx => {
                 let p = interact_pos.unwrap_or_default();
-                Rect::from_min_size(p - *drag_offset, state.rect.size())
+                Rect::from_min_size(p - drag_offset, state.rect.size())
             }
-            Drag::Resize(i, delta) if *i == idx => {
+            Drag::Resize(i, delta) if i == idx => {
                 // Include the offset and the resize delta.
-                Rect::from_min_size(state.rect.min + offset, state.rect.size() + *delta)
+                Rect::from_min_size(state.rect.min + offset, state.rect.size() + delta)
             }
             // Just the offset.
             _ => state.rect.translate(offset),
         };
 
-        // Use all available space for the root, don't draw background.
-        let inner_rect = if root {
-            rect.intersect(ui.max_rect())
-        } else {
-            rect
-        };
+        // Write rect.
+        edit_data.rects.insert(idx.index(), rect);
 
         // Reserve background shape.
         let bg = ui.painter().add(Shape::Noop);
@@ -459,10 +445,10 @@ impl Statechart<EditContext> {
         };
 
         // Background interaction, dragging states and context menu.
-        let mut state_response = ui.interact(inner_rect, id, sense);
+        let mut state_response = ui.interact(rect, id, sense);
 
         // The inner_ui only serves to convey the clip_rect to children.
-        let mut inner_ui = ui.child_ui_with_id_source(inner_rect, *ui.layout(), idx);
+        let mut inner_ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
 
         // Inset the clip_rect so things don't draw over the
         // stroke. The default theme stroke(s) is generally 1.0?
@@ -471,11 +457,12 @@ impl Statechart<EditContext> {
         // Intersect our clip rect with the parent's.
         inner_ui.set_clip_rect(clip_rect.intersect(ui.clip_rect()));
 
-        self.set_drag_target(idx, offset, depth, drag, &inner_ui);
+        // Set drag target first and let child states override.
+        self.set_drag_target(idx, rect, depth, &mut edit_data.drag, &inner_ui);
 
-        // Inset the header from the inner_rect.
+        // Inset the header from the rect.
         let header_inset = Vec2::splat(4.0);
-        let header_rect = Rect::from_min_max(inner_rect.min + header_inset, inner_rect.max);
+        let header_rect = Rect::from_min_max(rect.min + header_inset, rect.max);
 
         // TODO: children should not be able to cover the header, draw
         // this last
@@ -491,7 +478,7 @@ impl Statechart<EditContext> {
 
                     // Clicking the label selects the state.
                     if response.clicked_by(PointerButton::Primary) {
-                        commands.push(Command::UpdateSelection(if root {
+                        edit_data.commands.push(Command::UpdateSelection(if root {
                             Selection::None
                         } else {
                             Selection::State(idx)
@@ -501,7 +488,9 @@ impl Statechart<EditContext> {
                     // Dragging the label drags the state.
 
                     if let Some(id) = inner {
-                        commands.push(Command::UpdateState(idx, state.clone().with_id(id)))
+                        edit_data
+                            .commands
+                            .push(Command::UpdateState(idx, state.clone().with_id(id)))
                     }
 
                     // hover should show source/location by name? click to
@@ -526,17 +515,17 @@ impl Statechart<EditContext> {
         // Resize. Cannot resize the root state. Only show the resize if the pointer is in the rect,
         // or we are currently resizing it (since the pointer can be outside while dragging - it's a
         // frame behind?).
-        if !root && (drag.resizing(idx) || ui.rect_contains_pointer(rect)) {
-            match drag {
+        if !root && (edit_data.drag.resizing(idx) || ui.rect_contains_pointer(rect)) {
+            match edit_data.drag {
                 Drag::None => {
-                    let response = self.show_resize(id, inner_rect, &mut inner_ui);
+                    let response = self.show_resize(id, rect, &mut inner_ui);
                     if response.drag_started() {
                         // This needs the same treatment for minimum size?
-                        *drag = Drag::Resize(idx, response.drag_delta());
+                        edit_data.drag = Drag::Resize(idx, response.drag_delta());
                     }
                 }
                 Drag::Resize(idx, ref mut delta) => {
-                    let response = self.show_resize(id, inner_rect, &mut inner_ui);
+                    let response = self.show_resize(id, rect, &mut inner_ui);
                     if response.dragged() {
                         // Find the minimum delta such that we don't
                         // resize smaller than the header size
@@ -545,8 +534,8 @@ impl Statechart<EditContext> {
                         let size = state.rect.size();
                         *delta = (min - size).max(*delta + response.drag_delta());
                     } else if response.drag_released() {
-                        commands.push(Command::ResizeState(*idx, *delta));
-                        *drag = Drag::None
+                        edit_data.commands.push(Command::ResizeState(idx, *delta));
+                        edit_data.drag = Drag::None
                     }
                 }
                 _ => (),
@@ -554,8 +543,11 @@ impl Statechart<EditContext> {
         }
 
         for (tdx, target, t, internal) in self.graph.transitions_out(idx) {
+            let drag = &mut edit_data.drag;
+            let commands = &mut edit_data.commands;
+
             let start = port_out(rect, t.port1);
-            let end = port_in(self.state_rect(target, drag, &inner_ui).unwrap(), t.port2);
+            let end = port_in(*edit_data.rects.get(&target.index()).unwrap(), t.port2);
             self.show_connection(
                 start,
                 end,
@@ -567,25 +559,26 @@ impl Statechart<EditContext> {
 
         // New transition in progress. We could do this in root too, to draw last and not check the
         // index.
-        match drag {
-            Drag::AddTransition(source, t, target) if *source == idx => {
+        match edit_data.drag {
+            Drag::AddTransition(source, ref mut t, target) if source == idx => {
                 let start = port_out(rect, t.port1);
-                let end = match target {
-                    Some((target, _)) => {
-                        // Since we are dragging already we don't need state_rect.
-                        let target = self.graph.state(*target).unwrap();
-                        port_in(target.rect(), t.port2)
-                    }
-                    // else, root?
-                    None => interact_pos.unwrap(),
-                };
+                let end = target
+                    .and_then(|t| edit_data.rects.get(&t.0.index()))
+                    .map(|r| port_in(*r, t.port2))
+                    .unwrap_or_else(|| interact_pos.unwrap());
 
                 // Make up control points based on the start and end.
                 let d = (end - start) * 0.5;
                 t.c1 = vec2(d.x, -d.y);
                 t.c2 = vec2(-d.x, d.y);
 
-                self.show_connection(start, end, Connection::DragTransition(t), ui, commands);
+                self.show_connection(
+                    start,
+                    end,
+                    Connection::DragTransition(t),
+                    ui,
+                    &mut edit_data.commands,
+                );
             }
             _ => (),
         }
@@ -597,19 +590,13 @@ impl Statechart<EditContext> {
             // checking (selection). If you drag back to the original position the layer will revert
             // which is a bug. This is a hack until egui supports only starting the drag due to time
             // or motion.
-            if drag.dragging(child) && drag.min_drag(ui) {
+            if edit_data.drag.dragging(child) && edit_data.drag.min_drag(ui) {
                 // Draw in a layer so it draws on top.
                 let layer_id = LayerId::new(Order::Tooltip, id);
                 inner_ui.with_layer_id(layer_id, |mut ui| {
-                    ui.set_clip_rect(self.root_rect());
-                    self.show_state(
-                        child,
-                        rect.min.to_vec2(),
-                        depth + 1,
-                        drag,
-                        &mut ui,
-                        commands,
-                    );
+                    let root_rect = *edit_data.rects.get(&self.graph.root.index()).unwrap();
+                    ui.set_clip_rect(root_rect);
+                    self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, &mut ui);
                     ui.set_clip_rect(clip_rect);
                 });
             } else {
@@ -617,16 +604,15 @@ impl Statechart<EditContext> {
                     child,
                     rect.min.to_vec2(),
                     depth + 1,
-                    drag,
+                    edit_data,
                     &mut inner_ui,
-                    commands,
                 );
             }
         }
 
         // Can't select root.
         if state_response.clicked_by(PointerButton::Primary) {
-            commands.push(Command::UpdateSelection(if root {
+            edit_data.commands.push(Command::UpdateSelection(if root {
                 Selection::None
             } else {
                 Selection::State(idx)
@@ -636,12 +622,12 @@ impl Statechart<EditContext> {
         // New drags. There is no `drag_started_by`. We should not get a drag here if a drag is
         // started in a child state, but we check `in_drag` anyway since `dragged` is continuous.
         let dragged = state_response.dragged_by(PointerButton::Primary);
-        if dragged && !drag.in_drag() {
+        if dragged && !edit_data.drag.in_drag() {
             if let Some(p) = interact_pos {
                 if ui.input().modifiers.shift {
                     // New transition, drag to target.
                     let port1 = self.free_port(idx, transit::Direction::Outgoing);
-                    *drag = Drag::AddTransition(
+                    edit_data.drag = Drag::AddTransition(
                         idx,
                         // Use a builder instead of default? No guarantees on port2 being set or zero.
                         Transition {
@@ -653,28 +639,28 @@ impl Statechart<EditContext> {
                 } else {
                     // Save the pointer offset from the state origin. Zero is never correct for the
                     // parent offest, so maybe it should be an Option like target?
-                    *drag = Drag::State(idx, (p, p - rect.min), None, Vec2::ZERO);
+                    edit_data.drag = Drag::State(idx, p - rect.min, None, Vec2::ZERO);
                 }
             }
         }
 
         // Context menu on right click.
-        if !drag.in_drag() {
+        if !edit_data.drag.in_drag() {
             state_response = state_response.context_menu(|ui| {
                 if ui.button("Add state").clicked() {
                     // Position is the original click, relative to parent.
-                    let pos = ui.min_rect().min - rect.min;
-                    commands.push(Command::AddState(idx, pos.to_pos2()));
+                    let p = ui.min_rect().min - rect.min.to_vec2();
+                    edit_data.commands.push(Command::AddState(idx, p));
                     ui.close_menu();
                 }
                 // Can't remove the root state.
                 if idx != self.graph.root {
                     if ui.button("Remove state").clicked() {
-                        commands.push(Command::RemoveState(idx, true));
+                        edit_data.commands.push(Command::RemoveState(idx, true));
                         ui.close_menu();
                     }
                     if ui.button("Remove state (recursive)").clicked() {
-                        commands.push(Command::RemoveState(idx, false));
+                        edit_data.commands.push(Command::RemoveState(idx, false));
                         ui.close_menu();
                     }
                 }
@@ -684,13 +670,18 @@ impl Statechart<EditContext> {
         // TODO: Make a background for the root so we can show drag_valid.
         if !root {
             let style = ui.style();
-            let mut widget_visuals = style.interact_selectable(
-                &state_response,
-                match self.selection {
-                    Selection::State(i) if i == idx => true,
-                    _ => false,
-                }, // drag.dragging(idx) ?
-            );
+            let selected = match self.selection {
+                Selection::State(i) if i == idx => true,
+                _ => false,
+            };
+
+            // There is some weirdness with the response and the layer change while dragging, so
+            // just force it to active if not selected:
+            let mut widget_visuals = if !selected && edit_data.drag.dragging(idx) {
+                style.visuals.widgets.active
+            } else {
+                style.interact_selectable(&state_response, selected)
+            };
 
             // Alternate background colors based on depth. The default dark theme is very dark here,
             // closer to the window background.
@@ -698,7 +689,7 @@ impl Statechart<EditContext> {
                 widget_visuals.bg_fill = style.visuals.faint_bg_color;
             }
 
-            let stroke = if drag.is_target(idx) {
+            let stroke = if edit_data.drag.is_target(idx) {
                 // The default stroke for selection is thin, so make it more prominent here to show
                 // the drag target.
                 let mut stroke = ui.style().visuals.selection.stroke;
@@ -729,12 +720,20 @@ impl Statechart<EditContext> {
     pub fn set_drag_target(
         &self,
         idx: transit::Idx,
-        parent_offset: Vec2,
+        rect: Rect,
         depth: usize,
         drag: &mut Drag,
         ui: &Ui,
     ) {
+        let Some(p) = ui.input().pointer.interact_pos() else {
+            return
+        };
+
+        let parent_offset = rect.min.to_vec2();
+
         match drag {
+            // We can't drag into ourselves.
+            Drag::State(i, ..) if *i == idx => (),
             Drag::State(dragged_idx, _drag_offset, target, offset) => {
                 // Root clears the target by setting itself initially (any state can be dragged to
                 // root).
@@ -743,15 +742,19 @@ impl Statechart<EditContext> {
                     *offset = parent_offset;
                 }
 
-                if let Some((t, p)) = self.graph.children_rev(idx).find_map(|(i, s)| {
-                    let rect = s.state.rect;
-                    (ui.rect_contains_pointer(rect.translate(parent_offset))
-                        // The drag target cannot be in the path of the dragged state (cycles).
-                        && !self.graph.in_path(*dragged_idx, i))
-                    .then_some((i, rect.min.to_vec2()))
+                if let Some((t, new_offset)) = self.graph.children_rev(idx).find_map(|(i, s)| {
+                    let child_rect = s.state.rect.translate(parent_offset).intersect(rect);
+
+                    // The drag target cannot be in the path of the dragged state (cycles). This
+                    // never happens in practice since the dragged states are moving with the
+                    // pointer.
+                    (!self.graph.in_path(*dragged_idx, i) && child_rect.contains(p)).then(|| {
+                        // ui.ctx().debug_painter().debug_rect(child_rect, Color32::GREEN, format!("{:?}", p - child_rect.min));
+                        (i, child_rect.min.to_vec2())
+                    })
                 }) {
                     *target = Some((t, depth + 1));
-                    *offset = parent_offset + p;
+                    *offset = new_offset;
                 }
             }
             Drag::AddTransition(_src, t, target) => {
@@ -987,10 +990,6 @@ impl State {
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.id = id.into();
         self
-    }
-
-    pub fn rect(&self) -> Rect {
-        self.rect.translate(self.parent_root_offset)
     }
 }
 

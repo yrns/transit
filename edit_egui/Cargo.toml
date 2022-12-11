@@ -16,6 +16,7 @@ transit = { path = ".." }
 #eframe = "0.19.0"
 eframe = { version = "0.1.0", path = "eframe-dynamic", package = "eframe-dynamic" }
 serde = { version = "1", optional = true, features = ["derive"] }
+nohash-hasher = "0.2.0"
 
 [[bin]]
 name = "transit"
