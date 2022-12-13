@@ -5,7 +5,7 @@ pub use petgraph::Direction;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
-    visit::{EdgeRef, IntoNodeReferences},
+    visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, iter::Iterator};
@@ -308,8 +308,17 @@ impl<C: Context> Graph<C> {
         self.state_transitions(i, Direction::Incoming)
     }
 
-    pub fn transitions(&self) -> impl Iterator<Item = Tdx> + '_ {
+    pub fn transition_indices(&self) -> impl Iterator<Item = Tdx> + '_ {
         self.graph.edge_indices()
+    }
+
+    pub fn transitions(
+        &self,
+    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
+        self.graph.edge_references().map(|e| {
+            let t = e.weight();
+            (e.id(), e.source(), e.target(), &t.transition, t.internal)
+        })
     }
 
     pub fn endpoints(&self, i: Tdx) -> Option<(Idx, Idx)> {
