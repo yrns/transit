@@ -970,19 +970,20 @@ impl Statechart<EditContext> {
         tdx: transit::Tdx,
         transition: &Transition,
         cp: ControlPoint,
-        mut rect: Rect,
+        rect: Rect,
         drag: &mut Drag,
         ui: &mut Ui,
         commands: &mut Vec<Command>,
     ) {
         let response = ui.allocate_rect(rect, Sense::drag());
 
-        let wv = ui.style().interact_selectable(
+        // Ignore selection since its always selected.
+        let wv = ui.style().interact(
             &response,
-            match self.selection {
-                Selection::Transition(_tdx) if tdx == _tdx => true,
-                _ => false,
-            },
+            // match self.selection {
+            //     Selection::Transition(_tdx) if tdx == _tdx => true,
+            //     _ => false,
+            // },
         );
 
         if response.drag_started() {
@@ -1007,7 +1008,7 @@ impl Statechart<EditContext> {
                             ControlPoint::C1 => t.c1 += *delta,
                             ControlPoint::C2 => t.c2 += *delta,
                         }
-                        rect = rect.translate(*delta);
+                        //rect = rect.translate(*delta);
                         commands.push(Command::UpdateTransition(tdx, t));
                     }
                     _ => (), // error?
