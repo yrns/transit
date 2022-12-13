@@ -386,7 +386,7 @@ impl<C: Context> Graph<C> {
 
     // Return true if a is in the path of b.
     pub fn in_path(&self, a: Idx, b: Idx) -> bool {
-        self.path_iter(b).find(|i| *i == a).is_some()
+        self.path_iter(b).any(|i| i == a)
     }
 
     pub fn get_initial(&self, i: Idx) -> Idx {
@@ -453,8 +453,8 @@ impl<C: Context> Graph<C> {
     }
 
     // returns an iterator from idx -> root
-    pub fn path_iter<'a>(&'a self, i: Idx) -> PathIter<'a, C> {
-        PathIter::new(&self, i)
+    pub fn path_iter(&self, i: Idx) -> PathIter<'_, C> {
+        PathIter::new(self, i)
     }
 
     // path from root -> idx as a vec
@@ -524,7 +524,7 @@ impl<C: Context> Graph<C> {
 
             // Check for cycles.
             let mut path_set = HashSet::new();
-            let _ = self.path_iter(i).try_for_each(|p| {
+            self.path_iter(i).try_for_each(|p| {
                 if path_set.contains(&p) {
                     Err(format!("cycle {:?} in path for {:?}", p, i))
                 } else {
@@ -639,7 +639,7 @@ impl<C: Context> Statechart<C> {
         let g = &mut self.graph.graph;
         for i in path {
             let mut edges = g.neighbors(i).detach();
-            while let Some((edge, next)) = edges.next(&g) {
+            while let Some((edge, next)) = edges.next(g) {
                 let t = &mut g[edge];
                 if t.transition.guard(ctx, event) {
                     return Some((next, t.internal));
