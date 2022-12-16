@@ -138,8 +138,8 @@ pub enum ControlPoint {
     C2,
 }
 
-//#[derive(Clone, Debug, Default)]
-//pub struct TransitionId(transit::Tdx, Vec2);
+#[derive(Clone, Debug)]
+pub struct TransitionId(transit::Tdx, Vec2);
 
 #[derive(Clone, Debug)]
 pub struct TransitionControl(transit::Tdx, Vec2, ControlPoint);
@@ -147,6 +147,25 @@ pub struct TransitionControl(transit::Tdx, Vec2, ControlPoint);
 pub trait DragUpdate {
     fn update(&mut self, response: &Response);
     fn matches<'a>(&self, drag: &'a mut Drag) -> Option<&'a mut Self>;
+}
+
+impl DragUpdate for TransitionId {
+    fn update(&mut self, response: &Response) {
+        self.1 += response.drag_delta();
+    }
+
+    fn matches<'a>(&self, drag: &'a mut Drag) -> Option<&'a mut Self> {
+        match drag {
+            Drag::TransitionId(d) if self.0 == d.0 => Some(d),
+            _ => None,
+        }
+    }
+}
+
+impl From<TransitionId> for Drag {
+    fn from(d: TransitionId) -> Self {
+        Drag::TransitionId(d)
+    }
 }
 
 impl DragUpdate for TransitionControl {
@@ -188,7 +207,7 @@ pub enum Drag {
     TransitionSource(transit::Tdx, Vec2, DragTarget),
     TransitionTarget(transit::Tdx, Vec2, DragTarget),
     TransitionControl(TransitionControl),
-    TransitionId(transit::Tdx, Vec2),
+    TransitionId(TransitionId),
 }
 
 impl Drag {
@@ -251,7 +270,7 @@ impl Drag {
             | Drag::TransitionSource(_, d, _)
             | Drag::TransitionTarget(_, d, _)
             | Drag::TransitionControl(TransitionControl(_, d, _))
-            | Drag::TransitionId(_, d) => d.abs().max_elem() >= 1.0,
+            | Drag::TransitionId(TransitionId(_, d)) => d.abs().max_elem() >= 1.0,
         }
     }
 
@@ -966,7 +985,9 @@ impl Statechart<EditContext> {
             Connection::Transition(tdx, t, _, ref drag) => {
                 // Include the drag (from last frame).
                 match drag {
-                    Drag::TransitionId(i, delta) if *i == tdx => (t.c1 + *delta, t.c2 + *delta),
+                    Drag::TransitionId(TransitionId(i, delta)) if *i == tdx => {
+                        (t.c1 + *delta, t.c2 + *delta)
+                    }
                     Drag::TransitionControl(TransitionControl(i, delta, cp)) if *i == tdx => {
                         match cp {
                             ControlPoint::C1 => (t.c1 + *delta, t.c2),
@@ -1042,31 +1063,15 @@ impl Statechart<EditContext> {
                                         .push(Command::UpdateSelection(Selection::Transition(tdx)))
                                 }
 
-                                // set_drag / validation w/ response? all these checks are redundant
-                                if response.drag_started() {
-                                    if !drag.in_drag() {
-                                        *drag = Drag::TransitionId(tdx, Vec2::ZERO);
-                                    } // else, error?
-                                } else if response.dragged() {
-                                    if let Drag::TransitionId(i, ref mut delta) = drag {
-                                        if *i == tdx {
-                                            *delta += response.drag_delta()
-                                        }
-                                    } // else, error?
-                                } else if response.drag_released() {
-                                    if drag.min_drag(ui) {
-                                        match drag {
-                                            Drag::TransitionId(i, delta) if *i == tdx => {
-                                                let mut t = t.clone();
-                                                t.c1 += *delta;
-                                                t.c2 += *delta;
-                                                commands.push(Command::UpdateTransition(tdx, t));
-                                            }
-                                            _ => (), // error?
-                                        }
-                                    }
-                                    *drag = Drag::None
-                                }
+                                drag.handler(&response, TransitionId(tdx, Vec2::ZERO)).end(
+                                    ui,
+                                    |TransitionId(tdx, delta)| {
+                                        let mut t = t.clone();
+                                        t.c1 += *delta;
+                                        t.c2 += *delta;
+                                        commands.push(Command::UpdateTransition(*tdx, t));
+                                    },
+                                );
                             }
                         })
                         .response;
