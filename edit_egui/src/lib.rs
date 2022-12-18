@@ -1,4 +1,3 @@
-//use std::mem::discriminant;
 use std::sync::{Arc, Mutex};
 
 // TODO: make a separte crate for the bin and only depend on egui here
@@ -138,61 +137,6 @@ pub enum ControlPoint {
     C2,
 }
 
-#[derive(Clone, Debug)]
-pub struct TransitionId(transit::Tdx, Vec2);
-
-#[derive(Clone, Debug)]
-pub struct TransitionControl(transit::Tdx, Vec2, ControlPoint);
-
-pub trait DragUpdate {
-    fn update(&mut self, response: &Response);
-    fn matches<'a>(&self, drag: &'a mut Drag) -> Option<&'a mut Self>;
-}
-
-impl DragUpdate for TransitionId {
-    fn update(&mut self, response: &Response) {
-        self.1 += response.drag_delta();
-    }
-
-    fn matches<'a>(&self, drag: &'a mut Drag) -> Option<&'a mut Self> {
-        match drag {
-            Drag::TransitionId(d) if self.0 == d.0 => Some(d),
-            _ => None,
-        }
-    }
-}
-
-impl From<TransitionId> for Drag {
-    fn from(d: TransitionId) -> Self {
-        Drag::TransitionId(d)
-    }
-}
-
-impl DragUpdate for TransitionControl {
-    fn update(&mut self, response: &Response) {
-        self.1 += response.drag_delta();
-    }
-
-    fn matches<'a>(&self, drag: &'a mut Drag) -> Option<&'a mut Self> {
-        match drag {
-            Drag::TransitionControl(d) if self.0 == d.0 && self.2 == d.2 => Some(d),
-            _ => None,
-        }
-    }
-}
-
-impl From<TransitionControl> for Drag {
-    fn from(d: TransitionControl) -> Self {
-        Drag::TransitionControl(d)
-    }
-}
-
-pub struct DragHandler<'a, 'b, T: DragUpdate> {
-    drag: &'a mut Drag,
-    init: T,
-    response: &'b Response,
-}
-
 // Drag target index and depth.
 pub type DragTarget = Option<(transit::Idx, usize)>;
 
@@ -206,8 +150,8 @@ pub enum Drag {
     AddTransition(transit::Idx, Transition, DragTarget),
     TransitionSource(transit::Tdx, Vec2, DragTarget),
     TransitionTarget(transit::Tdx, Vec2, DragTarget),
-    TransitionControl(TransitionControl),
-    TransitionId(TransitionId),
+    TransitionControl((transit::Tdx, ControlPoint), Vec2),
+    TransitionId(transit::Tdx, Vec2),
 }
 
 impl Drag {
@@ -266,85 +210,40 @@ impl Drag {
                     .unwrap_or_default()
             }
             Drag::Resize(_, d)
-            | Drag::Initial(_, d, _)
-            | Drag::TransitionSource(_, d, _)
-            | Drag::TransitionTarget(_, d, _)
-            | Drag::TransitionControl(TransitionControl(_, d, _))
-            | Drag::TransitionId(TransitionId(_, d)) => d.abs().max_elem() >= 1.0,
-        }
-    }
-
-    // pub fn matches(&self, other: &Self) -> bool {
-    //     match self {
-    //         Drag::TransitionControl(TransitionControl(i, _, cp)) => match other {
-    //             Drag::TransitionControl(TransitionControl(_i, _, _cp)) => *i == *_i && *cp == *_cp,
-    //             _ => false,
-    //         },
-    //         _ => discriminant(self) == discriminant(other) && self.index() == other.index(),
-    //     }
-    // }
-
-    // pub fn index(&self) -> Option<usize> {
-    //     match self {
-    //         Drag::None => None,
-    //         Drag::State(i, ..) => Some(i.index()),
-    //         Drag::Resize(i, ..) => Some(i.index()),
-    //         Drag::Initial(i, ..) => Some(i.index()),
-    //         Drag::AddTransition(i, ..) => Some(i.index()),
-    //         Drag::TransitionSource(i, ..) => Some(i.index()),
-    //         Drag::TransitionTarget(i, ..) => Some(i.index()),
-    //         Drag::TransitionControl(d) => Some(d.0.index()),
-    //         Drag::TransitionId(i, ..) => Some(i.index()),
-    //     }
-    // }
-
-    pub fn handler<'a, 'b: 'a, T>(&'a mut self, response: &'b Response, init: T) -> DragHandler<T>
-    where
-        T: DragUpdate,
-    {
-        DragHandler {
-            drag: self,
-            init,
-            response,
+            | Drag::Initial(_, d, ..)
+            | Drag::TransitionSource(_, d, ..)
+            | Drag::TransitionTarget(_, d, ..)
+            | Drag::TransitionControl(_, d, ..)
+            | Drag::TransitionId(_, d) => d.abs().max_elem() >= 1.0,
         }
     }
 }
 
-impl<'a, 'b, T> DragHandler<'a, 'b, T>
-where
-    T: DragUpdate,
-    T: Into<Drag>,
-{
-    pub fn end<F: FnMut(&mut T)>(self, ui: &Ui, mut f: F) {
-        let Self {
-            drag,
-            init,
-            response,
-            //update,
-        } = self;
+// Deriving the variant and id from init failed...
+// macro_rules! drag_id {
+//     ($variant:ident($($field:tt)*,)) => {
+//         $variant
+//     };
+// }
 
-        if response.drag_started() {
-            if !drag.in_drag() {
-                *drag = init.into();
-            } else {
-                eprintln!("error in drag state");
-            }
-        } else if response.dragged() {
-            match init.matches(drag) {
-                Some(d) => d.update(response),
-                None => eprintln!("error in drag state"),
-            }
-        } else if response.drag_released() {
-            // We are matching on drag twice...
-            if drag.min_drag(ui) {
-                match init.matches(drag) {
-                    Some(d) => f(d),
-                    None => eprintln!("error in drag state"),
+macro_rules! drag_delta {
+    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $init:expr, $update:expr, $end:expr) => {
+        match $drag {
+            Drag::None if $response.drag_started() => *$drag = $init,
+            Drag::$drag_ty(_id, delta, ..) if *_id == $drag_id => {
+                if $response.dragged() {
+                    $update(delta)
+                } else if $response.drag_released() {
+                    //if $drag.min_drag($ui)
+                    if delta.abs().max_elem() >= 1.0 {
+                        $end(delta)
+                    }
+                    *$drag = Drag::None;
                 }
             }
-            *drag = Drag::None;
+            _ => (), // if started/dragged/released error?
         }
-    }
+    };
 }
 
 /// Mutable data, passed to each call of show_state.
@@ -690,30 +589,22 @@ impl Statechart<EditContext> {
         // or we are currently resizing it (since the pointer can be outside while dragging - it's a
         // frame behind?).
         if !root && (edit_data.drag.resizing(idx) || ui.rect_contains_pointer(rect)) {
-            match edit_data.drag {
-                Drag::None => {
-                    let response = self.show_resize(id, rect, &mut inner_ui);
-                    if response.drag_started() {
-                        // This needs the same treatment for minimum size?
-                        edit_data.drag = Drag::Resize(idx, response.drag_delta());
-                    }
-                }
-                Drag::Resize(idx, ref mut delta) => {
-                    let response = self.show_resize(id, rect, &mut inner_ui);
-                    if response.dragged() {
-                        // Find the minimum delta such that we don't
-                        // resize smaller than the header size
-                        // (including inset).
-                        let min = header_rect.expand2(header_inset).size();
-                        let size = state.rect.size();
-                        *delta = (min - size).max(*delta + response.drag_delta());
-                    } else if response.drag_released() {
-                        edit_data.commands.push(Command::ResizeState(idx, *delta));
-                        edit_data.drag = Drag::None
-                    }
-                }
-                _ => (),
-            }
+            let response = self.show_resize(id, rect, &mut inner_ui);
+
+            let drag = &mut edit_data.drag;
+
+            drag_delta!(
+                (response, ui, drag, Resize, idx),
+                Drag::Resize(idx, response.drag_delta()),
+                |delta: &mut Vec2| {
+                    // Find the minimum delta such that we don't resize smaller than the header size
+                    // (including inset). Limit max?
+                    let min = header_rect.expand2(header_inset).size();
+                    let size = state.rect.size();
+                    *delta = (min - size).max(*delta + response.drag_delta())
+                },
+                |delta: &mut Vec2| edit_data.commands.push(Command::ResizeState(idx, *delta))
+            );
         }
 
         // Show child states.
@@ -985,15 +876,11 @@ impl Statechart<EditContext> {
             Connection::Transition(tdx, t, _, ref drag) => {
                 // Include the drag (from last frame).
                 match drag {
-                    Drag::TransitionId(TransitionId(i, delta)) if *i == tdx => {
-                        (t.c1 + *delta, t.c2 + *delta)
-                    }
-                    Drag::TransitionControl(TransitionControl(i, delta, cp)) if *i == tdx => {
-                        match cp {
-                            ControlPoint::C1 => (t.c1 + *delta, t.c2),
-                            ControlPoint::C2 => (t.c1, t.c2 + *delta),
-                        }
-                    }
+                    Drag::TransitionId(i, delta) if *i == tdx => (t.c1 + *delta, t.c2 + *delta),
+                    Drag::TransitionControl((i, cp), delta) if *i == tdx => match cp {
+                        ControlPoint::C1 => (t.c1 + *delta, t.c2),
+                        ControlPoint::C2 => (t.c1, t.c2 + *delta),
+                    },
                     _ => (t.c1, t.c2),
                 }
             }
@@ -1063,14 +950,16 @@ impl Statechart<EditContext> {
                                         .push(Command::UpdateSelection(Selection::Transition(tdx)))
                                 }
 
-                                drag.handler(&response, TransitionId(tdx, Vec2::ZERO)).end(
-                                    ui,
-                                    |TransitionId(tdx, delta)| {
+                                drag_delta!(
+                                    (response, ui, drag, TransitionId, tdx),
+                                    Drag::TransitionId(tdx, Vec2::ZERO),
+                                    |delta: &mut Vec2| *delta += response.drag_delta(),
+                                    |delta: &mut Vec2| {
                                         let mut t = t.clone();
                                         t.c1 += *delta;
                                         t.c2 += *delta;
-                                        commands.push(Command::UpdateTransition(*tdx, t));
-                                    },
+                                        commands.push(Command::UpdateTransition(tdx, t))
+                                    }
                                 );
                             }
                         })
@@ -1102,15 +991,19 @@ impl Statechart<EditContext> {
             // },
         );
 
-        drag.handler(&response, TransitionControl(tdx, Vec2::ZERO, cp))
-            .end(ui, |TransitionControl(_, delta, _)| {
+        drag_delta!(
+            (response, ui, drag, TransitionControl, (tdx, cp)),
+            Drag::TransitionControl((tdx, cp), Vec2::ZERO),
+            |delta: &mut Vec2| *delta += response.drag_delta(),
+            |delta: &mut Vec2| {
                 let mut t = transition.clone();
                 match cp {
                     ControlPoint::C1 => t.c1 += *delta,
                     ControlPoint::C2 => t.c2 += *delta,
                 }
                 commands.push(Command::UpdateTransition(tdx, t))
-            });
+            }
+        );
 
         ui.painter().circle_filled(
             rect.center(),
