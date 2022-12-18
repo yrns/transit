@@ -486,6 +486,17 @@ impl Statechart<EditContext> {
                         commands.push(Command::MoveTransition(*tdx, Some(*new_src), None))
                     } // else, error?
                 }
+                Drag::TransitionTarget(tdx, port1, Some((new_target, _)), _) => {
+                    if let Some(t) = self.graph.transition(*tdx) {
+                        // Update port. TODO: merge undos
+                        if t.port1 != *port1 {
+                            let mut t = t.clone();
+                            t.port1 = *port1;
+                            commands.push(Command::UpdateTransition(*tdx, t));
+                        }
+                        commands.push(Command::MoveTransition(*tdx, None, Some(*new_target)))
+                    } // else, error?
+                }
                 _ => (),
             }
             edit_data.drag = Drag::None;
@@ -922,7 +933,7 @@ impl Statechart<EditContext> {
                     },
                     Drag::TransitionSource(i, port, target, _) if *i == tdx => (
                         target
-                            .and_then(|(src, _)| rects.get(&src.index()))
+                            .and_then(|(i, _)| rects.get(&i.index()))
                             // Should the port be stored in DragTarget?
                             .map(|r| port_out(*r, *port))
                             .or(ui.ctx().pointer_interact_pos())
@@ -931,9 +942,17 @@ impl Statechart<EditContext> {
                         t.c2,
                         end,
                     ),
-                    Drag::TransitionTarget(i, _port, _target, _) if *i == tdx => {
-                        todo!()
-                    }
+                    Drag::TransitionTarget(i, port, target, _) if *i == tdx => (
+                        start,
+                        t.c1,
+                        t.c2,
+                        target
+                            .and_then(|(i, _)| rects.get(&i.index()))
+                            // Should the port be stored in DragTarget?
+                            .map(|r| port_out(*r, *port))
+                            .or(ui.ctx().pointer_interact_pos())
+                            .unwrap_or(start),
+                    ),
                     _ => (start, t.c1, t.c2, end),
                 }
             }
@@ -957,13 +976,9 @@ impl Statechart<EditContext> {
 
         ui.painter().add(bezier);
 
-        let mut mesh = arrow(control_size, color);
-        mesh.translate(end.to_vec2());
-        ui.painter().add(mesh);
-
         match conn {
             Connection::Transition(tdx, t, _internal, drag) => {
-                // Show endpoints.
+                // Show endpoints. Maybe only if selected?
                 let control_size_sq = Vec2::splat(control_size);
                 let source_rect = Rect::from_center_size(start, control_size_sq);
                 let response = ui.allocate_rect(source_rect, Sense::drag());
@@ -971,7 +986,7 @@ impl Statechart<EditContext> {
                 match drag {
                     Drag::None if response.drag_started() => {
                         match self.graph.endpoints(tdx) {
-                            Some((src, _)) => *drag = Drag::TransitionSource(tdx, 0, None, src),
+                            Some((i, _)) => *drag = Drag::TransitionSource(tdx, 0, None, i),
                             _ => (), // error
                         }
                     }
@@ -980,6 +995,25 @@ impl Statechart<EditContext> {
 
                 let color = ui.style().interact(&response).fg_stroke.color;
                 ui.painter().circle_filled(start, control_size * 0.5, color);
+
+                let target_rect = Rect::from_center_size(end, control_size_sq);
+                let response = ui.allocate_rect(target_rect, Sense::drag());
+
+                match drag {
+                    Drag::None if response.drag_started() => {
+                        match self.graph.endpoints(tdx) {
+                            Some((_, i)) => *drag = Drag::TransitionTarget(tdx, 0, None, i),
+                            _ => (), // error
+                        }
+                    }
+                    _ => (),
+                }
+
+                let color = ui.style().interact(&response).fg_stroke.color;
+
+                let mut mesh = arrow(control_size, color);
+                mesh.translate(end.to_vec2());
+                ui.painter().add(mesh);
 
                 // Show control points if selected.
                 if selected {
