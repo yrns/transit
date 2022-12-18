@@ -123,7 +123,7 @@ pub enum Command {
     AddTransition(transit::Idx, transit::Idx, Transition),
     RemoveTransition,
     UpdateTransition(transit::Tdx, Transition),
-    MoveTransition(transit::Tdx, transit::Idx, transit::Idx),
+    MoveTransition(transit::Tdx, Option<transit::Idx>, Option<transit::Idx>),
     SetInitial,
     SetEnter,
     SetExit,
@@ -148,8 +148,8 @@ pub enum Drag {
     Resize(transit::Idx, Vec2),
     Initial(transit::Idx, Vec2, DragTarget),
     AddTransition(transit::Idx, Transition, DragTarget),
-    TransitionSource(transit::Tdx, Vec2, DragTarget),
-    TransitionTarget(transit::Tdx, Vec2, DragTarget),
+    TransitionSource(transit::Tdx, usize, DragTarget, transit::Idx),
+    TransitionTarget(transit::Tdx, usize, DragTarget, transit::Idx),
     TransitionControl((transit::Tdx, ControlPoint), Vec2),
     TransitionId(transit::Tdx, Vec2),
 }
@@ -188,8 +188,8 @@ impl Drag {
             Drag::State(_, _, t, _)
             | Drag::Initial(_, _, t)
             | Drag::AddTransition(_, _, t)
-            | Drag::TransitionSource(_, _, t)
-            | Drag::TransitionTarget(_, _, t) => t,
+            | Drag::TransitionSource(_, _, t, _)
+            | Drag::TransitionTarget(_, _, t, _) => t,
             _ => &None,
         };
         target.map(|(t, _)| t == idx).unwrap_or_default()
@@ -199,10 +199,12 @@ impl Drag {
     pub fn min_drag(&self, ui: &Ui) -> bool {
         match self {
             Drag::None => false, // ?
-            Drag::AddTransition(..) => true,
             // Compare original press to the current pointer. This only works if the drag is in
             // progress, not after the pointer is released.
-            Drag::State(..) => {
+            Drag::AddTransition(..)
+            | Drag::State(..)
+            | Drag::TransitionSource(..)
+            | Drag::TransitionTarget(..) => {
                 let p = &ui.input().pointer;
                 p.press_origin()
                     .zip(p.interact_pos())
@@ -211,8 +213,6 @@ impl Drag {
             }
             Drag::Resize(_, d)
             | Drag::Initial(_, d, ..)
-            | Drag::TransitionSource(_, d, ..)
-            | Drag::TransitionTarget(_, d, ..)
             | Drag::TransitionControl(_, d, ..)
             | Drag::TransitionId(_, d) => d.abs().max_elem() >= 1.0,
         }
@@ -246,10 +246,12 @@ macro_rules! drag_delta {
     };
 }
 
+pub type Rects = nohash_hasher::IntMap<usize, Rect>;
+
 /// Mutable data, passed to each call of show_state.
 #[derive(Default)]
 pub struct EditData {
-    rects: nohash_hasher::IntMap<usize, Rect>,
+    rects: Rects,
     drag: Drag,
     commands: Vec<Command>,
 }
@@ -356,6 +358,15 @@ impl Statechart<EditContext> {
                 Command::UpdateTransition(tdx, t) => {
                     self.graph.update_transition(tdx, t);
                 }
+                Command::MoveTransition(tdx, source, target) => {
+                    if let Some(endpoints) = self.graph.endpoints(tdx) {
+                        self.graph.move_transition(
+                            tdx,
+                            source.unwrap_or(endpoints.0),
+                            target.unwrap_or(endpoints.1),
+                        );
+                    }
+                }
                 Command::UpdateSelection(selection) => {
                     // TODO undo?
                     self.selection = selection;
@@ -402,6 +413,7 @@ impl Statechart<EditContext> {
                 let start = port_out(*source_rect, t.port1);
                 let end = port_in(*target_rect, t.port2);
                 self.show_connection(
+                    rects,
                     start,
                     end,
                     Connection::Transition(tdx, t, internal, drag),
@@ -426,7 +438,14 @@ impl Statechart<EditContext> {
                     t.c1 = vec2(d.x, -d.y);
                     t.c2 = vec2(-d.x, d.y);
 
-                    self.show_connection(start, end, Connection::DragTransition(&t), ui, commands);
+                    self.show_connection(
+                        rects,
+                        start,
+                        end,
+                        Connection::DragTransition(&t),
+                        ui,
+                        commands,
+                    );
                 }
             }
             _ => (),
@@ -455,6 +474,17 @@ impl Statechart<EditContext> {
                     );
 
                     commands.push(Command::AddTransition(*src, *target, t.clone()));
+                }
+                Drag::TransitionSource(tdx, port1, Some((new_src, _)), _) => {
+                    if let Some(t) = self.graph.transition(*tdx) {
+                        // Update port. TODO: merge undos
+                        if t.port1 != *port1 {
+                            let mut t = t.clone();
+                            t.port1 = *port1;
+                            commands.push(Command::UpdateTransition(*tdx, t));
+                        }
+                        commands.push(Command::MoveTransition(*tdx, Some(*new_src), None))
+                    } // else, error?
                 }
                 _ => (),
             }
@@ -755,6 +785,13 @@ impl Statechart<EditContext> {
 
         let parent_offset = rect.min.to_vec2();
 
+        // For transition endpoints only.
+        let (allow_self, dir) = match drag {
+            Drag::TransitionSource(..) => (false, transit::Direction::Outgoing),
+            Drag::TransitionTarget(..) => (false, transit::Direction::Incoming),
+            _ => (true, transit::Direction::Incoming),
+        };
+
         match drag {
             // We can't drag into ourselves.
             Drag::State(i, ..) if *i == idx => (),
@@ -781,7 +818,9 @@ impl Statechart<EditContext> {
                     *offset = new_offset;
                 }
             }
-            Drag::AddTransition(_src, t, target) => {
+            Drag::TransitionSource(_, port2, target, cur)
+            | Drag::TransitionTarget(_, port2, target, cur)
+            | Drag::AddTransition(cur, Transition { port2, .. }, target) => {
                 if depth == 0 {
                     // No transition can target the root.
                     *target = None;
@@ -792,9 +831,12 @@ impl Statechart<EditContext> {
                     .children_rev(idx)
                     .find(|(_i, s)| ui.rect_contains_pointer(s.state.rect.translate(parent_offset)))
                 {
-                    // Find a free incoming port.
-                    t.port2 = self.free_port(i, transit::Direction::Incoming);
-                    *target = Some((i, depth + 1))
+                    // For source/target, don't update the drag target if its the original state.
+                    if allow_self || i != *cur {
+                        // Find a free port.
+                        *port2 = self.free_port(i, dir);
+                        *target = Some((i, depth + 1))
+                    }
                 }
             }
             _ => (),
@@ -830,6 +872,7 @@ impl Statechart<EditContext> {
     // might solve this.
     pub fn show_connection(
         &self,
+        rects: &Rects,
         start: Pos2,
         end: Pos2,
         conn: Connection,
@@ -863,41 +906,48 @@ impl Statechart<EditContext> {
 
         let control_size = if selected { 8.0 } else { 6.0 };
 
-        // draw port at start, dragging moves transition start
-        ui.painter().circle_filled(start, control_size * 0.5, color);
-
-        // need to select first to modify control points
-
         // draw curve, label, guard, internal toggle ----
 
-        let stroke = Stroke::new(2.0, color);
-
-        let (c1, c2) = match conn {
+        // Set curve points based on the transition drag state.
+        let (start, c1, c2, end) = match conn {
             Connection::Transition(tdx, t, _, ref drag) => {
                 // Include the drag (from last frame).
                 match drag {
-                    Drag::TransitionId(i, delta) if *i == tdx => (t.c1 + *delta, t.c2 + *delta),
+                    Drag::TransitionId(i, delta) if *i == tdx => {
+                        (start, t.c1 + *delta, t.c2 + *delta, end)
+                    }
                     Drag::TransitionControl((i, cp), delta) if *i == tdx => match cp {
-                        ControlPoint::C1 => (t.c1 + *delta, t.c2),
-                        ControlPoint::C2 => (t.c1, t.c2 + *delta),
+                        ControlPoint::C1 => (start, t.c1 + *delta, t.c2, end),
+                        ControlPoint::C2 => (start, t.c1, t.c2 + *delta, end),
                     },
-                    _ => (t.c1, t.c2),
+                    Drag::TransitionSource(i, port, target, _) if *i == tdx => (
+                        target
+                            .and_then(|(src, _)| rects.get(&src.index()))
+                            // Should the port be stored in DragTarget?
+                            .map(|r| port_out(*r, *port))
+                            .or(ui.ctx().pointer_interact_pos())
+                            .unwrap_or(start),
+                        t.c1,
+                        t.c2,
+                        end,
+                    ),
+                    Drag::TransitionTarget(i, _port, _target, _) if *i == tdx => {
+                        todo!()
+                    }
+                    _ => (start, t.c1, t.c2, end),
                 }
             }
-            Connection::DragTransition(t) => (t.c1, t.c2),
-
-            _ => {
-                // Initial?
-                //let dx = (end - start).x * 0.3;
-                //(start + vec2(dx, 0.0), end + vec2(-dx, 0.0))
-                (Vec2::ZERO, Vec2::ZERO)
-            }
+            Connection::DragTransition(t) => (start, t.c1, t.c2, end),
+            Connection::Initial(..) => todo!(),
+            Connection::DragInitial => todo!(),
         };
 
         // Control points are relative to the start and end, respectively.
         let c1 = start + c1;
         let c2 = end + c2;
 
+        // Make drag/selected more visible?
+        let stroke = Stroke::new(2.0, color);
         let bezier = CubicBezierShape::from_points_stroke(
             [start, c1, c2, end],
             false,
@@ -913,14 +963,32 @@ impl Statechart<EditContext> {
 
         match conn {
             Connection::Transition(tdx, t, _internal, drag) => {
-                // Show control points.
+                // Show endpoints.
+                let control_size_sq = Vec2::splat(control_size);
+                let source_rect = Rect::from_center_size(start, control_size_sq);
+                let response = ui.allocate_rect(source_rect, Sense::drag());
+
+                match drag {
+                    Drag::None if response.drag_started() => {
+                        match self.graph.endpoints(tdx) {
+                            Some((src, _)) => *drag = Drag::TransitionSource(tdx, 0, None, src),
+                            _ => (), // error
+                        }
+                    }
+                    _ => (),
+                }
+
+                let color = ui.style().interact(&response).fg_stroke.color;
+                ui.painter().circle_filled(start, control_size * 0.5, color);
+
+                // Show control points if selected.
                 if selected {
                     for (cp, p) in [(ControlPoint::C1, c1), (ControlPoint::C2, c2)] {
                         self.show_control_point(
                             tdx,
                             t,
                             cp,
-                            Rect::from_center_size(p, Vec2::splat(control_size)),
+                            Rect::from_center_size(p, control_size_sq),
                             drag,
                             &mut ui,
                             commands,
