@@ -333,18 +333,31 @@ impl<C: Context> Graph<C> {
         }
     }
 
-    // Check i != root? Why is this still an Option?
+    // Check i != root? Why is this still an Option? TODO
     pub fn set_parent(&mut self, i: Idx, parent: Option<Idx>) {
         // Make sure the new parent isn't a child.
         if let Some(p) = parent {
             assert!(!self.in_path(i, p));
         }
 
+        // Save previous parent.
+        let mut p0 = self.graph[i].parent;
+
         // TODO: Op::UpdateParent?
         let s1 = self.graph[i].clone();
         self.graph[i].parent = parent;
         let s2 = self.graph[i].clone();
         self.add_undo(Op::UpdateState(i, s1, s2));
+
+        // Validate initial from prior path. path_iter holds a reference so we can't mutate states with it.
+        while let Some(a) = p0 {
+            if let Some(i) = self.initial(a).idx() {
+                if !self.is_child(a, i) {
+                    self.set_initial(a, Initial::None)
+                }
+            }
+            p0 = self.graph[a].parent;
+        }
     }
 
     /// Set initial for the root state (the default state for the
