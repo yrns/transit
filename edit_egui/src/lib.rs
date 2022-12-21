@@ -437,6 +437,83 @@ impl Statechart<EditContext> {
         // Show root and recursively show children.
         self.show_state(self.graph.root, rect.min.to_vec2(), 0, &mut edit_data, ui);
 
+        self.show_transitions(&mut edit_data, ui);
+
+        let mut commands = std::mem::take(&mut edit_data.commands);
+
+        // Resolve drag. ui.input().pointer.primary_released() doesn't work?
+        if ui.input().pointer.any_released() {
+            // Take drag to clear it.
+            match std::mem::take(&mut edit_data.drag) {
+                //_ if !drag.min_drag(ui) => (),
+                Drag::State(src, offset, Some((target, _)), parent_root_offset) => {
+                    if let Some(p) = ui.input().pointer.interact_pos() {
+                        // Place the state relative to the parent with the offset.
+                        let p = p - parent_root_offset - offset;
+                        commands.push(Command::MoveState(src, target, p))
+                    }
+                }
+                Drag::AddTransition(src, t, Some((target, _))) => {
+                    // TEMP label
+                    let id = format!(
+                        "{} > {}",
+                        self.graph.state(src).map(|s| s.id.as_str()).unwrap_or("?"),
+                        self.graph
+                            .state(target)
+                            .map(|s| s.id.as_str())
+                            .unwrap_or("?"),
+                    );
+
+                    edit_data
+                        .commands
+                        .push(Command::AddTransition(src, target, t.with_id(id)))
+                }
+                Drag::TransitionSource(tdx, port1, Some((new_src, _)), _) => {
+                    if let Some((t, (src, _))) =
+                        // Should there be an accessor for both?
+                        self.graph.transition(tdx).zip(self.graph.endpoints(tdx))
+                    {
+                        // Check if the source has changed.
+                        if src != new_src {
+                            // Update port. TODO: merge undos
+                            if t.port1 != port1 {
+                                commands.push(Command::UpdateTransition(
+                                    tdx,
+                                    t.clone().with_port1(port1),
+                                ));
+                            }
+                            commands.push(Command::MoveTransition(tdx, Some(new_src), None))
+                        }
+                    } // else, error?
+                }
+                Drag::TransitionTarget(tdx, port2, Some((new_target, _)), _) => {
+                    if let Some((t, (_, target))) =
+                        self.graph.transition(tdx).zip(self.graph.endpoints(tdx))
+                    {
+                        // Check if the target has changed.
+                        if target != new_target {
+                            // Update port. TODO: merge undos
+                            if t.port2 != port2 {
+                                commands.push(Command::UpdateTransition(
+                                    tdx,
+                                    t.clone().with_port2(port2),
+                                ));
+                            }
+                            commands.push(Command::MoveTransition(tdx, None, Some(new_target)))
+                        }
+                    } // else, error?
+                }
+                Drag::Initial(i, Some((target, port)), (c1, c2)) => {
+                    commands.push(Command::SetInitial(i, target, (port, c1, c2)))
+                }
+                _ => (),
+            }
+        }
+
+        commands
+    }
+
+    pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) {
         let EditData {
             rects,
             drag,
@@ -488,75 +565,6 @@ impl Statechart<EditContext> {
             }
             _ => (),
         }
-
-        // Resolve drag. ui.input().pointer.primary_released() doesn't work?
-        if ui.input().pointer.any_released() {
-            match drag {
-                //_ if !drag.min_drag(ui) => (),
-                Drag::State(src, offset, Some((target, _)), parent_root_offset) => {
-                    if let Some(p) = ui.input().pointer.interact_pos() {
-                        // Place the state relative to the parent with the offset.
-                        let p = p - *parent_root_offset - *offset;
-                        commands.push(Command::MoveState(*src, *target, p));
-                    }
-                }
-                Drag::AddTransition(src, t, Some((target, _))) => {
-                    // TEMP label
-                    t.id = format!(
-                        "{} > {}",
-                        self.graph.state(*src).map(|s| s.id.as_str()).unwrap_or("?"),
-                        self.graph
-                            .state(*target)
-                            .map(|s| s.id.as_str())
-                            .unwrap_or("?"),
-                    );
-
-                    commands.push(Command::AddTransition(*src, *target, t.clone()));
-                }
-                Drag::TransitionSource(tdx, port1, Some((new_src, _)), _) => {
-                    if let Some((t, (src, _))) =
-                        // Should there be an accessor for both?
-                        self.graph.transition(*tdx).zip(self.graph.endpoints(*tdx))
-                    {
-                        // Check if the source has changed.
-                        if src != *new_src {
-                            // Update port. TODO: merge undos
-                            if t.port1 != *port1 {
-                                commands.push(Command::UpdateTransition(
-                                    *tdx,
-                                    t.clone().with_port1(*port1),
-                                ));
-                            }
-                            commands.push(Command::MoveTransition(*tdx, Some(*new_src), None))
-                        }
-                    } // else, error?
-                }
-                Drag::TransitionTarget(tdx, port2, Some((new_target, _)), _) => {
-                    if let Some((t, (_, target))) =
-                        self.graph.transition(*tdx).zip(self.graph.endpoints(*tdx))
-                    {
-                        // Check if the target has changed.
-                        if target != *new_target {
-                            // Update port. TODO: merge undos
-                            if t.port2 != *port2 {
-                                commands.push(Command::UpdateTransition(
-                                    *tdx,
-                                    t.clone().with_port2(*port2),
-                                ));
-                            }
-                            commands.push(Command::MoveTransition(*tdx, None, Some(*new_target)))
-                        }
-                    } // else, error?
-                }
-                Drag::Initial(i, Some((target, port)), (c1, c2)) => {
-                    commands.push(dbg!(Command::SetInitial(*i, *target, (*port, *c1, *c2))));
-                }
-                _ => (),
-            }
-            edit_data.drag = Drag::None;
-        }
-
-        std::mem::take(&mut edit_data.commands)
     }
 
     pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
