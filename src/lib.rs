@@ -56,7 +56,7 @@ pub struct Graph<C: Context> {
     undo: Undo<C>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Initial {
     #[default]
     None,
@@ -389,6 +389,11 @@ impl<C: Context> Graph<C> {
         self.path_iter(b).any(|i| i == a)
     }
 
+    pub fn initial(&self, i: Idx) -> Initial {
+        self.graph[i].initial
+    }
+
+    // initial_recur?
     pub fn get_initial(&self, i: Idx) -> Idx {
         match self.graph[i].initial {
             // no initial state, return i
