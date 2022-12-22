@@ -663,10 +663,19 @@ impl Statechart<EditContext> {
             }
         }
 
-        // Show the header and resize after child states to they interact first.
-        let header_response = self.show_header(idx, root, state, edit_data, &mut inner_ui);
+        // Show the header and resize after child states so they interact first.
+        let header_inset = Vec2::splat(4.0);
+        let header_rect = inner_ui.available_rect_before_wrap().shrink2(header_inset);
+        let header_response = inner_ui
+            .allocate_ui_at_rect(header_rect, |ui| {
+                self.show_header(idx, root, state, edit_data, ui);
+            })
+            .response;
+        let header_rect = header_response.rect.expand2(header_inset);
 
-        let header_rect = header_response.rect;
+        // ui.ctx()
+        //     .debug_painter()
+        //     .debug_rect(min_rect, Color32::DEBUG_COLOR, "show_header");
 
         // Resize. Cannot resize the root state. Only show the resize if the pointer is in the rect,
         // or we are currently resizing it (since the pointer can be outside while dragging - it's a
@@ -682,10 +691,8 @@ impl Statechart<EditContext> {
                 |delta: &mut Vec2| {
                     // Find the minimum delta such that we don't resize smaller than the header size
                     // (including inset). Limit max?
-                    let header_inset = Vec2::splat(4.0);
-                    let min = header_rect.expand2(header_inset).size();
                     let size = state.rect.size();
-                    *delta = (min - size).max(*delta + response.drag_delta())
+                    *delta = (header_rect.size() - size).max(*delta + response.drag_delta())
                 },
                 |delta: &mut Vec2| edit_data.commands.push(Command::ResizeState(idx, *delta))
             );
@@ -793,6 +800,7 @@ impl Statechart<EditContext> {
         }
     }
 
+    // Collapsable? How do we redirect incoming transitions to child states?
     pub fn show_header(
         &self,
         idx: transit::Idx,
@@ -800,137 +808,118 @@ impl Statechart<EditContext> {
         state: &State,
         edit_data: &mut EditData,
         ui: &mut Ui,
-    ) -> Response {
-        // Inset the header from the rect.
-        let rect = ui.max_rect();
-        // TODO: this is in two places
-        let header_inset = Vec2::splat(4.0);
-        let header_rect = Rect::from_min_max(rect.min + header_inset, rect.max);
+    ) -> InnerResponse<()> {
+        ui.horizontal(|mut ui| {
+            let initial_size = Vec2::splat(6.0);
+            let response = ui.allocate_response(initial_size, Sense::click_and_drag());
 
-        let header_response = ui
-            .allocate_ui_at_rect(header_rect, |ui| {
-                ui.horizontal(|mut ui| {
-                    // Collapsable? How do we redirect incoming transitions to child states?
+            // initial first? drag to select? or select from list?
+            let initial = self.graph.initial(idx);
+            //let initial_idx = initial.idx();
 
-                    let initial_size = Vec2::splat(6.0);
-                    let response = ui.allocate_response(initial_size, Sense::click_and_drag());
+            let rect = Rect::from_center_size(response.rect.center(), initial_size);
+            let start = rect.center();
 
-                    // initial first? drag to select? or select from list?
-                    let initial = self.graph.initial(idx);
-                    //let initial_idx = initial.idx();
-
-                    let rect = Rect::from_center_size(response.rect.center(), initial_size);
-                    let start = rect.center();
-
-                    // Left click toggles type. Right click clears. Drag sets new initial. TODO:
-                    let show_initial = match edit_data.drag {
-                        Drag::None if response.drag_started() => {
-                            edit_data.drag = Drag::Initial(idx, None, Default::default());
-                            true
-                        }
-                        Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
-                            // Reuse existing port if dragging to existing target?
-                            if let Some(end) = target
-                                .and_then(|(t, p)| edit_data.rects.get(&t.index()).zip(Some(p)))
-                                .map(|(r, p)| port_in(*r, p))
-                                .or_else(|| ui.ctx().pointer_interact_pos())
-                            {
-                                // TODO: bias down
-                                *cp = approx_cp(start, end);
-                                self.show_connection(
-                                    &edit_data.rects,
-                                    start,
-                                    end,
-                                    Connection::Initial(idx, *cp),
-                                    &mut ui,
-                                    &mut edit_data.commands,
-                                );
-                            }
-                            true
-                        }
-                        _ => {
-                            if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
-                                if let Some(end) =
-                                    edit_data.rects.get(&i.index()).map(|r| port_in(*r, port))
-                                {
-                                    self.show_connection(
-                                        &edit_data.rects,
-                                        start,
-                                        end,
-                                        Connection::Initial(idx, (c1, c2)),
-                                        &mut ui,
-                                        &mut edit_data.commands,
-                                    );
-                                }
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                    };
-
-                    let color = ui.style().interact(&response).fg_stroke.color;
-                    let color = ecolor::tint_color_towards(color, Color32::YELLOW);
-                    ui.painter().circle(
-                        rect.center(),
-                        rect.size().max_elem() * 0.5,
-                        if show_initial {
-                            color
-                        } else {
-                            Color32::TRANSPARENT
-                        },
-                        Stroke::new(2.0, color),
-                    );
-
-                    // Initial type.
-                    match initial {
-                        transit::Initial::HistoryShallow(_) => {
-                            ui.label("h");
-                        }
-                        transit::Initial::HistoryDeep(_) => {
-                            ui.label("h*");
-                        }
-                        _ => (),
+            // Left click toggles type. Right click clears. Drag sets new initial. TODO:
+            let show_initial = match edit_data.drag {
+                Drag::None if response.drag_started() => {
+                    edit_data.drag = Drag::Initial(idx, None, Default::default());
+                    true
+                }
+                Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
+                    // Reuse existing port if dragging to existing target?
+                    if let Some(end) = target
+                        .and_then(|(t, p)| edit_data.rects.get(&t.index()).zip(Some(p)))
+                        .map(|(r, p)| port_in(*r, p))
+                        .or_else(|| ui.ctx().pointer_interact_pos())
+                    {
+                        // TODO: bias down
+                        *cp = approx_cp(start, end);
+                        self.show_connection(
+                            &edit_data.rects,
+                            start,
+                            end,
+                            Connection::Initial(idx, *cp),
+                            &mut ui,
+                            &mut edit_data.commands,
+                        );
                     }
-
-                    // Show id.
-                    let InnerResponse { inner, response } = Editabel::new().show(&state.id, ui);
-
-                    // Clicking the label selects the state.
-                    if response.clicked_by(PointerButton::Primary) {
-                        edit_data.commands.push(Command::UpdateSelection(if root {
-                            Selection::None
-                        } else {
-                            Selection::State(idx)
-                        }))
+                    true
+                }
+                _ => {
+                    if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
+                        if let Some(end) =
+                            edit_data.rects.get(&i.index()).map(|r| port_in(*r, port))
+                        {
+                            self.show_connection(
+                                &edit_data.rects,
+                                start,
+                                end,
+                                Connection::Initial(idx, (c1, c2)),
+                                &mut ui,
+                                &mut edit_data.commands,
+                            );
+                        }
+                        true
+                    } else {
+                        false
                     }
+                }
+            };
 
-                    // Dragging the label drags the state.
+            let color = ui.style().interact(&response).fg_stroke.color;
+            let color = ecolor::tint_color_towards(color, Color32::YELLOW);
+            ui.painter().circle(
+                rect.center(),
+                rect.size().max_elem() * 0.5,
+                if show_initial {
+                    color
+                } else {
+                    Color32::TRANSPARENT
+                },
+                Stroke::new(2.0, color),
+            );
 
-                    if let Some(id) = inner {
-                        edit_data
-                            .commands
-                            .push(Command::UpdateState(idx, state.clone().with_id(id)))
-                    }
+            // Initial type.
+            match initial {
+                transit::Initial::HistoryShallow(_) => {
+                    ui.label("h");
+                }
+                transit::Initial::HistoryDeep(_) => {
+                    ui.label("h*");
+                }
+                _ => (),
+            }
 
-                    // hover should show source/location by name? click to
-                    // select fns from source?
-                    if ui.small_button("enter").clicked() {
-                        dbg!("clicked enter");
-                    };
-                    if ui.small_button("exit").clicked() {
-                        dbg!("clicked exit");
-                    }
-                });
-            })
-            .response;
+            // Show id.
+            let InnerResponse { inner, response } = Editabel::new().show(&state.id, ui);
 
-        // This does nothing since you can't click between elements or the margin?
-        // if header_response.clicked() {
-        //     commands.push(Command::UpdateSelection(Selection::State(idx)))
-        // }
+            // Clicking the label selects the state.
+            if response.clicked_by(PointerButton::Primary) {
+                edit_data.commands.push(Command::UpdateSelection(if root {
+                    Selection::None
+                } else {
+                    Selection::State(idx)
+                }))
+            }
 
-        header_response
+            // Dragging the label drags the state.
+
+            if let Some(id) = inner {
+                edit_data
+                    .commands
+                    .push(Command::UpdateState(idx, state.clone().with_id(id)))
+            }
+
+            // hover should show source/location by name? click to
+            // select fns from source?
+            if ui.small_button("enter").clicked() {
+                dbg!("clicked enter");
+            };
+            if ui.small_button("exit").clicked() {
+                dbg!("clicked exit");
+            }
+        })
     }
 
     /// Each state sets the drag target for its children. The topmost child that contains the
