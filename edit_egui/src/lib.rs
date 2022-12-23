@@ -643,15 +643,20 @@ impl Statechart<EditContext> {
             // checking (selection). If you drag back to the original position the layer will revert
             // which is a bug. This is a hack until egui supports only starting the drag due to time
             // or motion.
-            if edit_data.drag.dragging(child) && edit_data.drag.min_drag(ui) {
+            if edit_data.drag.dragging(child) && edit_data.drag.min_drag(&inner_ui) {
                 // Draw in a layer so it draws on top.
                 let layer_id = LayerId::new(Order::Tooltip, id);
+                // HACK: with_layer_id allocates a zero-sized rect plus item_spacing here, which
+                // will shift the header down while dragging. We can't set the layer_id directly. We
+                // could also fix this by drawing the header at a specific rect.
+                inner_ui.spacing_mut().item_spacing = Vec2::ZERO;
                 inner_ui.with_layer_id(layer_id, |mut ui| {
                     let root_rect = *edit_data.rects.get(&self.graph.root.index()).unwrap();
                     ui.set_clip_rect(root_rect);
                     self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, &mut ui);
                     ui.set_clip_rect(clip_rect);
                 });
+                inner_ui.reset_style(); // HACK
             } else {
                 self.show_state(
                     child,
