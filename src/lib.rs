@@ -178,20 +178,17 @@ impl<C: Context> Graph<C> {
         i
     }
 
-    // TODO: undo transaction
+    // TODO: undo transaction, error?
     pub fn remove_state(&mut self, i: Idx, keep_transitions: bool, keep_children: bool) {
         // Cannot remove the root.
         assert!(i != self.root);
 
         // Kept things go to the parent state (if not root).
-        let parent = self
-            .graph
-            .node_weight(i)
-            .and_then(|s| s.parent)
-            .filter(|i| *i != self.root);
+        let parent = self.graph.node_weight(i).and_then(|s| s.parent).unwrap();
+        //.filter(|i| *i != self.root);
 
         // Clean up child states.
-        for child in self.children(Some(i)).collect::<Vec<_>>() {
+        for child in self.children(i).collect::<Vec<_>>() {
             if keep_children {
                 self.set_parent(child, parent);
             } else {
@@ -199,37 +196,37 @@ impl<C: Context> Graph<C> {
             }
         }
 
-        // Clean up initial/history.
+        // Clean up initial/history. TODO: walker
         for p in self
             .path_iter(i)
             .filter(|p| self.graph[*p].initial.idx() == Some(i))
             .collect::<Vec<_>>()
         {
-            self.set_initial_idx(p, parent);
+            self.set_initial_idx(p, Some(parent));
         }
 
         // petgraph by default removes all edges to and from this
         // node, which we want to avoid since we want the undo
         // history.
+
+        // TODO: walker?
         let edges = self
             .graph
             .edges(i)
             .map(|edge| (edge.id(), edge.source(), edge.target()))
             .collect::<Vec<_>>();
-        match (keep_transitions, parent) {
+
+        if keep_transitions {
             // We don't keep any transitions to or from the root
             // (parent is None).
-            (true, Some(parent)) => {
-                for (edge, a, b) in edges {
-                    let a = if a == i { parent } else { a };
-                    let b = if b == i { parent } else { b };
-                    self.move_transition(edge, a, b);
-                }
+            for (edge, a, b) in edges {
+                let a = if a == i { parent } else { a };
+                let b = if b == i { parent } else { b };
+                self.move_transition(edge, a, b);
             }
-            _ => {
-                for (edge, _, _) in edges {
-                    self.remove_transition(edge);
-                }
+        } else {
+            for (edge, _, _) in edges {
+                self.remove_transition(edge);
             }
         }
 
@@ -264,11 +261,11 @@ impl<C: Context> Graph<C> {
         self.graph.edge_weight(i).is_some()
     }
 
-    // Why is this an option? For the root?
-    pub fn children(&self, p: Option<Idx>) -> impl Iterator<Item = Idx> + '_ {
+    // We could eliminate searching every node by using a relational edge instead of an index?
+    pub fn children(&self, p: Idx) -> impl Iterator<Item = Idx> + '_ {
         self.graph
             .node_indices()
-            .filter(move |i| self.graph[*i].parent == p)
+            .filter(move |i| self.graph[*i].parent == Some(p))
     }
 
     // Once we filter we can't reverse?
@@ -279,8 +276,12 @@ impl<C: Context> Graph<C> {
             .filter(move |(_i, s)| s.parent == Some(p))
     }
 
+    // If i is the root there should be no siblings.
     pub fn siblings(&self, i: Idx) -> impl Iterator<Item = Idx> + '_ {
-        self.children(self.graph[i].parent).filter(move |s| *s != i)
+        let p = self.graph[i].parent;
+        self.graph
+            .node_indices()
+            .filter(move |j| *j != i && self.graph[*j].parent == p)
     }
 
     pub fn state_transitions(
@@ -326,28 +327,24 @@ impl<C: Context> Graph<C> {
     }
 
     pub fn is_self_transition(&self, i: Tdx) -> bool {
-        if let Some((a, b)) = self.endpoints(i) {
-            a == b
-        } else {
-            false
-        }
+        self.endpoints(i).map(|(a, b)| a == b).unwrap_or_default()
     }
 
-    // Check i != root? Why is this still an Option? TODO
-    pub fn set_parent(&mut self, i: Idx, parent: Option<Idx>) {
-        // Make sure the new parent isn't a child.
-        if let Some(p) = parent {
-            assert!(!self.in_path(i, p));
-        }
+    pub fn set_parent(&mut self, i: Idx, parent: Idx) {
+        // Cannot change the parent of the root.
+        assert!(i != self.root);
 
-        // Save previous parent.
-        let mut p0 = self.graph[i].parent;
+        // Make sure the new parent isn't a child.
+        assert!(!self.in_path(i, parent));
 
         // TODO: Op::UpdateParent?
-        let s1 = self.graph[i].clone();
-        self.graph[i].parent = parent;
-        let s2 = self.graph[i].clone();
-        self.add_undo(Op::UpdateState(i, s1, s2));
+        let s = &mut self.graph[i];
+        // Save previous parent.
+        let mut p0 = s.parent;
+        let s0 = s.clone();
+        s.parent = Some(parent);
+        let s = s.clone();
+        self.add_undo(Op::UpdateState(i, s0, s));
 
         // Validate initial from prior path. path_iter holds a reference so we can't mutate states with it.
         while let Some(a) = p0 {

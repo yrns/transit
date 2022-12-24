@@ -353,7 +353,7 @@ impl Statechart<EditContext> {
 
                         // TODO: merge undos
                         if self.graph.parent(idx) != Some(parent) {
-                            self.graph.set_parent(idx, Some(parent));
+                            self.graph.set_parent(idx, parent);
                         }
                         self.graph.update_state(idx, state);
                     }
@@ -637,7 +637,7 @@ impl Statechart<EditContext> {
         self.set_drag_target(idx, rect, depth, &mut edit_data.drag, &inner_ui);
 
         // Show child states.
-        for child in self.graph.children(Some(idx)) {
+        for child in self.graph.children(idx) {
             // If the child state is being dragged, unset the clip rect so it can be dragged out. We
             // check min_drag before drawing in another layer because moving layers upsets the click
             // checking (selection). If you drag back to the original position the layer will revert
