@@ -476,11 +476,14 @@ impl<C: Context> Graph<C> {
 
     // returns an iterator from idx -> root
     pub fn path_iter(&self, idx: Idx) -> PathIter<'_, C> {
-        PathIter { graph: self, idx }
+        PathIter {
+            graph: self,
+            next: Some(idx),
+        }
     }
 
     fn path_walk(&self, i: Idx) -> PathWalker {
-        PathWalker(i)
+        PathWalker(Some(i))
     }
 
     // path from root -> idx as a vec, track depth for iter len?
@@ -785,35 +788,28 @@ impl<C: Context> Statechart<C> {
 
 pub struct PathIter<'a, C: Context> {
     graph: &'a Graph<C>,
-    idx: Idx,
+    next: Option<Idx>,
 }
 
 impl<'a, C: Context> Iterator for PathIter<'a, C> {
     type Item = Idx;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let idx = self.idx;
-        if let Some(p) = self.graph.parent(idx) {
-            self.idx = p;
-            Some(idx)
-        } else {
-            None
-        }
+        self.next.map(|n| {
+            self.next = self.graph.parent(n);
+            n
+        })
     }
 }
 
-struct PathWalker(Idx);
+struct PathWalker(Option<Idx>);
 
 impl PathWalker {
     fn next<C: Context>(&mut self, graph: &Graph<C>) -> Option<Idx> {
-        let idx = self.0;
-        match graph.parent(idx) {
-            Some(p) => {
-                self.0 = p;
-                Some(idx)
-            }
-            None => None,
-        }
+        self.0.map(|n| {
+            self.0 = graph.parent(n);
+            n
+        })
     }
 }
 
