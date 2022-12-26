@@ -1,13 +1,13 @@
 use crate::*;
 
 // (a -> b, edge)
-pub type TOp<T> = (Idx, Idx, TransitionData<T>);
+pub type TOp<T> = (Idx, Idx, Edge<T>);
 
 #[derive(Clone)]
 pub enum Op<C: Context> {
-    AddState(Idx, StateState<C>),
-    UpdateState(Idx, StateState<C>, StateState<C>),
-    RemoveState(Idx, StateState<C>),
+    AddState(Idx, Node<C>),
+    UpdateState(Idx, Node<C>, Node<C>),
+    RemoveState(Idx, Node<C>),
     AddTransition(Tdx, TOp<C::Transition>),
     UpdateTransition(Tdx, TOp<C::Transition>, TOp<C::Transition>),
     RemoveTransition(Tdx, TOp<C::Transition>),

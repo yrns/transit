@@ -49,7 +49,7 @@ pub struct Graph<C: Context> {
         serialize = "C::State: Serialize, C::Transition: Serialize",
         deserialize = "C::State: Deserialize<'de>, C::Transition: Deserialize<'de>"
     ))]
-    pub(crate) graph: StableDiGraph<StateState<C>, TransitionData<C::Transition>, u32>,
+    pub(crate) graph: StableDiGraph<Node<C>, Edge<C::Transition>, u32>,
     pub root: Idx,
     // Make this an option?
     #[serde(skip_serializing, skip_deserializing)]
@@ -106,7 +106,7 @@ pub trait State<C: Context> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct StateState<C>
+pub struct Node<C>
 where
     C: Context,
 {
@@ -121,12 +121,12 @@ where
 /// parent states, which would otherwise transition from child ->
 /// parent, if external.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TransitionData<T> {
+pub struct Edge<T> {
     transition: T,
     internal: bool,
 }
 
-impl<T> From<T> for TransitionData<T> {
+impl<T> From<T> for Edge<T> {
     fn from(transition: T) -> Self {
         Self {
             transition,
@@ -139,12 +139,12 @@ pub trait Internal
 where
     Self: Sized,
 {
-    fn internal(self) -> TransitionData<Self>;
+    fn internal(self) -> Edge<Self>;
 }
 
 impl<T> Internal for T {
-    fn internal(self) -> TransitionData<T> {
-        TransitionData {
+    fn internal(self) -> Edge<T> {
+        Edge {
             transition: self,
             internal: true,
         }
@@ -159,7 +159,7 @@ pub trait Transition<C: Context> {
 impl<C: Context> Graph<C> {
     pub fn new() -> Self {
         let mut graph = StableDiGraph::default();
-        let root = graph.add_node(StateState::default());
+        let root = graph.add_node(Node::default());
         Self {
             graph,
             root,
@@ -172,7 +172,7 @@ impl<C: Context> Graph<C> {
     }
 
     pub fn add_state(&mut self, state: C::State, parent: Option<Idx>) -> Idx {
-        let s = StateState::new(state, parent.or(Some(self.root)));
+        let s = Node::new(state, parent.or(Some(self.root)));
         let i = self.graph.add_node(s.clone());
         self.add_undo(Op::AddState(i, s));
         i
@@ -270,7 +270,7 @@ impl<C: Context> Graph<C> {
     }
 
     // Once we filter we can't reverse?
-    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &StateState<C>)> {
+    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &Node<C>)> {
         self.graph
             .node_references()
             .rev()
@@ -418,12 +418,7 @@ impl<C: Context> Graph<C> {
     }
 
     // TODO: check root? validation?
-    pub fn add_transition(
-        &mut self,
-        a: Idx,
-        b: Idx,
-        t: impl Into<TransitionData<C::Transition>>,
-    ) -> Tdx {
+    pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<Edge<C::Transition>>) -> Tdx {
         let t = t.into();
         assert!(!t.internal || a == b);
         // Can't transition to or from root.
@@ -433,7 +428,7 @@ impl<C: Context> Graph<C> {
         i
     }
 
-    pub fn remove_transition(&mut self, i: Tdx) -> Option<TransitionData<C::Transition>> {
+    pub fn remove_transition(&mut self, i: Tdx) -> Option<Edge<C::Transition>> {
         self.graph
             .edge_endpoints(i)
             .zip(self.graph.remove_edge(i))
@@ -813,7 +808,7 @@ impl PathWalker {
     }
 }
 
-impl<C> StateState<C>
+impl<C> Node<C>
 where
     C: Context,
 {
