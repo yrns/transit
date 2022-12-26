@@ -651,12 +651,13 @@ impl Statechart<EditContext> {
                 // could also fix this by drawing the header at a specific rect.
                 inner_ui.spacing_mut().item_spacing = Vec2::ZERO;
                 inner_ui.with_layer_id(layer_id, |mut ui| {
+                    ui.reset_style(); // HACK see above
                     let root_rect = *edit_data.rects.get(&self.graph.root.index()).unwrap();
                     ui.set_clip_rect(root_rect);
                     self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, &mut ui);
                     ui.set_clip_rect(clip_rect);
                 });
-                inner_ui.reset_style(); // HACK
+                inner_ui.reset_style(); // HACK see above
             } else {
                 self.show_state(
                     child,
