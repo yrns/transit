@@ -924,6 +924,9 @@ impl Statechart<EditContext> {
             if ui.small_button("exit").clicked() {
                 dbg!("clicked exit");
             }
+
+            // node index for debugging...
+            ui.label(format!("({})", idx.index()));
         })
     }
 
