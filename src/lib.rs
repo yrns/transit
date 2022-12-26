@@ -551,14 +551,10 @@ impl<C: Context> Graph<C> {
 
             // Check for cycles.
             let mut path_set = HashSet::new();
-            self.path_iter(i).try_for_each(|p| {
-                if path_set.contains(&p) {
-                    Err(format!("cycle {:?} in path for {:?}", p, i))
-                } else {
-                    path_set.insert(p);
-                    Ok(())
-                }
-            })?;
+            self.path_iter(i)
+                .all(move |p| path_set.insert(p))
+                .then_some(())
+                .ok_or_else(|| format!("cycle in path for {:?}", i))?;
         }
 
         // Check all internal transitions are self-transitions?
