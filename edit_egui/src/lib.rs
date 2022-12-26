@@ -345,7 +345,7 @@ impl Statechart<EditContext> {
                         Some(parent),
                     );
                 }
-                Command::RemoveState(idx, rec) => self.graph.remove_state(idx, !rec, !rec),
+                Command::RemoveState(idx, recur) => self.graph.remove_state(idx, !recur, !recur),
                 Command::MoveState(idx, parent, offset) => {
                     if let Some(state) = self.graph.state(idx) {
                         let mut state = state.clone();
@@ -749,11 +749,11 @@ impl Statechart<EditContext> {
                 // Can't remove the root state.
                 if idx != self.graph.root {
                     if ui.button("Remove state").clicked() {
-                        edit_data.commands.push(Command::RemoveState(idx, true));
+                        edit_data.commands.push(Command::RemoveState(idx, false));
                         ui.close_menu();
                     }
                     if ui.button("Remove state (recursive)").clicked() {
-                        edit_data.commands.push(Command::RemoveState(idx, false));
+                        edit_data.commands.push(Command::RemoveState(idx, true));
                         ui.close_menu();
                     }
                 }
