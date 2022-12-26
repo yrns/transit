@@ -196,36 +196,37 @@ impl<C: Context> Graph<C> {
             }
         }
 
-        // Clean up initial/history. TODO: walker
-        for p in self
-            .path_iter(i)
-            .filter(|p| self.graph[*p].initial.idx() == Some(i))
-            .collect::<Vec<_>>()
-        {
-            self.set_initial_idx(p, Some(parent));
+        // Clean up initial/history.
+        let mut path = self.path_walk(i);
+        while let Some(p) = path.next(self) {
+            if self.graph[p].initial.idx() == Some(i) {
+                self.set_initial_idx(p, Some(parent));
+            }
         }
 
         // petgraph by default removes all edges to and from this
         // node, which we want to avoid since we want the undo
         // history.
 
-        // TODO: walker?
-        let edges = self
-            .graph
-            .edges(i)
-            .map(|edge| (edge.id(), edge.source(), edge.target()))
-            .collect::<Vec<_>>();
+        // `neighbors` is directed/outgoing... FIX: Self-transitions will show up twice here, but
+        // the comments here indicate that shouldn't happen:
+        // ~/.local/share/cargo/registry/src/github.com-1ecc6299db9ec823/petgraph-0.6.2/src/graph_impl/mod.rs:2023
+        let mut edges = self.graph.neighbors_undirected(i).detach();
 
-        if keep_transitions {
-            // We don't keep any transitions to or from the root
-            // (parent is None).
-            for (edge, a, b) in edges {
-                let a = if a == i { parent } else { a };
-                let b = if b == i { parent } else { b };
-                self.move_transition(edge, a, b);
+        // Can't transition to/from root.
+        if keep_transitions && parent != self.root {
+            // TODO make sure this handles self-transitions correctly
+            while let Some(edge) = edges.next_edge(&mut self.graph) {
+                // We are looking up endpoints again when moving...
+                match self.graph.edge_endpoints(edge) {
+                    Some((a, b)) if a == b => self.move_transition(edge, parent, parent),
+                    Some((a, b)) if a == i => self.move_transition(edge, parent, b),
+                    Some((a, b)) if b == i => self.move_transition(edge, a, parent),
+                    _ => (), // error
+                }
             }
         } else {
-            for (edge, _, _) in edges {
+            while let Some(edge) = edges.next_edge(&mut self.graph) {
                 self.remove_transition(edge);
             }
         }
@@ -340,20 +341,22 @@ impl<C: Context> Graph<C> {
         // TODO: Op::UpdateParent?
         let s = &mut self.graph[i];
         // Save previous parent.
-        let mut p0 = s.parent;
+        let p0 = s.parent;
         let s0 = s.clone();
         s.parent = Some(parent);
         let s = s.clone();
         self.add_undo(Op::UpdateState(i, s0, s));
 
-        // Validate initial from prior path. path_iter holds a reference so we can't mutate states with it.
-        while let Some(a) = p0 {
-            if let Some(i) = self.initial(a).idx() {
-                if !self.is_child(a, i) {
-                    self.set_initial(a, Initial::None)
+        // Validate initial from prior path.
+        if let Some(p) = p0 {
+            let mut path = self.path_walk(p);
+            while let Some(a) = path.next(self) {
+                if let Some(i) = self.initial(a).idx() {
+                    if !self.is_child(a, i) {
+                        self.set_initial(a, Initial::None)
+                    }
                 }
             }
-            p0 = self.graph[a].parent;
         }
     }
 
@@ -451,28 +454,37 @@ impl<C: Context> Graph<C> {
 
     // There is no API for updating an existing edge so we add/remove
     // (see https://github.com/petgraph/petgraph/pull/103).
-    pub(crate) fn move_transition_internal(&mut self, i: Tdx, a: Idx, b: Idx) -> Option<Tdx> {
-        self.graph.remove_edge(i).map(|t| {
+    pub(crate) fn move_transition_internal(&mut self, i: Tdx, a: Idx, b: Idx) {
+        if let Some(t) = self.graph.remove_edge(i) {
             let i2 = self.graph.add_edge(a, b, t);
             assert_eq!(i, i2);
-            i2
-        })
+        }
     }
 
-    pub fn move_transition(&mut self, i: Tdx, a: Idx, b: Idx) -> Option<Tdx> {
-        self.graph.edge_endpoints(i).and_then(|(a0, b0)| {
-            let t0 = self.graph[i].clone();
-            self.add_undo(Op::UpdateTransition(i, (a0, b0, t0.clone()), (a, b, t0)));
+    pub fn move_transition(&mut self, i: Tdx, a: Idx, b: Idx) {
+        // Can't transition to or from the root.
+        assert!(a != self.root);
+        assert!(b != self.root);
+
+        if let Some((a0, b0)) = self.graph.edge_endpoints(i) {
+            // Op::UpdateEndpoints?
+            let t = self.graph[i].clone();
+            self.add_undo(Op::UpdateTransition(i, (a0, b0, t.clone()), (a, b, t)));
             self.move_transition_internal(i, a, b)
-        })
+        }
     }
 
     // returns an iterator from idx -> root
-    pub fn path_iter(&self, i: Idx) -> PathIter<'_, C> {
-        PathIter::new(self, i)
+    pub fn path_iter(&self, idx: Idx) -> PathIter<'_, C> {
+        PathIter { graph: self, idx }
     }
 
-    // path from root -> idx as a vec
+    fn path_walk(&self, i: Idx) -> PathWalker {
+        PathWalker(i)
+    }
+
+    // path from root -> idx as a vec, track depth for iter len?
+    // is this even used?
     pub fn path(&self, i: Idx) -> Vec<Idx> {
         let mut path = self.path_iter(i).collect::<Vec<_>>();
         path.reverse();
@@ -647,15 +659,14 @@ impl<C: Context> Statechart<C> {
     // event. Start with the active state and work through the parent
     // states.
     fn select(&mut self, ctx: &mut C, event: &C::Event) -> Option<(Idx, bool)> {
-        // Collect the path so we can take use mutable refs below.
-        let path = self.graph.path_iter(self.active).collect::<Vec<_>>();
+        let mut path = self.graph.path_walk(self.active);
 
         // Each potential guard can mutate the transition state.
-        let g = &mut self.graph.graph;
-        for i in path {
-            let mut edges = g.neighbors(i).detach();
-            while let Some((edge, next)) = edges.next(g) {
-                let t = &mut g[edge];
+        let g = &mut self.graph;
+        while let Some(i) = path.next(g) {
+            let mut edges = g.graph.neighbors(i).detach();
+            while let Some((edge, next)) = edges.next(&mut g.graph) {
+                let t = &mut g.graph[edge];
                 if t.transition.guard(ctx, event) {
                     return Some((next, t.internal));
                 }
@@ -778,27 +789,34 @@ impl<C: Context> Statechart<C> {
 
 pub struct PathIter<'a, C: Context> {
     graph: &'a Graph<C>,
-    idx: Option<Idx>,
-}
-
-impl<'a, C: Context> PathIter<'a, C> {
-    pub fn new(graph: &'a Graph<C>, idx: Idx) -> Self {
-        Self {
-            graph,
-            idx: Some(idx),
-        }
-    }
+    idx: Idx,
 }
 
 impl<'a, C: Context> Iterator for PathIter<'a, C> {
     type Item = Idx;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(idx) = self.idx {
-            self.idx = self.graph.graph[idx].parent;
+        let idx = self.idx;
+        if let Some(p) = self.graph.parent(idx) {
+            self.idx = p;
             Some(idx)
         } else {
             None
+        }
+    }
+}
+
+struct PathWalker(Idx);
+
+impl PathWalker {
+    fn next<C: Context>(&mut self, graph: &Graph<C>) -> Option<Idx> {
+        let idx = self.0;
+        match graph.parent(idx) {
+            Some(p) => {
+                self.0 = p;
+                Some(idx)
+            }
+            None => None,
         }
     }
 }
