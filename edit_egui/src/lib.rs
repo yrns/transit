@@ -301,6 +301,12 @@ pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
     (vec2(d.x, -d.y), vec2(-d.x, d.y))
 }
 
+#[inline]
+pub fn approx_cp_down(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
+    let d = (end - start) * 0.5;
+    (vec2(d.x * 0.25, d.y), vec2(-d.x, d.y))
+}
+
 impl Statechart<EditContext> {
     /// Id of the root state.
     pub fn id(&self) -> &str {
@@ -842,8 +848,8 @@ impl Statechart<EditContext> {
                         .map(|(r, p)| port_in(*r, p))
                         .or_else(|| ui.ctx().pointer_interact_pos())
                     {
-                        // TODO: bias down
-                        *cp = approx_cp(start, end);
+                        // bias the initial down
+                        *cp = approx_cp_down(start, end);
                         self.show_connection(
                             &edit_data.rects,
                             start,
