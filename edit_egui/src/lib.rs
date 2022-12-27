@@ -607,8 +607,11 @@ impl Statechart<EditContext> {
             _ => state.rect.translate(offset),
         };
 
-        // Write rect.
-        edit_data.rects.insert(idx.index(), rect);
+        // Write rect. Transitions use these to find ports, so clip them to the parent. Do we need
+        // the original rect?
+        edit_data
+            .rects
+            .insert(idx.index(), rect.intersect(ui.clip_rect()));
 
         // Reserve background shape.
         let bg = ui.painter().add(Shape::Noop);
