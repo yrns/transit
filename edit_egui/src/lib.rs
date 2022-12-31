@@ -1213,41 +1213,46 @@ impl Statechart<EditContext> {
 
         match conn {
             Connection::Transition(tdx, t, _internal, drag) => {
-                // Show endpoints. Maybe only if selected?
+                // Show source control. Maybe only if selected?
                 let source_rect = Rect::from_center_size(start, control_size_sq);
-                let response = ui.allocate_rect(source_rect, Sense::drag());
+                if ui.is_rect_visible(source_rect) {
+                    let response = ui.allocate_rect(source_rect, Sense::drag());
 
-                match drag {
-                    Drag::None if response.drag_started() => {
-                        match self.graph.endpoints(tdx) {
-                            Some((i, _)) => *drag = Drag::TransitionSource(tdx, 0, None, i),
-                            _ => (), // error
+                    match drag {
+                        Drag::None if response.drag_started() => {
+                            match self.graph.endpoints(tdx) {
+                                Some((i, _)) => *drag = Drag::TransitionSource(tdx, 0, None, i),
+                                _ => (), // error
+                            }
                         }
+                        _ => (),
                     }
-                    _ => (),
+
+                    let color = ui.style().interact(&response).fg_stroke.color;
+                    ui.painter().circle_filled(start, control_size * 0.5, color);
                 }
 
-                let color = ui.style().interact(&response).fg_stroke.color;
-                ui.painter().circle_filled(start, control_size * 0.5, color);
-
+                // Show target control.
                 let target_rect = Rect::from_center_size(end, control_size_sq);
-                let response = ui.allocate_rect(target_rect, Sense::drag());
+                if ui.is_rect_visible(target_rect) {
+                    let response = ui.allocate_rect(target_rect, Sense::drag());
 
-                match drag {
-                    Drag::None if response.drag_started() => {
-                        match self.graph.endpoints(tdx) {
-                            Some((_, i)) => *drag = Drag::TransitionTarget(tdx, 0, None, i),
-                            _ => (), // error
+                    match drag {
+                        Drag::None if response.drag_started() => {
+                            match self.graph.endpoints(tdx) {
+                                Some((_, i)) => *drag = Drag::TransitionTarget(tdx, 0, None, i),
+                                _ => (), // error
+                            }
                         }
+                        _ => (),
                     }
-                    _ => (),
+
+                    let color = ui.style().interact(&response).fg_stroke.color;
+
+                    let mut mesh = arrow(control_size, color);
+                    mesh.translate(end.to_vec2());
+                    ui.painter().add(mesh);
                 }
-
-                let color = ui.style().interact(&response).fg_stroke.color;
-
-                let mut mesh = arrow(control_size, color);
-                mesh.translate(end.to_vec2());
-                ui.painter().add(mesh);
 
                 // Show control points if selected.
                 if selected {
