@@ -338,8 +338,8 @@ pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
 
 #[inline]
 pub fn approx_cp_down(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
-    let d = (end - start) * 0.5;
-    (vec2(d.x * 0.25, d.y), vec2(-d.x, d.y))
+    let d = end - start;
+    (vec2(0.0, d.y), vec2(-d.x * 0.25, d.y * 0.1))
 }
 
 impl Statechart<EditContext> {
