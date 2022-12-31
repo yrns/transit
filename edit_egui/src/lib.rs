@@ -64,6 +64,7 @@ impl Default for State {
     }
 }
 
+// Why default?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Transition {
@@ -126,7 +127,7 @@ pub enum Command {
     MoveState(transit::Idx, transit::Idx, Pos2),
     ResizeState(transit::Idx, Vec2),
     AddTransition(transit::Idx, transit::Idx, Transition),
-    RemoveTransition,
+    RemoveTransition(transit::Tdx),
     UpdateTransition(transit::Tdx, Transition),
     MoveTransition(transit::Tdx, Option<transit::Idx>, Option<transit::Idx>),
     SetInitial(transit::Idx, transit::Idx, Initial),
@@ -353,6 +354,9 @@ impl Statechart<EditContext> {
             self.graph = transit::Graph::import_from_file(&path)?;
         }
 
+        // Validate.
+        self.graph.validate().unwrap();
+
         // Validate selection.
         if match self.selection {
             Selection::State(idx) => self.graph.state(idx).is_none(),
@@ -421,6 +425,9 @@ impl Statechart<EditContext> {
                             target.unwrap_or(endpoints.1),
                         );
                     }
+                }
+                Command::RemoveTransition(tdx) => {
+                    self.graph.remove_transition(tdx);
                 }
                 Command::UpdateSelection(selection) => {
                     // TODO undo?
@@ -1307,11 +1314,26 @@ impl Statechart<EditContext> {
                 ui.allocate_ui_at_rect(rect, |ui| {
                     let _response = ui
                         .horizontal(|ui| {
+                            // HACK: If the id is empty we need something to click on to change it...
+                            let tid = if t.id.is_empty() { "untitled" } else { &t.id };
                             let InnerResponse { inner, response } =
-                                Editabel::sense(Sense::click_and_drag()).show(&t.id, ui);
+                                Editabel::sense(Sense::click_and_drag()).show(tid, ui);
                             if let Some(id) = inner {
                                 commands.push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
                             }
+
+                            // Context menu on right click.
+                            let response = if !drag.in_drag() {
+                                response.context_menu(|ui| {
+                                    if ui.button("Remove transition").clicked() {
+                                        commands.push(Command::RemoveTransition(tdx));
+                                        ui.close_menu();
+                                    }
+                                })
+                            } else {
+                                response
+                            };
+
                             if response.double_clicked() {
                                 dbg!("double");
                             } else {
