@@ -261,6 +261,14 @@ impl From<(transit::Tdx, ControlPoint)> for Drag {
 }
 
 macro_rules! drag_delta {
+    // First rule is the default update.
+    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $end:expr) => {
+        drag_delta!(
+            ($response, $ui, $drag, $drag_ty, $drag_id),
+            |delta: &mut Vec2| *delta += $response.drag_delta(),
+            $end
+        )
+    };
     (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $update:expr, $end:expr) => {
         match $drag {
             Drag::None if $response.drag_started() => *$drag = $drag_id.into(),
@@ -735,7 +743,7 @@ impl Statechart<EditContext> {
                     let size = state.rect.size();
                     *delta = (header_rect.size() - size).max(*delta + response.drag_delta())
                 },
-                |delta: &mut Vec2| edit_data.commands.push(Command::ResizeState(idx, *delta))
+                |delta: &Vec2| edit_data.commands.push(Command::ResizeState(idx, *delta))
             );
         }
 
@@ -1251,7 +1259,6 @@ impl Statechart<EditContext> {
 
                         drag_delta!(
                             (response, ui, drag, TransitionControl, (tdx, cp)),
-                            |delta: &mut Vec2| *delta += response.drag_delta(),
                             |delta: &mut Vec2| {
                                 let mut t = t.clone();
                                 match cp {
@@ -1289,8 +1296,7 @@ impl Statechart<EditContext> {
 
                                 drag_delta!(
                                     (response, ui, drag, TransitionId, tdx),
-                                    |delta: &mut Vec2| *delta += response.drag_delta(),
-                                    |delta: &mut Vec2| {
+                                    |delta: &Vec2| {
                                         let mut t = t.clone();
                                         t.c1 += *delta;
                                         t.c2 += *delta;
@@ -1317,7 +1323,6 @@ impl Statechart<EditContext> {
 
                         drag_delta!(
                             (response, ui, drag, InitialControl, (i, cp)),
-                            |delta: &mut Vec2| *delta += response.drag_delta(),
                             |delta: &Vec2| {
                                 if let Some(state) = self.graph.state(i) {
                                     let mut state = state.clone();
