@@ -1171,9 +1171,15 @@ impl Statechart<EditContext> {
                 }
             }
             Connection::DragTransition(t) => (start, t.c1, t.c2, end),
-            Connection::Initial(_, cp, ..) | Connection::DragInitial(_, cp) => {
-                (start, cp.0, cp.1, end)
-            }
+            Connection::Initial(idx, (c1, c2), ref drag) => match drag {
+                Drag::InitialControl((_idx, cp), delta) if idx == *_idx => match cp {
+                    ControlPoint::C1 => (start, c1 + *delta, c2, end),
+                    ControlPoint::C2 => (start, c1, c2 + *delta, end),
+                },
+                _ => (start, c1, c2, end),
+            },
+
+            Connection::DragInitial(_, cp) => (start, cp.0, cp.1, end),
         };
 
         // Control points are relative to the start and end, respectively.
@@ -1296,14 +1302,14 @@ impl Statechart<EditContext> {
                         .response;
                 });
             }
-            Connection::Initial(i, (c1, c2), drag) => {
+            Connection::Initial(i, _, drag) => {
                 let mut mesh = arrow(control_size, color);
                 mesh.translate(end.to_vec2());
                 ui.painter().add(mesh);
 
                 // Show control points if selected.
                 if selected {
-                    for (cp, p) in [(ControlPoint::C1, start + c1), (ControlPoint::C2, end + c2)] {
+                    for (cp, p) in [(ControlPoint::C1, c1), (ControlPoint::C2, c2)] {
                         let response = self.show_control_point(
                             Rect::from_center_size(p, control_size_sq),
                             &mut ui,
