@@ -1077,14 +1077,27 @@ impl Statechart<EditContext> {
 
     // Do self-transitions show up twice?
     pub fn free_port(&self, idx: transit::Idx, direction: transit::Direction) -> usize {
-        let mut ts: Vec<_> = self
+        let mut ports: Vec<_> = self
             .graph
             .state_transitions(idx, direction)
             .map(|(_, _, t, _)| t.port1)
             .collect();
-        ts.sort();
+
+        // Include initial incoming connections. Maybe we should store initial as an edge in the
+        // graph?
+        match direction {
+            transit::Direction::Incoming => ports.extend(
+                self.graph
+                    .path_iter(idx)
+                    .filter(|i| self.graph.initial(*i).idx() == Some(idx))
+                    .filter_map(|i| self.graph.state(i).and_then(|s| s.initial).map(|i| i.0)),
+            ),
+            _ => {}
+        }
+
+        ports.sort();
         let mut free = 0;
-        for port in ts {
+        for port in ports {
             if free < port {
                 return free;
             } else {
