@@ -1343,6 +1343,25 @@ impl Statechart<EditContext> {
                         );
                     }
                 }
+
+                // Show target control.
+                let target_rect = Rect::from_center_size(end, control_size_sq);
+                if ui.is_rect_visible(target_rect) {
+                    let response = ui.allocate_rect(target_rect, Sense::drag());
+
+                    match drag {
+                        Drag::None if response.drag_started() => {
+                            *drag = Drag::Initial(i, None, Default::default());
+                        }
+                        _ => (),
+                    }
+
+                    let color = ui.style().interact(&response).fg_stroke.color;
+
+                    let mut mesh = arrow(control_size, color);
+                    mesh.translate(end.to_vec2());
+                    ui.painter().add(mesh);
+                }
             }
             _ => {}
         }
