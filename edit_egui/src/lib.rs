@@ -154,6 +154,7 @@ pub enum Drag {
     State(transit::Idx, Vec2, DragTarget, Vec2),
     Resize(transit::Idx, Vec2),
     Initial(transit::Idx, DragTarget, (Vec2, Vec2)),
+    InitialControl((transit::Idx, ControlPoint), Vec2),
     // Remove transition here and use port1 only. Port2 in drag target.
     AddTransition(transit::Idx, Transition, DragTarget),
     TransitionSource(transit::Tdx, usize, DragTarget, transit::Idx),
@@ -220,9 +221,10 @@ impl Drag {
                     .map(|(p0, p1)| (p1 - p0).abs().max_elem() >= 1.0)
                     .unwrap_or_default()
             }
-            Drag::Resize(_, d) | Drag::TransitionControl(_, d, ..) | Drag::TransitionId(_, d) => {
-                d.abs().max_elem() >= 1.0
-            }
+            Drag::Resize(_, d)
+            | Drag::InitialControl(_, d, ..)
+            | Drag::TransitionControl(_, d, ..)
+            | Drag::TransitionId(_, d) => d.abs().max_elem() >= 1.0,
         }
     }
 }
@@ -234,10 +236,34 @@ impl Drag {
 //     };
 // }
 
+impl From<transit::Idx> for Drag {
+    fn from(idx: transit::Idx) -> Self {
+        Drag::Resize(idx, Vec2::ZERO)
+    }
+}
+
+impl From<transit::Tdx> for Drag {
+    fn from(tdx: transit::Tdx) -> Self {
+        Drag::TransitionId(tdx, Vec2::ZERO)
+    }
+}
+
+impl From<(transit::Idx, ControlPoint)> for Drag {
+    fn from(cp: (transit::Idx, ControlPoint)) -> Self {
+        Drag::InitialControl(cp, Vec2::ZERO)
+    }
+}
+
+impl From<(transit::Tdx, ControlPoint)> for Drag {
+    fn from(cp: (transit::Tdx, ControlPoint)) -> Self {
+        Drag::TransitionControl(cp, Vec2::ZERO)
+    }
+}
+
 macro_rules! drag_delta {
-    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $init:expr, $update:expr, $end:expr) => {
+    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $update:expr, $end:expr) => {
         match $drag {
-            Drag::None if $response.drag_started() => *$drag = $init,
+            Drag::None if $response.drag_started() => *$drag = $drag_id.into(),
             Drag::$drag_ty(_id, delta, ..) if *_id == $drag_id => {
                 if $response.dragged() {
                     $update(delta)
@@ -264,10 +290,11 @@ pub struct EditData {
     commands: Vec<Command>,
 }
 
+// The drag variants don't need writable access to the drag state.
 pub enum Connection<'a, 'b> {
     // Source, control points.
-    Initial(transit::Idx, (Vec2, Vec2)),
-    DragInitial,
+    Initial(transit::Idx, (Vec2, Vec2), &'b mut Drag),
+    DragInitial(transit::Idx, (Vec2, Vec2)),
     Transition(transit::Tdx, &'a Transition, bool, &'b mut Drag),
     DragTransition(&'a Transition),
 }
@@ -702,7 +729,6 @@ impl Statechart<EditContext> {
 
             drag_delta!(
                 (response, ui, drag, Resize, idx),
-                Drag::Resize(idx, response.drag_delta()),
                 |delta: &mut Vec2| {
                     // Find the minimum delta such that we don't resize smaller than the header size
                     // (including inset). Limit max?
@@ -854,7 +880,7 @@ impl Statechart<EditContext> {
                             &edit_data.rects,
                             start,
                             end,
-                            Connection::Initial(idx, *cp),
+                            Connection::DragInitial(idx, *cp),
                             &mut ui,
                             &mut edit_data.commands,
                         );
@@ -870,7 +896,7 @@ impl Statechart<EditContext> {
                                 &edit_data.rects,
                                 start,
                                 end,
-                                Connection::Initial(idx, (c1, c2)),
+                                Connection::Initial(idx, (c1, c2), &mut edit_data.drag),
                                 &mut ui,
                                 &mut edit_data.commands,
                             );
@@ -1070,8 +1096,12 @@ impl Statechart<EditContext> {
         commands: &mut Vec<Command>,
     ) {
         let selected = match conn {
-            Connection::Transition(tdx, _, _, _) => match self.selection {
+            Connection::Transition(tdx, ..) => match self.selection {
                 Selection::Transition(i) if i == tdx => true,
+                _ => false,
+            },
+            Connection::Initial(idx, ..) => match self.selection {
+                Selection::State(i) if i == idx => true,
                 _ => false,
             },
             _ => false,
@@ -1082,13 +1112,14 @@ impl Statechart<EditContext> {
             *ui.layout(),
             match conn {
                 Connection::Initial(src, ..) => Id::new(src).with("initial"),
-                Connection::DragInitial => ui.id().with("drag_initial"),
+                Connection::DragInitial(..) => ui.id().with("drag_initial"),
                 Connection::Transition(tdx, ..) => Id::new(tdx),
                 Connection::DragTransition(_) => ui.id().with("drag_transition"),
             },
         );
 
         let control_size = if selected { 8.0 } else { 6.0 };
+        let control_size_sq = Vec2::splat(control_size);
 
         // draw curve, label, guard, internal toggle ----
 
@@ -1140,8 +1171,9 @@ impl Statechart<EditContext> {
                 }
             }
             Connection::DragTransition(t) => (start, t.c1, t.c2, end),
-            Connection::Initial(_i, cp) => (start, cp.0, cp.1, end),
-            Connection::DragInitial => todo!(),
+            Connection::Initial(_, cp, ..) | Connection::DragInitial(_, cp) => {
+                (start, cp.0, cp.1, end)
+            }
         };
 
         // Control points are relative to the start and end, respectively.
@@ -1168,7 +1200,6 @@ impl Statechart<EditContext> {
         match conn {
             Connection::Transition(tdx, t, _internal, drag) => {
                 // Show endpoints. Maybe only if selected?
-                let control_size_sq = Vec2::splat(control_size);
                 let source_rect = Rect::from_center_size(start, control_size_sq);
                 let response = ui.allocate_rect(source_rect, Sense::drag());
 
@@ -1207,18 +1238,27 @@ impl Statechart<EditContext> {
                 // Show control points if selected.
                 if selected {
                     for (cp, p) in [(ControlPoint::C1, c1), (ControlPoint::C2, c2)] {
-                        self.show_control_point(
-                            tdx,
-                            t,
-                            cp,
+                        let response = self.show_control_point(
                             Rect::from_center_size(p, control_size_sq),
-                            drag,
                             &mut ui,
-                            commands,
+                        );
+
+                        drag_delta!(
+                            (response, ui, drag, TransitionControl, (tdx, cp)),
+                            |delta: &mut Vec2| *delta += response.drag_delta(),
+                            |delta: &mut Vec2| {
+                                let mut t = t.clone();
+                                match cp {
+                                    ControlPoint::C1 => t.c1 += *delta,
+                                    ControlPoint::C2 => t.c2 += *delta,
+                                }
+                                commands.push(Command::UpdateTransition(tdx, t))
+                            }
                         );
                     }
                 }
 
+                // Show id, guard, internal...
                 let rect = Rect::from_center_size(
                     bezier.sample(0.5),
                     // What width?
@@ -1243,7 +1283,6 @@ impl Statechart<EditContext> {
 
                                 drag_delta!(
                                     (response, ui, drag, TransitionId, tdx),
-                                    Drag::TransitionId(tdx, Vec2::ZERO),
                                     |delta: &mut Vec2| *delta += response.drag_delta(),
                                     |delta: &mut Vec2| {
                                         let mut t = t.clone();
@@ -1257,23 +1296,46 @@ impl Statechart<EditContext> {
                         .response;
                 });
             }
+            Connection::Initial(i, (c1, c2), drag) => {
+                let mut mesh = arrow(control_size, color);
+                mesh.translate(end.to_vec2());
+                ui.painter().add(mesh);
+
+                // Show control points if selected.
+                if selected {
+                    for (cp, p) in [(ControlPoint::C1, start + c1), (ControlPoint::C2, end + c2)] {
+                        let response = self.show_control_point(
+                            Rect::from_center_size(p, control_size_sq),
+                            &mut ui,
+                        );
+
+                        drag_delta!(
+                            (response, ui, drag, InitialControl, (i, cp)),
+                            |delta: &mut Vec2| *delta += response.drag_delta(),
+                            |delta: &Vec2| {
+                                if let Some(state) = self.graph.state(i) {
+                                    let mut state = state.clone();
+                                    if let Some(initial) = &mut state.initial {
+                                        match cp {
+                                            ControlPoint::C1 => initial.1 += *delta,
+                                            ControlPoint::C2 => initial.2 += *delta,
+                                        }
+                                        commands.push(Command::UpdateState(i, state))
+                                    }
+                                }
+                            }
+                        );
+                    }
+                }
+            }
             _ => {}
         }
     }
 
-    pub fn show_control_point(
-        &self,
-        tdx: transit::Tdx,
-        transition: &Transition,
-        cp: ControlPoint,
-        rect: Rect,
-        drag: &mut Drag,
-        ui: &mut Ui,
-        commands: &mut Vec<Command>,
-    ) {
+    pub fn show_control_point(&self, rect: Rect, ui: &mut Ui) -> Response {
         let response = ui.allocate_rect(rect, Sense::drag());
 
-        // Ignore selection since its always selected.
+        // Ignore selection since its always selected?
         let wv = ui.style().interact(
             &response,
             // match self.selection {
@@ -1282,25 +1344,13 @@ impl Statechart<EditContext> {
             // },
         );
 
-        drag_delta!(
-            (response, ui, drag, TransitionControl, (tdx, cp)),
-            Drag::TransitionControl((tdx, cp), Vec2::ZERO),
-            |delta: &mut Vec2| *delta += response.drag_delta(),
-            |delta: &mut Vec2| {
-                let mut t = transition.clone();
-                match cp {
-                    ControlPoint::C1 => t.c1 += *delta,
-                    ControlPoint::C2 => t.c2 += *delta,
-                }
-                commands.push(Command::UpdateTransition(tdx, t))
-            }
-        );
-
         ui.painter().circle_filled(
             rect.center(),
             rect.size().min_elem() * 0.5,
             wv.fg_stroke.color,
         );
+
+        response
     }
 }
 
