@@ -858,87 +858,95 @@ impl Statechart<EditContext> {
         edit_data: &mut EditData,
         ui: &mut Ui,
     ) -> InnerResponse<()> {
-        ui.horizontal(|mut ui| {
-            let initial_size = Vec2::splat(6.0);
-            let response = ui.allocate_response(initial_size, Sense::click_and_drag());
+        ui.horizontal(|ui| {
+            // Initial first, with less spacing between the initial control and the history indicator.
+            ui.horizontal(|mut ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
 
-            // initial first? drag to select? or select from list?
-            let initial = self.graph.initial(idx);
-            //let initial_idx = initial.idx();
+                let initial_size = Vec2::splat(6.0);
+                let response = ui.allocate_response(initial_size, Sense::click_and_drag());
+                let initial = self.graph.initial(idx);
 
-            let rect = Rect::from_center_size(response.rect.center(), initial_size);
-            let start = rect.center();
+                let rect = Rect::from_center_size(response.rect.center(), initial_size);
+                let start = rect.center();
 
-            // Left click toggles type. Right click clears. Drag sets new initial. TODO:
-            let show_initial = match edit_data.drag {
-                Drag::None if response.drag_started() => {
-                    edit_data.drag = Drag::Initial(idx, None, Default::default());
-                    true
+                // Left click cycles initial type. Right click clears. Drag sets new initial.
+                if response.clicked_by(PointerButton::Primary) {
+                    edit_data.commands.push(Command::StepInitial(idx))
+                } else if response.clicked_by(PointerButton::Secondary) {
+                    edit_data.commands.push(Command::UnsetInitial(idx))
                 }
-                Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
-                    // Reuse existing port if dragging to existing target?
-                    if let Some(end) = target
-                        .and_then(|(t, p)| edit_data.rects.get(&t.index()).zip(Some(p)))
-                        .map(|(r, p)| port_in(*r, p))
-                        .or_else(|| ui.ctx().pointer_interact_pos())
-                    {
-                        // bias the initial down
-                        *cp = approx_cp_down(start, end);
-                        self.show_connection(
-                            &edit_data.rects,
-                            start,
-                            end,
-                            Connection::DragInitial(idx, *cp),
-                            &mut ui,
-                            &mut edit_data.commands,
-                        );
+
+                let show_initial = match edit_data.drag {
+                    Drag::None if response.drag_started() => {
+                        edit_data.drag = Drag::Initial(idx, None, Default::default());
+                        true
                     }
-                    true
-                }
-                _ => {
-                    if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
-                        if let Some(end) =
-                            edit_data.rects.get(&i.index()).map(|r| port_in(*r, port))
+                    Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
+                        // Reuse existing port if dragging to existing target?
+                        if let Some(end) = target
+                            .and_then(|(t, p)| edit_data.rects.get(&t.index()).zip(Some(p)))
+                            .map(|(r, p)| port_in(*r, p))
+                            .or_else(|| ui.ctx().pointer_interact_pos())
                         {
+                            // bias the initial down
+                            *cp = approx_cp_down(start, end);
                             self.show_connection(
                                 &edit_data.rects,
                                 start,
                                 end,
-                                Connection::Initial(idx, (c1, c2), &mut edit_data.drag),
+                                Connection::DragInitial(idx, *cp),
                                 &mut ui,
                                 &mut edit_data.commands,
                             );
                         }
                         true
-                    } else {
-                        false
                     }
-                }
-            };
+                    _ => {
+                        if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
+                            if let Some(end) =
+                                edit_data.rects.get(&i.index()).map(|r| port_in(*r, port))
+                            {
+                                self.show_connection(
+                                    &edit_data.rects,
+                                    start,
+                                    end,
+                                    Connection::Initial(idx, (c1, c2), &mut edit_data.drag),
+                                    &mut ui,
+                                    &mut edit_data.commands,
+                                );
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
 
-            let color = ui.style().interact(&response).fg_stroke.color;
-            let color = ecolor::tint_color_towards(color, Color32::YELLOW);
-            ui.painter().circle(
-                rect.center(),
-                rect.size().max_elem() * 0.5,
-                if show_initial {
-                    color
-                } else {
-                    Color32::TRANSPARENT
-                },
-                Stroke::new(2.0, color),
-            );
+                let color = ui.style().interact(&response).fg_stroke.color;
+                let color = ecolor::tint_color_towards(color, Color32::YELLOW);
+                ui.painter().circle(
+                    rect.center(),
+                    rect.size().max_elem() * 0.5,
+                    if show_initial {
+                        color
+                    } else {
+                        Color32::TRANSPARENT
+                    },
+                    Stroke::new(2.0, color),
+                );
 
-            // Initial type.
-            match initial {
-                transit::Initial::HistoryShallow(_) => {
-                    ui.label("h");
+                // Initial type.
+                match initial {
+                    transit::Initial::HistoryShallow(_) => {
+                        ui.colored_label(color, "h");
+                    }
+                    transit::Initial::HistoryDeep(_) => {
+                        ui.colored_label(color, "h*");
+                    }
+                    _ => (),
                 }
-                transit::Initial::HistoryDeep(_) => {
-                    ui.label("h*");
-                }
-                _ => (),
-            }
+            }); // end initial
 
             // Show id.
             let InnerResponse { inner, response } = Editabel::new().show(&state.id, ui);
