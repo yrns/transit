@@ -1529,8 +1529,11 @@ pub fn port_pos(rect: (Rect, MaxPorts), port: usize, dir: bool) -> Pos2 {
     // The port can be higher than the max...
     let max_port = max_port.unwrap_or_default().max(port);
 
-    // Take available space (minus inset on top/bottom) and divide by number of ports in use.
-    let spacing = ((rect.height() - PORT_SPACING * 2.0) / (max_port + 1) as f32).min(PORT_SPACING);
+    // Take available space (minus inset on top/bottom) and divide by number of ports in use. This
+    // can be negative - this is where we need the original unclipped rect? TODO: show connections
+    // to states that are clipped or otherwise hidden - connect to parent w/ hidden indicator?
+    let spacing =
+        ((rect.height() - PORT_SPACING * 2.0).max(0.0) / (max_port + 1) as f32).min(PORT_SPACING);
     let origin = if dir { rect.min } else { rect.right_top() };
     origin + vec2(0.0, PORT_SPACING + spacing * port as f32)
 }
