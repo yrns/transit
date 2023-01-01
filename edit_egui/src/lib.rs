@@ -289,7 +289,47 @@ macro_rules! drag_delta {
     };
 }
 
-pub type Rects = nohash_hasher::IntMap<usize, Rect>;
+pub type MaxPorts = (Option<usize>, Option<usize>);
+
+// Store rect in root-space, and incoming/outgoing max ports. Rename?
+#[derive(Default)]
+pub struct Rects(nohash_hasher::IntMap<usize, (Rect, MaxPorts)>);
+
+impl Rects {
+    pub fn get(&self, idx: transit::Idx) -> Option<&(Rect, MaxPorts)> {
+        self.0.get(&idx.index())
+    }
+
+    pub fn get_rect(&self, idx: transit::Idx) -> Option<Rect> {
+        self.get(idx).map(|a| a.0)
+    }
+
+    pub fn insert_rect<F: FnOnce() -> MaxPorts>(&mut self, idx: transit::Idx, rect: Rect, f: F) {
+        self.0
+            .entry(idx.index())
+            .and_modify(|a| a.0 = rect)
+            .or_insert_with(|| (rect, f()));
+    }
+
+    // TODO: unused?
+    pub fn insert_max_port(
+        &mut self,
+        idx: transit::Idx,
+        direction: transit::Direction,
+        max_port: Option<usize>,
+    ) {
+        assert!(self
+            .0
+            .get_mut(&idx.index())
+            .map(|(_, (max_in, max_out))| {
+                match direction {
+                    transit::Direction::Incoming => *max_in = max_port,
+                    transit::Direction::Outgoing => *max_out = max_port,
+                }
+            })
+            .is_some());
+    }
+}
 
 /// Mutable data, passed to each call of show_state.
 #[derive(Default)]
@@ -558,6 +598,11 @@ impl Statechart<EditContext> {
             }
         }
 
+        // Invalidate max ports if anything has changed. TODO: optimize this
+        if commands.len() > 0 {
+            edit_data.rects.0.clear();
+        }
+
         commands
     }
 
@@ -570,9 +615,7 @@ impl Statechart<EditContext> {
 
         // Show all transitions.
         for (tdx, source, target, t, internal) in self.graph.transitions() {
-            if let (Some(source_rect), Some(target_rect)) =
-                (rects.get(&source.index()), rects.get(&target.index()))
-            {
+            if let (Some(source_rect), Some(target_rect)) = (rects.get(source), rects.get(target)) {
                 let start = port_out(*source_rect, t.port1);
                 let end = port_in(*target_rect, t.port2);
                 self.show_connection(
@@ -590,9 +633,9 @@ impl Statechart<EditContext> {
         match drag {
             Drag::AddTransition(source, ref mut t, target) => {
                 if let (Some(start), Some(end)) = (
-                    rects.get(&source.index()).map(|r| port_out(*r, t.port1)),
+                    rects.get(*source).map(|r| port_out(*r, t.port1)),
                     target
-                        .and_then(|target| rects.get(&target.0.index()))
+                        .and_then(|target| rects.get(target.0))
                         .map(|r| port_in(*r, t.port2))
                         .or(ui.ctx().pointer_interact_pos()),
                 ) {
@@ -659,7 +702,12 @@ impl Statechart<EditContext> {
         // the original rect?
         edit_data
             .rects
-            .insert(idx.index(), rect.intersect(ui.clip_rect()));
+            .insert_rect(idx, rect.intersect(ui.clip_rect()), || {
+                (
+                    self.max_port(idx, transit::Direction::Incoming),
+                    self.max_port(idx, transit::Direction::Outgoing),
+                )
+            });
 
         // Reserve background shape.
         let bg = ui.painter().add(Shape::Noop);
@@ -703,7 +751,7 @@ impl Statechart<EditContext> {
                 inner_ui.spacing_mut().item_spacing = Vec2::ZERO;
                 inner_ui.with_layer_id(layer_id, |mut ui| {
                     ui.reset_style(); // HACK see above
-                    let root_rect = *edit_data.rects.get(&self.graph.root.index()).unwrap();
+                    let root_rect = edit_data.rects.get_rect(self.graph.root).unwrap();
                     ui.set_clip_rect(root_rect);
                     self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, &mut ui);
                     ui.set_clip_rect(clip_rect);
@@ -892,7 +940,7 @@ impl Statechart<EditContext> {
                     Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
                         // Reuse existing port if dragging to existing target?
                         if let Some(end) = target
-                            .and_then(|(t, p)| edit_data.rects.get(&t.index()).zip(Some(p)))
+                            .and_then(|(t, p)| edit_data.rects.get(t).zip(Some(p)))
                             .map(|(r, p)| port_in(*r, p))
                             .or_else(|| ui.ctx().pointer_interact_pos())
                         {
@@ -911,9 +959,7 @@ impl Statechart<EditContext> {
                     }
                     _ => {
                         if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
-                            if let Some(end) =
-                                edit_data.rects.get(&i.index()).map(|r| port_in(*r, port))
-                            {
+                            if let Some(end) = edit_data.rects.get(i).map(|r| port_in(*r, port)) {
                                 self.show_connection(
                                     &edit_data.rects,
                                     start,
@@ -1083,7 +1129,7 @@ impl Statechart<EditContext> {
     }
 
     // Do self-transitions show up twice?
-    pub fn free_port(&self, idx: transit::Idx, direction: transit::Direction) -> usize {
+    pub fn ports(&self, idx: transit::Idx, direction: transit::Direction) -> Vec<usize> {
         let mut ports: Vec<_> = self
             .graph
             .state_transitions(idx, direction)
@@ -1103,6 +1149,16 @@ impl Statechart<EditContext> {
         }
 
         ports.sort();
+        ports
+    }
+
+    pub fn max_port(&self, idx: transit::Idx, direction: transit::Direction) -> Option<usize> {
+        self.ports(idx, direction).into_iter().last()
+    }
+
+    pub fn free_port(&self, idx: transit::Idx, direction: transit::Direction) -> usize {
+        let ports = self.ports(idx, direction);
+
         let mut free = 0;
         for port in ports {
             if free < port {
@@ -1176,10 +1232,12 @@ impl Statechart<EditContext> {
                     Drag::TransitionSource(_tdx, port, target, _) if *_tdx == tdx => (
                         target
                             .and_then(|(i, _)| {
-                                rects.get(&i.index()).zip(
-                                    // Use the original port if this is the existing target.
-                                    Some(if endpoints.0 == i { t.port1 } else { *port }),
-                                )
+                                // Use the original port if this is the existing target.
+                                rects.get(i).zip(Some(if endpoints.0 == i {
+                                    t.port1
+                                } else {
+                                    *port
+                                }))
                             })
                             .map(|(r, p)| port_out(*r, p))
                             .or(ui.ctx().pointer_interact_pos())
@@ -1194,10 +1252,12 @@ impl Statechart<EditContext> {
                         t.c2,
                         target
                             .and_then(|(i, _)| {
-                                rects.get(&i.index()).zip(
-                                    // Use the original port if this is the existing target.
-                                    Some(if endpoints.1 == i { t.port2 } else { *port }),
-                                )
+                                // Use the original port if this is the existing target.
+                                rects.get(i).zip(Some(if endpoints.1 == i {
+                                    t.port2
+                                } else {
+                                    *port
+                                }))
                             })
                             .map(|(r, p)| port_in(*r, p))
                             .or(ui.ctx().pointer_interact_pos())
@@ -1457,14 +1517,30 @@ pub fn arrow(size: f32, color: Color32) -> Mesh {
     mesh
 }
 
-// Scale based on number of ports and vertical size? We have to
-// select the transition first to drag?
-pub fn port_in(rect: Rect, port: usize) -> Pos2 {
-    rect.min + vec2(0.0, 10.0 * (port + 1) as f32)
+// This is also the fixed inset.
+const PORT_SPACING: f32 = 10.0;
+
+// Scale based on number of ports and available vertical space. When the state is fully collapsed we
+// don't want to show the endpoints?
+pub fn port_pos(rect: (Rect, MaxPorts), port: usize, dir: bool) -> Pos2 {
+    let (rect, max_ports) = rect;
+    let max_port = if dir { max_ports.0 } else { max_ports.1 };
+
+    // The port can be higher than the max...
+    let max_port = max_port.unwrap_or_default().max(port);
+
+    // Take available space (minus inset on top/bottom) and divide by number of ports in use.
+    let spacing = ((rect.height() - PORT_SPACING * 2.0) / (max_port + 1) as f32).min(PORT_SPACING);
+    let origin = if dir { rect.min } else { rect.right_top() };
+    origin + vec2(0.0, PORT_SPACING + spacing * port as f32)
 }
 
-pub fn port_out(rect: Rect, port: usize) -> Pos2 {
-    rect.right_top() + vec2(0.0, 10.0 * (port + 1) as f32)
+pub fn port_in(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
+    port_pos(rect, port, true)
+}
+
+pub fn port_out(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
+    port_pos(rect, port, false)
 }
 
 impl State {
