@@ -66,7 +66,7 @@ impl Default for State {
 
 // Why default?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Transition {
     // event? guard name?
     #[serde(default)]
@@ -156,10 +156,10 @@ pub enum Drag {
     Resize(transit::Idx, Vec2),
     Initial(transit::Idx, DragTarget, (Vec2, Vec2)),
     InitialControl((transit::Idx, ControlPoint), Vec2),
-    // Remove transition here and use port1 only. Port2 in drag target.
-    AddTransition(transit::Idx, Transition, DragTarget),
-    TransitionSource(transit::Tdx, usize, DragTarget, transit::Idx),
-    TransitionTarget(transit::Tdx, usize, DragTarget, transit::Idx),
+    AddTransition(transit::Idx, Option<transit::Idx>),
+    // For the next two variants the first field is the opposite endpoint!
+    TransitionSource(transit::Idx, Option<transit::Idx>, transit::Tdx),
+    TransitionTarget(transit::Idx, Option<transit::Idx>, transit::Tdx),
     TransitionControl((transit::Tdx, ControlPoint), Vec2),
     TransitionId(transit::Tdx, Vec2),
 }
@@ -194,15 +194,18 @@ impl Drag {
     }
 
     pub fn is_target(&self, idx: transit::Idx) -> bool {
-        let target = match self {
-            Drag::State(_, _, t, _)
-            | Drag::Initial(_, t, ..)
-            | Drag::AddTransition(_, _, t)
-            | Drag::TransitionSource(_, _, t, _)
-            | Drag::TransitionTarget(_, _, t, _) => t,
-            _ => &None,
-        };
-        target.map(|(t, _)| t == idx).unwrap_or_default()
+        match self {
+            Drag::State(_, _, Some((t, ..)), _)
+            | Drag::Initial(_, Some((t, ..)), ..)
+            | Drag::AddTransition(_, Some(t), ..)
+            | Drag::TransitionSource(_, Some(t), ..)
+            | Drag::TransitionTarget(_, Some(t), ..)
+                if *t == idx =>
+            {
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Is the drag greater than some minimum?
@@ -296,8 +299,8 @@ pub type MaxPorts = (Option<usize>, Option<usize>);
 pub struct Rects(nohash_hasher::IntMap<usize, (Rect, MaxPorts)>);
 
 impl Rects {
-    pub fn get(&self, idx: transit::Idx) -> Option<&(Rect, MaxPorts)> {
-        self.0.get(&idx.index())
+    pub fn get(&self, idx: transit::Idx) -> Option<(Rect, MaxPorts)> {
+        self.0.get(&idx.index()).copied()
     }
 
     pub fn get_rect(&self, idx: transit::Idx) -> Option<Rect> {
@@ -339,13 +342,13 @@ pub struct EditData {
     commands: Vec<Command>,
 }
 
-// The drag variants don't need writable access to the drag state.
+// The drag variants don't need writable access to the drag state. Rename drag variants to New*?
 pub enum Connection<'a, 'b> {
     // Source, control points.
     Initial(transit::Idx, (Vec2, Vec2), &'b mut Drag),
     DragInitial(transit::Idx, (Vec2, Vec2)),
     Transition(transit::Tdx, &'a Transition, bool, &'b mut Drag),
-    DragTransition(&'a Transition),
+    DragTransition(Vec2, Vec2), // control points
 }
 
 // These two functions are copied from egui::resize which isn't public...
@@ -381,6 +384,11 @@ pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
 pub fn approx_cp_down(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
     let d = end - start;
     (vec2(0.0, d.y), vec2(-d.x * 0.25, d.y * 0.1))
+}
+
+#[inline]
+pub fn approx_cp_self(_start: Pos2, _end: Pos2) -> (Vec2, Vec2) {
+    (vec2(128.0, -96.0), vec2(128.0, 96.0))
 }
 
 impl Statechart<EditContext> {
@@ -525,7 +533,7 @@ impl Statechart<EditContext> {
         // Show root and recursively show children.
         self.show_state(self.graph.root, rect.min.to_vec2(), 0, &mut edit_data, ui);
 
-        self.show_transitions(&mut edit_data, ui);
+        let drag_transition = self.show_transitions(&mut edit_data, ui);
 
         let mut commands = std::mem::take(&mut edit_data.commands);
 
@@ -541,53 +549,26 @@ impl Statechart<EditContext> {
                         commands.push(Command::MoveState(src, target, p))
                     }
                 }
-                Drag::AddTransition(src, t, Some((target, _))) => {
-                    // TEMP label
-                    let id = format!(
-                        "{} > {}",
-                        self.graph.state(src).map(|s| s.id.as_str()).unwrap_or("?"),
-                        self.graph
-                            .state(target)
-                            .map(|s| s.id.as_str())
-                            .unwrap_or("?"),
-                    );
+                Drag::AddTransition(a, Some(b)) => {
+                    if let Some(t) = drag_transition {
+                        edit_data.commands.push(Command::AddTransition(a, b, t))
+                    } // else error?
+                }
+                Drag::TransitionSource(b, Some(a), tdx)
+                | Drag::TransitionTarget(a, Some(b), tdx) => {
+                    if let Some((a0, b0)) = self.graph.endpoints(tdx) {
+                        // Check if changed. We were doing this inside drag_transition to avoid
+                        // looking up endpoints twice...
+                        if a != a0 || b != b0 {
+                            if let Some(t) = drag_transition {
+                                commands.push(Command::UpdateTransition(tdx, t));
 
-                    edit_data
-                        .commands
-                        .push(Command::AddTransition(src, target, t.with_id(id)))
-                }
-                Drag::TransitionSource(tdx, port1, Some((new_src, _)), _) => {
-                    if let Some((t, (src, _))) =
-                        // Should there be an accessor for both?
-                        self.graph.transition(tdx).zip(self.graph.endpoints(tdx))
-                    {
-                        // Check if the source has changed.
-                        if src != new_src {
-                            // Update port. TODO: merge undos
-                            if t.port1 != port1 {
-                                commands.push(Command::UpdateTransition(
+                                commands.push(Command::MoveTransition(
                                     tdx,
-                                    t.clone().with_port1(port1),
-                                ));
-                            }
-                            commands.push(Command::MoveTransition(tdx, Some(new_src), None))
-                        }
-                    } // else, error?
-                }
-                Drag::TransitionTarget(tdx, port2, Some((new_target, _)), _) => {
-                    if let Some((t, (_, target))) =
-                        self.graph.transition(tdx).zip(self.graph.endpoints(tdx))
-                    {
-                        // Check if the target has changed.
-                        if target != new_target {
-                            // Update port. TODO: merge undos
-                            if t.port2 != port2 {
-                                commands.push(Command::UpdateTransition(
-                                    tdx,
-                                    t.clone().with_port2(port2),
-                                ));
-                            }
-                            commands.push(Command::MoveTransition(tdx, None, Some(new_target)))
+                                    (a != a0).then_some(a),
+                                    (b != b0).then_some(b),
+                                ))
+                            } // error?
                         }
                     } // else, error?
                 }
@@ -606,7 +587,119 @@ impl Statechart<EditContext> {
         commands
     }
 
-    pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) {
+    /// Create a new transition from a to b, derived from an original transition t0, along with
+    /// start and end positions.
+    pub fn drag_transition(
+        &self,
+        a: transit::Idx,
+        b: transit::Idx,
+        rects: &Rects,
+        t0: transit::Tdx,
+    ) -> (Transition, (Pos2, Pos2)) {
+        let is_self = a == b;
+
+        // We don't use the index so just pass this in?
+        let (t0, (a0, b0)) = self
+            .graph
+            .transition(t0)
+            .zip(self.graph.endpoints(t0))
+            .unwrap();
+
+        let mut t = t0.clone();
+
+        // New ports. Self-transitions take up two outgoing ports - which is a weird special case,
+        // but it's visually distinctive and looks better than looping completely around the state.
+        let ports = if a != a0 {
+            let port1 = self.free_port(a, transit::Direction::Outgoing);
+            if is_self {
+                // Reassign b to outgoing too.
+                (
+                    port1,
+                    self.free_port_from(a, transit::Direction::Outgoing, port1 + 1),
+                )
+            } else {
+                (port1, t0.port2)
+            }
+        } else if b != b0 {
+            // We are only ever changing a or b, never both?
+            (t0.port1, self.free_port(b, target_dir(a, b)))
+        } else {
+            (t0.port1, t0.port2)
+        };
+
+        t.port1 = ports.0;
+        t.port2 = ports.1;
+
+        let (start, end) = rects
+            .get(a)
+            .map(|r| port_out(r, ports.0))
+            .zip(rects.get(b).map(|r| port_pos(r, ports.1, target_dir(a, b))))
+            .unwrap();
+
+        // Reset control points?
+        if is_self != (a0 == b0) {
+            let cp = if is_self {
+                approx_cp_self(start, end)
+            } else {
+                approx_cp(start, end)
+            };
+            t.c1 = cp.0;
+            t.c2 = cp.1;
+        };
+
+        //(t != *t0).then_some((t, (start, end)))
+        (t, (start, end))
+    }
+
+    pub fn new_transition(
+        &self,
+        a: transit::Idx,
+        b: transit::Idx,
+        rects: &Rects,
+    ) -> (Transition, (Pos2, Pos2)) {
+        // TEMP label
+        let id = format!(
+            "{} > {}",
+            self.graph.state(a).map(|s| s.id.as_str()).unwrap_or("?"),
+            self.graph.state(b).map(|s| s.id.as_str()).unwrap_or("?"),
+        );
+
+        let is_self = a == b;
+        let ports = if is_self {
+            self.free_port2(a, transit::Direction::Outgoing)
+        } else {
+            (
+                self.free_port(a, transit::Direction::Outgoing),
+                self.free_port(b, transit::Direction::Incoming),
+            )
+        };
+
+        let (start, end) = rects
+            .get(a)
+            .map(|r| port_out(r, ports.0))
+            .zip(rects.get(b).map(|r| port_pos(r, ports.1, target_dir(a, b))))
+            .unwrap();
+
+        // Reset control points?
+        let cp = if is_self {
+            approx_cp_self(start, end)
+        } else {
+            approx_cp(start, end)
+        };
+
+        (
+            Transition {
+                id,
+                port1: ports.0,
+                port2: ports.1,
+                c1: cp.0,
+                c2: cp.1,
+            },
+            (start, end),
+        )
+    }
+
+    pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) -> Option<Transition> {
         let EditData {
             rects,
             drag,
@@ -614,48 +707,126 @@ impl Statechart<EditContext> {
         } = &mut *edit_data;
 
         // Show all transitions.
+        let mut drag_transition = None;
         for (tdx, source, target, t, internal) in self.graph.transitions() {
-            if let (Some(source_rect), Some(target_rect)) = (rects.get(source), rects.get(target)) {
-                let start = port_out(*source_rect, t.port1);
-                let end = port_in(*target_rect, t.port2);
-                self.show_connection(
-                    rects,
-                    start,
-                    end,
-                    Connection::Transition(tdx, t, internal, drag),
-                    ui,
-                    commands,
-                );
-            }
+            match drag {
+                Drag::TransitionSource(b, a, _tdx) if *_tdx == tdx => match a {
+                    Some(a) => {
+                        let (t, (start, end)) = self.drag_transition(*a, *b, rects, tdx);
+                        self.show_connection(
+                            start,
+                            end,
+                            Connection::Transition(tdx, &t, internal, drag),
+                            ui,
+                            commands,
+                        );
+                        drag_transition = Some(t);
+                    }
+                    None => {
+                        if let Some(start) = ui
+                            .ctx()
+                            .pointer_interact_pos()
+                            .or_else(|| rects.get(source).map(|r| port_out(r, t.port1)))
+                        {
+                            if let Some(end) = rects
+                                .get(target)
+                                .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                            {
+                                self.show_connection(
+                                    start,
+                                    end,
+                                    Connection::Transition(tdx, t, internal, drag),
+                                    ui,
+                                    commands,
+                                );
+                            }
+                        }
+                    }
+                },
+                Drag::TransitionTarget(a, b, _tdx) if *_tdx == tdx => match b {
+                    Some(b) => {
+                        let (t, (start, end)) = self.drag_transition(*a, *b, rects, tdx);
+                        self.show_connection(
+                            start,
+                            end,
+                            Connection::Transition(tdx, &t, internal, drag),
+                            ui,
+                            commands,
+                        );
+                        drag_transition = Some(t);
+                    }
+                    None => {
+                        if let Some(start) = rects.get(source).map(|r| port_out(r, t.port1)) {
+                            if let Some(end) = ui.ctx().pointer_interact_pos().or_else(|| {
+                                rects
+                                    .get(target)
+                                    .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                            }) {
+                                self.show_connection(
+                                    start,
+                                    end,
+                                    Connection::Transition(tdx, t, internal, drag),
+                                    ui,
+                                    commands,
+                                );
+                            }
+                        }
+                    }
+                },
+                _ => {
+                    if let Some(start) = rects.get(source).map(|r| port_out(r, t.port1)) {
+                        if let Some(end) = rects
+                            .get(target)
+                            .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                        {
+                            self.show_connection(
+                                start,
+                                end,
+                                Connection::Transition(tdx, t, internal, drag),
+                                ui,
+                                commands,
+                            );
+                        }
+                    }
+                }
+            };
         }
 
         // New transition in progress.
         match drag {
-            Drag::AddTransition(source, ref mut t, target) => {
-                if let (Some(start), Some(end)) = (
-                    rects.get(*source).map(|r| port_out(*r, t.port1)),
-                    target
-                        .and_then(|target| rects.get(target.0))
-                        .map(|r| port_in(*r, t.port2))
-                        .or(ui.ctx().pointer_interact_pos()),
-                ) {
-                    // Make up control points based on the start and end.
-                    let (c1, c2) = approx_cp(start, end);
-                    t.c1 = c1;
-                    t.c2 = c2;
-
+            Drag::AddTransition(source, target) => match target {
+                Some(target) => {
+                    let (t, (start, end)) = self.new_transition(*source, *target, rects);
                     self.show_connection(
-                        rects,
                         start,
                         end,
-                        Connection::DragTransition(&t),
+                        Connection::DragTransition(t.c1, t.c2),
                         ui,
                         commands,
                     );
+                    drag_transition = Some(t);
                 }
-            }
+                None => {
+                    // Put the port in AddTransition?
+                    let port1 = self.free_port(*source, transit::Direction::Outgoing);
+                    if let Some(start) = rects.get(*source).map(|r| port_out(r, port1)) {
+                        if let Some(end) = ui.ctx().pointer_interact_pos() {
+                            let cp = approx_cp(start, end);
+                            self.show_connection(
+                                start,
+                                end,
+                                Connection::DragTransition(cp.0, cp.1),
+                                ui,
+                                commands,
+                            );
+                        }
+                    }
+                }
+            },
             _ => (),
         }
+
+        drag_transition
     }
 
     pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
@@ -720,7 +891,7 @@ impl Statechart<EditContext> {
         };
 
         // Background interaction, dragging states and context menu.
-        let mut state_response = ui.interact(rect, id, sense);
+        let state_response = ui.interact(rect, id, sense);
 
         // The inner_ui only serves to convey the clip_rect to children.
         let mut inner_ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
@@ -818,16 +989,10 @@ impl Statechart<EditContext> {
             if let Some(p) = interact_pos {
                 if ui.input().modifiers.shift {
                     // New transition, drag to target.
-                    let port1 = self.free_port(idx, transit::Direction::Outgoing);
-                    edit_data.drag = Drag::AddTransition(
-                        idx,
-                        // Use a builder instead of default? No guarantees on port2 being set or zero.
-                        Transition {
-                            port1,
-                            ..Default::default()
-                        },
-                        None,
-                    );
+                    //let port1 = self.free_port(idx, transit::Direction::Outgoing);
+                    edit_data.drag =
+                        // free_port always returns a port locator?
+                        Drag::AddTransition(idx, None);
                 } else {
                     // Save the pointer offset from the state origin. Zero is never correct for the
                     // parent offest, so maybe it should be an Option like target?
@@ -837,8 +1002,14 @@ impl Statechart<EditContext> {
         }
 
         // Context menu on right click.
-        if !edit_data.drag.in_drag() {
-            state_response = state_response.context_menu(|ui| {
+        let state_response = if !edit_data.drag.in_drag() {
+            let state_response = state_response.on_hover_text_at_pointer(format!(
+                "incoming ports: {:?} outgoing ports: {:?}",
+                self.ports(idx, transit::Direction::Incoming),
+                self.ports(idx, transit::Direction::Outgoing)
+            ));
+
+            state_response.context_menu(|ui| {
                 if ui.button("Add state").clicked() {
                     // Position is the original click, relative to parent.
                     let p = ui.min_rect().min - rect.min.to_vec2();
@@ -856,8 +1027,10 @@ impl Statechart<EditContext> {
                         ui.close_menu();
                     }
                 }
-            });
-        }
+            })
+        } else {
+            state_response
+        };
 
         // TODO: Make a background for the root so we can show drag_valid.
         if !root {
@@ -941,13 +1114,12 @@ impl Statechart<EditContext> {
                         // Reuse existing port if dragging to existing target?
                         if let Some(end) = target
                             .and_then(|(t, p)| edit_data.rects.get(t).zip(Some(p)))
-                            .map(|(r, p)| port_in(*r, p))
+                            .map(|(r, p)| port_in(r, p))
                             .or_else(|| ui.ctx().pointer_interact_pos())
                         {
                             // bias the initial down
                             *cp = approx_cp_down(start, end);
                             self.show_connection(
-                                &edit_data.rects,
                                 start,
                                 end,
                                 Connection::DragInitial(idx, *cp),
@@ -959,9 +1131,8 @@ impl Statechart<EditContext> {
                     }
                     _ => {
                         if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
-                            if let Some(end) = edit_data.rects.get(i).map(|r| port_in(*r, port)) {
+                            if let Some(end) = edit_data.rects.get(i).map(|r| port_in(r, port)) {
                                 self.show_connection(
-                                    &edit_data.rects,
                                     start,
                                     end,
                                     Connection::Initial(idx, (c1, c2), &mut edit_data.drag),
@@ -1091,9 +1262,9 @@ impl Statechart<EditContext> {
                     *offset = new_offset;
                 }
             }
-            Drag::TransitionSource(_, port2, target, _)
-            | Drag::TransitionTarget(_, port2, target, _)
-            | Drag::AddTransition(_, Transition { port2, .. }, target) => {
+            Drag::TransitionSource(_, target, ..)
+            | Drag::TransitionTarget(_, target, ..)
+            | Drag::AddTransition(_, target, ..) => {
                 if depth == 0 {
                     // No transition can target the root.
                     *target = None;
@@ -1104,9 +1275,7 @@ impl Statechart<EditContext> {
                     .children_rev(idx)
                     .find(|(_i, s)| ui.rect_contains_pointer(s.state.rect.translate(parent_offset)))
                 {
-                    // Find a free port.
-                    *port2 = self.free_port(i, dir);
-                    *target = Some((i, depth + 1))
+                    *target = Some(i)
                 }
             }
             Drag::Initial(initial_idx, target, _) => {
@@ -1128,25 +1297,40 @@ impl Statechart<EditContext> {
         };
     }
 
-    // Do self-transitions show up twice?
+    /// Returns a list of ports in use for the specified state and direction.
     pub fn ports(&self, idx: transit::Idx, direction: transit::Direction) -> Vec<usize> {
-        let mut ports: Vec<_> = self
-            .graph
-            .state_transitions(idx, direction)
-            .map(|(_, _, t, _)| t.port1)
-            .collect();
+        let ports = self.graph.state_transitions(idx, direction);
 
-        // Include initial incoming connections. Maybe we should store initial as an edge in the
-        // graph?
-        match direction {
-            transit::Direction::Incoming => ports.extend(
-                self.graph
-                    .path_iter(idx)
-                    .filter(|i| self.graph.initial(*i).idx() == Some(idx))
-                    .filter_map(|i| self.graph.state(i).and_then(|s| s.initial).map(|i| i.0)),
-            ),
-            _ => {}
-        }
+        let mut ports: Vec<usize> = match direction {
+            // Include the incoming port for self-transitions. Is there not a way to do this w/
+            // flat_map instead of fold?
+            transit::Direction::Outgoing => {
+                ports.fold(Vec::new(), |mut acc, (_, _, target, t, _)| {
+                    if target == idx {
+                        acc.extend([t.port1, t.port2])
+                    } else {
+                        acc.push(t.port1)
+                    }
+                    acc
+                })
+            }
+
+            transit::Direction::Incoming => {
+                // Filter out self-transitions, and include initial incoming connections. Maybe we
+                // should store initial as an edge in the graph?
+                ports
+                    .filter_map(|(_, source, _, t, _)| (source != idx).then_some(t.port1))
+                    .chain(
+                        self.graph
+                            .path_iter(idx)
+                            .filter(|i| self.graph.initial(*i).idx() == Some(idx))
+                            .filter_map(|i| {
+                                self.graph.state(i).and_then(|s| s.initial).map(|i| i.0)
+                            }),
+                    )
+                    .collect()
+            }
+        };
 
         ports.sort();
         ports
@@ -1156,10 +1340,17 @@ impl Statechart<EditContext> {
         self.ports(idx, direction).into_iter().last()
     }
 
-    pub fn free_port(&self, idx: transit::Idx, direction: transit::Direction) -> usize {
+    /// Find a free port starting from the specified port. This is used to find a second free port
+    /// when adding a new self-transition.
+    pub fn free_port_from(
+        &self,
+        idx: transit::Idx,
+        direction: transit::Direction,
+        from: usize,
+    ) -> usize {
         let ports = self.ports(idx, direction);
 
-        let mut free = 0;
+        let mut free = from;
         for port in ports {
             if free < port {
                 return free;
@@ -1168,6 +1359,16 @@ impl Statechart<EditContext> {
             }
         }
         free
+    }
+
+    pub fn free_port2(&self, idx: transit::Idx, direction: transit::Direction) -> (usize, usize) {
+        let p1 = self.free_port_from(idx, direction, 0);
+        let p2 = self.free_port_from(idx, direction, p1 + 1);
+        (p1, p2)
+    }
+
+    pub fn free_port(&self, idx: transit::Idx, direction: transit::Direction) -> usize {
+        self.free_port_from(idx, direction, 0)
     }
 
     // Clicking the curve for selection? https://github.com/emilk/egui/discussions/1959
@@ -1180,7 +1381,6 @@ impl Statechart<EditContext> {
     // might solve this.
     pub fn show_connection(
         &self,
-        rects: &Rects,
         start: Pos2,
         end: Pos2,
         conn: Connection,
@@ -1206,7 +1406,7 @@ impl Statechart<EditContext> {
                 Connection::Initial(src, ..) => Id::new(src).with("initial"),
                 Connection::DragInitial(..) => ui.id().with("drag_initial"),
                 Connection::Transition(tdx, ..) => Id::new(tdx),
-                Connection::DragTransition(_) => ui.id().with("drag_transition"),
+                Connection::DragTransition(..) => ui.id().with("drag_transition"),
             },
         );
 
@@ -1218,9 +1418,8 @@ impl Statechart<EditContext> {
         // Set curve points based on the transition drag state.
         let (start, c1, c2, end) = match conn {
             Connection::Transition(tdx, t, _, ref drag) => {
-                let endpoints = self.graph.endpoints(tdx).unwrap();
-
-                // Include the drag (from last frame).
+                // Include the drag (from last frame). This is the second match on drag - move this
+                // to show_connections?
                 match drag {
                     Drag::TransitionId(i, delta) if *i == tdx => {
                         (start, t.c1 + *delta, t.c2 + *delta, end)
@@ -1229,44 +1428,10 @@ impl Statechart<EditContext> {
                         ControlPoint::C1 => (start, t.c1 + *delta, t.c2, end),
                         ControlPoint::C2 => (start, t.c1, t.c2 + *delta, end),
                     },
-                    Drag::TransitionSource(_tdx, port, target, _) if *_tdx == tdx => (
-                        target
-                            .and_then(|(i, _)| {
-                                // Use the original port if this is the existing target.
-                                rects.get(i).zip(Some(if endpoints.0 == i {
-                                    t.port1
-                                } else {
-                                    *port
-                                }))
-                            })
-                            .map(|(r, p)| port_out(*r, p))
-                            .or(ui.ctx().pointer_interact_pos())
-                            .unwrap_or(start),
-                        t.c1,
-                        t.c2,
-                        end,
-                    ),
-                    Drag::TransitionTarget(_tdx, port, target, _) if *_tdx == tdx => (
-                        start,
-                        t.c1,
-                        t.c2,
-                        target
-                            .and_then(|(i, _)| {
-                                // Use the original port if this is the existing target.
-                                rects.get(i).zip(Some(if endpoints.1 == i {
-                                    t.port2
-                                } else {
-                                    *port
-                                }))
-                            })
-                            .map(|(r, p)| port_in(*r, p))
-                            .or(ui.ctx().pointer_interact_pos())
-                            .unwrap_or(start),
-                    ),
                     _ => (start, t.c1, t.c2, end),
                 }
             }
-            Connection::DragTransition(t) => (start, t.c1, t.c2, end),
+            Connection::DragTransition(c1, c2) => (start, c1, c2, end),
             Connection::Initial(idx, (c1, c2), ref drag) => match drag {
                 Drag::InitialControl((_idx, cp), delta) if idx == *_idx => match cp {
                     ControlPoint::C1 => (start, c1 + *delta, c2, end),
@@ -1301,6 +1466,8 @@ impl Statechart<EditContext> {
 
         match conn {
             Connection::Transition(tdx, t, _internal, drag) => {
+                let endpoints = self.graph.endpoints(tdx).unwrap();
+
                 // Show source control. Maybe only if selected?
                 let source_rect = Rect::from_center_size(start, control_size_sq);
                 if ui.is_rect_visible(source_rect) {
@@ -1308,11 +1475,9 @@ impl Statechart<EditContext> {
 
                     match drag {
                         Drag::None if response.drag_started() => {
-                            match self.graph.endpoints(tdx) {
-                                Some((i, _)) => *drag = Drag::TransitionSource(tdx, 0, None, i),
-                                _ => (), // error
-                            }
+                            *drag = Drag::TransitionSource(endpoints.1, None, tdx)
                         }
+
                         _ => (),
                     }
 
@@ -1327,10 +1492,7 @@ impl Statechart<EditContext> {
 
                     match drag {
                         Drag::None if response.drag_started() => {
-                            match self.graph.endpoints(tdx) {
-                                Some((_, i)) => *drag = Drag::TransitionTarget(tdx, 0, None, i),
-                                _ => (), // error
-                            }
+                            *drag = Drag::TransitionTarget(endpoints.0, None, tdx)
                         }
                         _ => (),
                     }
@@ -1384,6 +1546,10 @@ impl Statechart<EditContext> {
 
                             // Context menu on right click.
                             let response = if !drag.in_drag() {
+                                let response = response.on_hover_text_at_pointer(format!(
+                                    "port1: {} port2: {}",
+                                    t.port1, t.port2
+                                ));
                                 response.context_menu(|ui| {
                                     if ui.button("Remove transition").clicked() {
                                         commands.push(Command::RemoveTransition(tdx));
@@ -1517,14 +1683,27 @@ pub fn arrow(size: f32, color: Color32) -> Mesh {
     mesh
 }
 
+// For self-transitions: target takes up an outgoing port.
+#[inline]
+fn target_dir(a: transit::Idx, b: transit::Idx) -> transit::Direction {
+    if a == b {
+        transit::Direction::Outgoing
+    } else {
+        transit::Direction::Incoming
+    }
+}
+
 // This is also the fixed inset.
 const PORT_SPACING: f32 = 10.0;
 
 // Scale based on number of ports and available vertical space. When the state is fully collapsed we
 // don't want to show the endpoints?
-pub fn port_pos(rect: (Rect, MaxPorts), port: usize, dir: bool) -> Pos2 {
+pub fn port_pos(rect: (Rect, MaxPorts), port: usize, direction: transit::Direction) -> Pos2 {
     let (rect, max_ports) = rect;
-    let max_port = if dir { max_ports.0 } else { max_ports.1 };
+    let (origin, max_port) = match direction {
+        transit::Direction::Incoming => (rect.min, max_ports.0),
+        transit::Direction::Outgoing => (rect.right_top(), max_ports.1),
+    };
 
     // The port can be higher than the max...
     let max_port = max_port.unwrap_or_default().max(port);
@@ -1534,16 +1713,15 @@ pub fn port_pos(rect: (Rect, MaxPorts), port: usize, dir: bool) -> Pos2 {
     // to states that are clipped or otherwise hidden - connect to parent w/ hidden indicator?
     let spacing =
         ((rect.height() - PORT_SPACING * 2.0).max(0.0) / (max_port + 1) as f32).min(PORT_SPACING);
-    let origin = if dir { rect.min } else { rect.right_top() };
     origin + vec2(0.0, PORT_SPACING + spacing * port as f32)
 }
 
 pub fn port_in(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
-    port_pos(rect, port, true)
+    port_pos(rect, port, transit::Direction::Incoming)
 }
 
 pub fn port_out(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
-    port_pos(rect, port, false)
+    port_pos(rect, port, transit::Direction::Outgoing)
 }
 
 impl State {

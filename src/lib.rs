@@ -289,24 +289,24 @@ impl<C: Context> Graph<C> {
         &self,
         i: Idx,
         direction: Direction,
-    ) -> impl Iterator<Item = (Tdx, Idx, &<C as Context>::Transition, bool)> {
+    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
         self.graph.edges_directed(i, direction).map(|e| {
             let t = e.weight();
-            (e.id(), e.target(), &t.transition, t.internal)
+            (e.id(), e.source(), e.target(), &t.transition, t.internal)
         })
     }
 
     pub fn transitions_out(
         &self,
         i: Idx,
-    ) -> impl Iterator<Item = (Tdx, Idx, &<C as Context>::Transition, bool)> {
+    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
         self.state_transitions(i, Direction::Outgoing)
     }
 
     pub fn transitions_in(
         &self,
         i: Idx,
-    ) -> impl Iterator<Item = (Tdx, Idx, &<C as Context>::Transition, bool)> {
+    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
         self.state_transitions(i, Direction::Incoming)
     }
 
