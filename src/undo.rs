@@ -11,6 +11,7 @@ pub enum Op<C: Context> {
     AddTransition(Tdx, TOp<C::Transition>),
     UpdateTransition(Tdx, TOp<C::Transition>, TOp<C::Transition>),
     RemoveTransition(Tdx, TOp<C::Transition>),
+    SetInternal(Tdx, bool),
     // For grouping state removals with transitions?
     //Transaction(Vec<Op<C>>),
 }
@@ -42,7 +43,6 @@ impl<C: Context> Op<C> {
                     .remove_edge(*i)
                     .expect("add transition op does not exist!");
             }
-            // TODO: handle internal?
             Op::UpdateTransition(i, (a, b, t1), _) => {
                 g.graph[*i] = t1.clone();
                 let _ = g.move_transition_internal(*i, *a, *b);
@@ -52,6 +52,9 @@ impl<C: Context> Op<C> {
                 if *i != i2 {
                     dbg!(i, i2);
                 }
+            }
+            Op::SetInternal(i, internal) => {
+                g.graph[*i].internal = !internal;
             }
         }
     }
@@ -68,6 +71,7 @@ impl<C: Context> Op<C> {
             Op::AddTransition(i, t) => Op::RemoveTransition(i, t),
             Op::UpdateTransition(i, a, b) => Op::UpdateTransition(i, b, a),
             Op::RemoveTransition(i, t) => Op::AddTransition(i, t),
+            Op::SetInternal(i, internal) => Op::SetInternal(i, !internal),
         }
     }
 }

@@ -417,6 +417,14 @@ impl<C: Context> Graph<C> {
         }
     }
 
+    pub fn set_internal(&mut self, i: Tdx, internal: bool) {
+        let i0 = self.graph[i].internal;
+        if internal != i0 {
+            self.add_undo(Op::SetInternal(i, internal));
+            self.graph[i].internal = internal;
+        }
+    }
+
     // TODO: check root? validation?
     pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<Edge<C::Transition>>) -> Tdx {
         let t = t.into();
@@ -555,7 +563,15 @@ impl<C: Context> Graph<C> {
                 .ok_or_else(|| format!("cycle in path for {:?}", i))?;
         }
 
-        // Check all internal transitions are self-transitions?
+        // Check all internal transitions are self-transitions.
+        for edge in self.graph.edge_references() {
+            if edge.source() == edge.target() && edge.weight().internal {
+                return Err(format!(
+                    "internal transition is not a self-transition {:?}",
+                    edge.id()
+                ));
+            }
+        }
 
         // Active exists/valid? Needs to be in Statechart.
         Ok(())

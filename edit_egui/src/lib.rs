@@ -136,6 +136,7 @@ pub enum Command {
     SetEnter,
     SetExit,
     SetGuard,
+    SetInternal(transit::Tdx, bool),
     UpdateSelection(Selection),
 }
 
@@ -505,6 +506,7 @@ impl Statechart<EditContext> {
                         _ => self.graph.set_initial(idx, initial.step()),
                     }
                 }
+                Command::SetInternal(tdx, internal) => self.graph.set_internal(tdx, internal),
                 _ => println!("unhandled command: {:?}", c),
             }
         }
@@ -1413,8 +1415,6 @@ impl Statechart<EditContext> {
         let control_size = if selected { 8.0 } else { 6.0 };
         let control_size_sq = Vec2::splat(control_size);
 
-        // draw curve, label, guard, internal toggle ----
-
         // Set curve points based on the transition drag state.
         let (start, c1, c2, end) = match conn {
             Connection::Transition(tdx, t, _, ref drag) => {
@@ -1465,7 +1465,8 @@ impl Statechart<EditContext> {
         ui.painter().add(bezier);
 
         match conn {
-            Connection::Transition(tdx, t, _internal, drag) => {
+            Connection::Transition(tdx, t, internal, drag) => {
+                // Pass these in?
                 let endpoints = self.graph.endpoints(tdx).unwrap();
 
                 // Show source control. Maybe only if selected?
@@ -1526,13 +1527,13 @@ impl Statechart<EditContext> {
                     }
                 }
 
-                // Show id, guard, internal...
                 let rect = Rect::from_center_size(
                     bezier.sample(0.5),
                     // What width?
                     Vec2::new(128.0, ui.style().spacing.interact_size.y),
                 );
 
+                // Show id, guard, internal...
                 ui.allocate_ui_at_rect(rect, |ui| {
                     let _response = ui
                         .horizontal(|ui| {
@@ -1542,6 +1543,18 @@ impl Statechart<EditContext> {
                                 Editabel::sense(Sense::click_and_drag()).show(tid, ui);
                             if let Some(id) = inner {
                                 commands.push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
+                            }
+
+                            if ui.small_button("guard").clicked() {
+                                dbg!("clicked guard");
+                            };
+
+                            // Self-transition, internal checkbox.
+                            if endpoints.0 == endpoints.1 {
+                                let mut internal = internal;
+                                if ui.checkbox(&mut internal, "int.").clicked() {
+                                    commands.push(Command::SetInternal(tdx, internal));
+                                }
                             }
 
                             // Context menu on right click.
