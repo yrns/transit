@@ -241,6 +241,11 @@ impl<C: Context> Graph<C> {
         self.graph.node_weight(i).map(|s| &s.state)
     }
 
+    /// Returns an iterator over all states.
+    pub fn states(&self) -> impl Iterator<Item = (Idx, &C::State)> {
+        self.graph.node_references().map(|(i, n)| (i, &n.state))
+    }
+
     /// Returns a transition reference for index.
     pub fn transition(&self, i: Tdx) -> Option<&C::Transition> {
         self.graph.edge_weight(i).map(|t| &t.transition)

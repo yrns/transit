@@ -5,9 +5,11 @@ use editabel::Editabel;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
 use eframe::epaint::RectShape;
+use search::SearchBox;
 use transit::{ExportError, ImportError};
 
 mod editabel;
+mod search;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
@@ -341,6 +343,7 @@ pub struct EditData {
     rects: Rects,
     drag: Drag,
     commands: Vec<Command>,
+    search: SearchBox,
 }
 
 // The drag variants don't need writable access to the drag state. Rename drag variants to New*?
@@ -517,7 +520,8 @@ impl Statechart<EditContext> {
         ui.allocate_rect(rect, Sense::hover());
 
         // Toggle debug.
-        if ui.input().key_pressed(Key::D) {
+        let focus = ui.memory().focus();
+        if focus.is_none() && ui.input().key_pressed(Key::D) {
             ui.ctx().set_debug_on_hover(!ui.ctx().debug_on_hover());
             ui.style_mut().debug.show_blocking_widget = true;
             ui.style_mut().debug.show_interactive_widgets = true;
@@ -531,6 +535,32 @@ impl Statechart<EditContext> {
             data
         });
         let mut edit_data = edit_data.lock().unwrap();
+
+        // Search states, transitions, code?
+        let focus_search = if focus.is_none() && ui.input().key_pressed(Key::S) {
+            edit_data.search.visible = true;
+            true
+        } else {
+            false
+        };
+
+        if edit_data.search.visible {
+            let result = Area::new("search")
+                .order(Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    edit_data.search.show(focus_search, self.graph.states(), ui)
+                })
+                .inner;
+            match result {
+                Some(idx) => {
+                    edit_data
+                        .commands
+                        .push(Command::UpdateSelection(Selection::State(idx)));
+                    edit_data.search.visible = false;
+                }
+                _ => (),
+            }
+        }
 
         // Show root and recursively show children.
         self.show_state(self.graph.root, rect.min.to_vec2(), 0, &mut edit_data, ui);
@@ -706,6 +736,7 @@ impl Statechart<EditContext> {
             rects,
             drag,
             commands,
+            ..
         } = &mut *edit_data;
 
         // Show all transitions.
