@@ -24,6 +24,7 @@ pub enum Selection {
 #[derive(Default)]
 pub struct Statechart<C: transit::Context> {
     pub path: Option<std::path::PathBuf>,
+    pub source_path: Option<std::path::PathBuf>,
     //statechart: transit::Statechart<C>,
     #[serde(skip)]
     pub graph: transit::Graph<C>,
@@ -140,6 +141,7 @@ pub enum Command {
     SetGuard,
     SetInternal(transit::Tdx, bool),
     UpdateSelection(Selection),
+    SelectSourcePath(std::path::PathBuf),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -510,6 +512,10 @@ impl Statechart<EditContext> {
                     }
                 }
                 Command::SetInternal(tdx, internal) => self.graph.set_internal(tdx, internal),
+                Command::SelectSourcePath(p) => {
+                    // TODO undo?
+                    self.source_path = Some(p);
+                }
                 _ => println!("unhandled command: {:?}", c),
             }
         }
@@ -1236,6 +1242,22 @@ impl Statechart<EditContext> {
 
             // node index for debugging...
             ui.label(format!("({})", idx.index()));
+
+            // Show source file in the root state.
+            if root {
+                let response = ui.small_button("source");
+                if response.clicked() {
+                    if let Ok(Some(p)) = native_dialog::FileDialog::new()
+                        .add_filter("janet", &["janet"])
+                        .show_open_single_file()
+                    {
+                        edit_data.commands.push(Command::SelectSourcePath(p));
+                    }
+                }
+                if let Some(p) = &self.source_path {
+                    response.on_hover_text_at_pointer(p.display().to_string());
+                }
+            }
         })
     }
 
