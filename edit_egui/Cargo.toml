@@ -13,8 +13,9 @@ serde = ["dep:serde", "eframe/persistence"]
 transit = { path = ".." }
 # need to make a separate crate for the bin to have differing deps
 #egui = "0.19.0"
-#eframe = "0.19.0"
 eframe = { version = "0.1.0", path = "eframe-dynamic", package = "eframe-dynamic" }
+#eframe = { version = "0.20.1", default-features = false, features = ["default_fonts", "wgpu"] }
+native-dialog = "0.6.0"
 serde = { version = "1", optional = true, features = ["derive"] }
 nohash-hasher = "0.2.0"
 

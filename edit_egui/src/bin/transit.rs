@@ -1,5 +1,5 @@
 use edit_egui::*;
-use eframe::{egui, rfd};
+use eframe::egui;
 
 // TODO wasm https://github.com/emilk/eframe_template
 
@@ -40,11 +40,12 @@ impl Transit {
         }
     }
 
+    // TODO: errors
     fn file_save_as(&mut self) {
-        if let Some(p) = rfd::FileDialog::new()
-            .set_file_name(&self.statechart.id())
+        if let Ok(Some(p)) = native_dialog::FileDialog::new()
+            .set_filename(&self.statechart.id())
             .add_filter("ron", &["ron"])
-            .save_file()
+            .show_save_single_file()
         {
             println!("saving to {:?}", p);
             self.statechart.path = Some(p);
@@ -59,10 +60,11 @@ impl Transit {
         }
     }
 
+    // TODO: errors
     fn file_open(&mut self) {
-        if let Some(p) = rfd::FileDialog::new()
+        if let Ok(Some(p)) = native_dialog::FileDialog::new()
             .add_filter("ron", &["ron"])
-            .pick_file()
+            .show_open_single_file()
         {
             self.statechart = Default::default();
             self.statechart.path = Some(p);
