@@ -345,7 +345,7 @@ pub struct EditData {
     rects: Rects,
     drag: Drag,
     commands: Vec<Command>,
-    search: SearchBox,
+    search: SearchBox<transit::Idx>,
 }
 
 // The drag variants don't need writable access to the drag state. Rename drag variants to New*?
