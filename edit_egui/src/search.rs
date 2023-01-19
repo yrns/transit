@@ -27,53 +27,66 @@ where
         U: Matches<T>,
         I: Iterator<Item = U>,
     {
+        if set_focus {
+            self.visible = true;
+        }
+
+        if !self.visible {
+            return None;
+        }
+
         let mut selected = None;
 
-        Frame::popup(ui.style()).show(ui, |ui| {
-            ui.vertical(|ui| {
-                let response = ui.text_edit_singleline(&mut self.query);
-                if set_focus {
-                    response.request_focus();
-                }
-
-                if response.changed {
-                    self.results.clear();
-
-                    for i in iter {
-                        if let Some(result) = i.matches(
-                            self.query.as_str(),
-                            // This should match the current style:
-                            TextFormat::default(),
-                            ui.style().visuals.code_bg_color,
-                        ) {
-                            self.results.push(result);
+        // Split search box and completions?
+        Area::new("search")
+            .order(Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        let response = ui.text_edit_singleline(&mut self.query);
+                        if set_focus {
+                            response.request_focus();
                         }
-                    }
-                }
 
-                let _submit = if response.lost_focus() {
-                    if ui.input().key_down(Key::Escape) {
-                        self.visible = false;
-                        return;
-                    }
-                    ui.input().key_down(Key::Enter)
-                } else {
-                    false
-                };
+                        if response.changed {
+                            self.results.clear();
 
-                Frame::default().show(ui, |ui| {
-                    ScrollArea::vertical().show(ui, |ui| {
-                        for (i, result) in self.results.iter() {
-                            // clone?
-                            if ui.selectable_label(false, result.clone()).clicked() {
-                                selected = Some(i.clone());
-                                return;
+                            for i in iter {
+                                if let Some(result) = i.matches(
+                                    self.query.as_str(),
+                                    // This should match the current style:
+                                    TextFormat::default(),
+                                    ui.style().visuals.code_bg_color,
+                                ) {
+                                    self.results.push(result);
+                                }
                             }
                         }
+
+                        let _submit = if response.lost_focus() {
+                            if ui.input().key_down(Key::Escape) {
+                                self.visible = false;
+                                return;
+                            }
+                            ui.input().key_down(Key::Enter)
+                        } else {
+                            false
+                        };
+
+                        Frame::default().show(ui, |ui| {
+                            ScrollArea::vertical().show(ui, |ui| {
+                                for (i, result) in self.results.iter() {
+                                    // clone?
+                                    if ui.selectable_label(false, result.clone()).clicked() {
+                                        selected = Some(i.clone());
+                                        return;
+                                    }
+                                }
+                            });
+                        });
                     });
                 });
             });
-        });
 
         selected
     }

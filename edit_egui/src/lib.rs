@@ -543,29 +543,18 @@ impl Statechart<EditContext> {
         let mut edit_data = edit_data.lock().unwrap();
 
         // Search states, transitions, code?
-        let focus_search = if focus.is_none() && ui.input().key_pressed(Key::S) {
-            edit_data.search.visible = true;
-            true
-        } else {
-            false
-        };
-
-        if edit_data.search.visible {
-            let result = Area::new("search")
-                .order(Order::Foreground)
-                .show(ui.ctx(), |ui| {
-                    edit_data.search.show(focus_search, self.graph.states(), ui)
-                })
-                .inner;
-            match result {
-                Some(idx) => {
-                    edit_data
-                        .commands
-                        .push(Command::UpdateSelection(Selection::State(idx)));
-                    edit_data.search.visible = false;
-                }
-                _ => (),
+        match edit_data.search.show(
+            focus.is_none() && ui.input().key_pressed(Key::S),
+            self.graph.states(),
+            ui,
+        ) {
+            Some(idx) => {
+                edit_data
+                    .commands
+                    .push(Command::UpdateSelection(Selection::State(idx)));
+                edit_data.search.visible = false;
             }
+            _ => (),
         }
 
         // Show root and recursively show children.
