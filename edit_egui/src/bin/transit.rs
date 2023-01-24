@@ -1,4 +1,4 @@
-use edit_egui::*;
+use edit_egui::{source::*, *};
 use eframe::egui;
 
 // TODO wasm https://github.com/emilk/eframe_template
@@ -34,6 +34,12 @@ impl Transit {
                 eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             // This imports the graph from the last saved path.
             load(&mut transit.statechart);
+            // Start watching source path.
+            transit.statechart.source = transit
+                .statechart
+                .source_path
+                .as_ref()
+                .map(|p| Source::new(p));
             transit
         } else {
             Self::default()
@@ -87,6 +93,11 @@ impl eframe::App for Transit {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Need unique ids for each open statechart.
         let mut clear_state = false;
+
+        // Check for updates to the source.
+        if let Some(ref mut source) = self.statechart.source {
+            source.update();
+        }
 
         #[cfg(not(target_arch = "wasm32"))]
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {

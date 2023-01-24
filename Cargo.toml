@@ -11,7 +11,7 @@ default = []
 #edit = ["egui_egui"]
 
 [workspace]
-members = ["edit_egui"]
+members = ["edit_egui", "janet"]
 
 [dependencies]
 petgraph = { version = "0.6", features = ["serde-1"] }

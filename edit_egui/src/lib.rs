@@ -6,10 +6,12 @@ use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
 use eframe::epaint::RectShape;
 use search::SearchBox;
+use source::Source;
 use transit::{ExportError, ImportError};
 
 mod editabel;
 mod search;
+pub mod source;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
@@ -20,11 +22,14 @@ pub enum Selection {
     Transition(transit::Tdx),
 }
 
+// Rename Edit?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
 pub struct Statechart<C: transit::Context> {
     pub path: Option<std::path::PathBuf>,
     pub source_path: Option<std::path::PathBuf>,
+    #[serde(skip)]
+    pub source: Option<source::Source>,
     //statechart: transit::Statechart<C>,
     #[serde(skip)]
     pub graph: transit::Graph<C>,
@@ -346,6 +351,7 @@ pub struct EditData {
     drag: Drag,
     commands: Vec<Command>,
     search: SearchBox<transit::Idx>,
+    symbols: SearchBox<String>,
 }
 
 // The drag variants don't need writable access to the drag state. Rename drag variants to New*?
@@ -514,6 +520,7 @@ impl Statechart<EditContext> {
                 Command::SetInternal(tdx, internal) => self.graph.set_internal(tdx, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
+                    self.source = Some(Source::new(&p));
                     self.source_path = Some(p);
                 }
                 _ => println!("unhandled command: {:?}", c),
@@ -552,7 +559,6 @@ impl Statechart<EditContext> {
                 edit_data
                     .commands
                     .push(Command::UpdateSelection(Selection::State(idx)));
-                edit_data.search.visible = false;
             }
             _ => (),
         }
@@ -1222,9 +1228,38 @@ impl Statechart<EditContext> {
 
             // hover should show source/location by name? click to
             // select fns from source?
-            if ui.small_button("enter").clicked() {
-                dbg!("clicked enter");
+            let enter_response = ui.small_button("enter");
+            if enter_response.clicked_by(PointerButton::Primary) {
+                // jump to source location for symbol
+            }
+
+            // Move to pointer.
+            let set_focus = if enter_response.clicked_by(PointerButton::Secondary) {
+                edit_data.symbols.position = ui.ctx().pointer_interact_pos();
+                true
+            } else {
+                false
             };
+
+            if let Some(symbols) = self
+                .source
+                .as_ref()
+                .and_then(|source| source.symbols.as_ref())
+            {
+                match edit_data
+                    .symbols
+                    .show(set_focus, symbols.keys().cloned(), ui)
+                {
+                    Some(_symbol) => {
+                        // edit_data
+                        //     .commands
+                        //     .push(Command::UpdateSelection(Selection::State(idx)));
+                    }
+                    _ => (),
+                }
+            }; // else error on click?
+            enter_response.on_hover_text("enter source location");
+
             if ui.small_button("exit").clicked() {
                 dbg!("clicked exit");
             }

@@ -4,8 +4,9 @@ use transit::Idx;
 
 #[derive(Default)]
 pub struct SearchBox<T> {
-    pub visible: bool,
+    pub parent_id: Option<Id>,
     pub query: String,
+    pub position: Option<Pos2>,
     pub results: Vec<(T, LayoutJob)>,
 }
 
@@ -20,7 +21,7 @@ pub trait Matches<T> {
 
 impl<T> SearchBox<T>
 where
-    T: Clone,
+    T: Clone + std::fmt::Debug,
 {
     pub fn show<'a, U, I>(&mut self, set_focus: bool, iter: I, ui: &mut Ui) -> Option<T>
     where
@@ -28,65 +29,70 @@ where
         I: Iterator<Item = U>,
     {
         if set_focus {
-            self.visible = true;
-        }
-
-        if !self.visible {
+            self.parent_id = Some(ui.id());
+        } else if self.parent_id != Some(ui.id()) {
             return None;
         }
 
         let mut selected = None;
 
         // Split search box and completions?
-        Area::new("search")
-            .order(Order::Foreground)
-            .show(ui.ctx(), |ui| {
-                Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        let response = ui.text_edit_singleline(&mut self.query);
-                        if set_focus {
-                            response.request_focus();
-                        }
+        let area = Area::new(ui.id().with("search")).order(Order::Foreground);
 
-                        if response.changed {
-                            self.results.clear();
+        let area = if let Some(p) = self.position {
+            area.current_pos(p)
+        } else {
+            area
+        };
 
-                            for i in iter {
-                                if let Some(result) = i.matches(
-                                    self.query.as_str(),
-                                    // This should match the current style:
-                                    TextFormat::default(),
-                                    ui.style().visuals.code_bg_color,
-                                ) {
-                                    self.results.push(result);
-                                }
+        area.show(ui.ctx(), |ui| {
+            Frame::popup(ui.style()).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    let response = ui.text_edit_singleline(&mut self.query);
+                    if set_focus {
+                        response.request_focus();
+                    }
+
+                    if response.changed {
+                        self.results.clear();
+
+                        for i in iter {
+                            if let Some(result) = i.matches(
+                                self.query.as_str(),
+                                // This should match the current style:
+                                TextFormat::default(),
+                                ui.style().visuals.code_bg_color,
+                            ) {
+                                self.results.push(result);
                             }
                         }
+                    }
 
-                        let _submit = if response.lost_focus() {
-                            if ui.input().key_down(Key::Escape) {
-                                self.visible = false;
-                                return;
-                            }
-                            ui.input().key_down(Key::Enter)
-                        } else {
-                            false
-                        };
+                    let _submit = if response.lost_focus() {
+                        if ui.input().key_down(Key::Escape) {
+                            self.parent_id = None;
+                            return;
+                        }
+                        ui.input().key_down(Key::Enter)
+                    } else {
+                        false
+                    };
 
-                        Frame::default().show(ui, |ui| {
-                            ScrollArea::vertical().show(ui, |ui| {
-                                for (i, result) in self.results.iter() {
-                                    // clone?
-                                    if ui.selectable_label(false, result.clone()).clicked() {
-                                        selected = Some(i.clone());
-                                        return;
-                                    }
+                    Frame::default().show(ui, |ui| {
+                        ScrollArea::vertical().show(ui, |ui| {
+                            for (i, result) in self.results.iter() {
+                                // clone?
+                                if ui.selectable_label(false, result.clone()).clicked() {
+                                    selected = Some(i.clone());
+                                    self.parent_id = None;
+                                    return;
                                 }
-                            });
+                            }
                         });
                     });
                 });
             });
+        });
 
         selected
     }
@@ -126,5 +132,16 @@ impl<'a> Matches<Idx> for (Idx, &'a State) {
         match_color: Color32,
     ) -> Option<(Idx, LayoutJob)> {
         match_layout(&self.1.id, query, text_format, match_color).map(|a| (self.0, a))
+    }
+}
+
+impl<'a> Matches<String> for String {
+    fn matches(
+        &self,
+        query: &str,
+        text_format: TextFormat,
+        match_color: Color32,
+    ) -> Option<(String, LayoutJob)> {
+        match_layout(self, query, text_format, match_color).map(|a| (self.clone(), a))
     }
 }
