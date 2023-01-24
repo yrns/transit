@@ -9,10 +9,8 @@ pub type SymbolMap = HashMap<String, (String, usize, usize)>;
 pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
     let client = JanetClient::init_with_default_env()?;
 
-    // let syspath = std::env::current_dir()
-    //     .map(|cd| format!(r#"(setdyn :syspath "{}")"#, cd.display()))
-    //     .unwrap_or_default();
-
+    // Set the system path to the specified path's directory and drop the extension from the file
+    // name. Janet interprets a leading "/" as relative, full paths don't work.
     let path = path.as_ref();
     if let (Some(parent), Some(stem)) = (path.parent(), path.file_stem()) {
         // Requiring a module returns a table w/ symbols. TODO escape? use parser instead?
