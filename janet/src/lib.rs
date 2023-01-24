@@ -80,11 +80,8 @@ mod tests {
                 .remove("a-symbol")
                 .unwrap(),
             (
-                Path::new("./test/symbols.janet")
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string(),
+                // If the specified path is relative, the returned paths will be, too.
+                "test/symbols.janet".to_owned(),
                 1,
                 1
             )
