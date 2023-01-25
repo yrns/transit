@@ -1,10 +1,8 @@
-///! this is a door
-use rustyline::error::ReadlineError;
 use serde::{Deserialize, Serialize};
-use transit::{Context, Graph, Internal, State, Statechart, Transition};
+use transit::*;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct HitPoints {
+pub struct HitPoints {
     current: f32,
     max: f32,
 }
@@ -19,19 +17,19 @@ impl Default for HitPoints {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-struct Door {
+pub struct Door {
     hit_points: HitPoints,
     key: String,
     attempts: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct Attack {
-    damage: f32,
+pub struct Attack {
+    pub damage: f32,
 }
 
 #[derive(Debug)]
-enum DoorEvent {
+pub enum DoorEvent {
     Lock(Option<String>),
     Unlock(Option<String>),
     Open,
@@ -57,8 +55,8 @@ impl Context for Door {
 }
 
 // The default is only used for the root state.
-#[derive(Clone, Debug, Default)]
-enum DoorState {
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub enum DoorState {
     #[default]
     None,
     Intact,
@@ -98,8 +96,8 @@ impl State<Door> for DoorState {
     }
 }
 
-#[derive(Clone)]
-struct BashGuard;
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BashGuard;
 
 impl Transition<Door> for BashGuard {
     fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
@@ -119,8 +117,8 @@ impl Transition<Door> for BashGuard {
     }
 }
 
-#[derive(Clone)]
-struct BashGuardSelf;
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BashGuardSelf;
 
 // If the hp would be reduced to zero, let the other bash_guard
 // transition work. In general we don't want to mutate state in
@@ -154,8 +152,8 @@ impl Transition<Door> for BashGuardSelf {
     }
 }
 
-#[derive(Clone)]
-struct LockGuard {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LockGuard {
     key: String,
 }
 
@@ -175,8 +173,8 @@ impl Transition<Door> for LockGuard {
     }
 }
 
-#[derive(Clone)]
-struct UnlockGuard {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct UnlockGuard {
     key: String,
 }
 
@@ -197,8 +195,8 @@ impl Transition<Door> for UnlockGuard {
     }
 }
 
-#[derive(Clone)]
-struct OpenGuard;
+#[derive(Serialize, Deserialize, Clone)]
+pub struct OpenGuard;
 
 impl Transition<Door> for OpenGuard {
     fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
@@ -209,8 +207,8 @@ impl Transition<Door> for OpenGuard {
     }
 }
 
-#[derive(Clone)]
-struct CloseGuard;
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CloseGuard;
 
 impl Transition<Door> for CloseGuard {
     fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
@@ -223,8 +221,8 @@ impl Transition<Door> for CloseGuard {
 
 // We can't easily clone Box<dyn Transition> so just dispatch on an
 // enum.
-#[derive(Clone)]
-enum DoorGuard {
+#[derive(Serialize, Deserialize, Clone)]
+pub enum DoorGuard {
     Bash(BashGuard),
     BashSelf(BashGuardSelf),
     Lock(LockGuard),
@@ -246,69 +244,7 @@ impl Transition<Door> for DoorGuard {
     }
 }
 
-fn main() {
-    let mut door = mk_door();
-
-    // this does nothing
-    door.run();
-
-    // TODO: start over make reset work and fix history reset
-    println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
-
-    let mut rl = rustyline::Editor::<()>::new();
-
-    loop {
-        //println!("the door is: {}", door.active());
-        let readline = rl.readline(">> ");
-        match readline {
-            Ok(line) => match line.trim_start().chars().next() {
-                Some(c) => {
-                    let event = match c {
-                        'o' => Some(DoorEvent::Open),
-                        'c' => Some(DoorEvent::Close),
-                        'l' => Some(DoorEvent::Lock(Some("the right key".to_string()))),
-                        'u' => Some(DoorEvent::Unlock(Some("the right key".to_string()))),
-                        'b' => Some(DoorEvent::Bash(Attack { damage: 40. })),
-                        'q' => break,
-                        _ => {
-                            println!("Try again.");
-                            None
-                        }
-                    };
-                    if let Some(event) = event {
-                        let res = door.transition(event);
-                        if !res {
-                            //dbg!(_e);
-                            println!(
-                                "That didn't work. The door is {}.",
-                                door.graph.state(door.active).unwrap()
-                            );
-                        }
-                    }
-                }
-                _ => println!("Excuse me?"),
-            },
-            Err(ReadlineError::Interrupted) => {
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                break;
-            }
-            Err(e) => println!("Error: {:?}", e),
-        }
-    }
-}
-
-fn mk_door() -> Statechart<Door> {
-    let door = Door {
-        hit_points: HitPoints {
-            current: 100.,
-            max: 100.,
-        },
-        key: "the right key".to_string(),
-        attempts: 0,
-    };
-
+pub fn make_graph() -> Graph<Door> {
     let mut g = Graph::new();
 
     let intact = g.add_state(DoorState::Intact, None);
@@ -352,5 +288,24 @@ fn mk_door() -> Statechart<Door> {
         }),
     );
 
-    Statechart::new(g, door)
+    g
+}
+
+pub fn make_door() -> Statechart<Door> {
+    let door = Door {
+        hit_points: HitPoints {
+            current: 100.,
+            max: 100.,
+        },
+        key: "the right key".to_string(),
+        attempts: 0,
+    };
+
+    Statechart::new(make_graph(), door)
+}
+
+#[test]
+fn export() {
+    let g = make_graph();
+    g.export_to_file("door.ron").unwrap();
 }

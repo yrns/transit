@@ -23,6 +23,10 @@ thiserror = "1.0.37"
 # for druid::Data?
 #druid = { version = "0.7.0", optional = true }
 
+[[example]]
+name = "text"
+test = true
+
 [dev-dependencies]
 rustyline = "6.0.0"
 #serde_traitobject = "0.2.4"

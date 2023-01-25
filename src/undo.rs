@@ -4,66 +4,65 @@ use crate::*;
 pub type TOp<T> = (Idx, Idx, Edge<T>);
 
 #[derive(Clone)]
-pub enum Op<C: Context> {
-    AddState(Idx, Node<C>),
-    UpdateState(Idx, Node<C>, Node<C>),
-    RemoveState(Idx, Node<C>),
-    AddTransition(Tdx, TOp<C::Transition>),
-    UpdateTransition(Tdx, TOp<C::Transition>, TOp<C::Transition>),
-    RemoveTransition(Tdx, TOp<C::Transition>),
+pub enum Op<S, T> {
+    AddState(Idx, Node<S>),
+    UpdateState(Idx, Node<S>, Node<S>),
+    RemoveState(Idx, Node<S>),
+    AddTransition(Tdx, TOp<T>),
+    UpdateTransition(Tdx, TOp<T>, TOp<T>),
+    RemoveTransition(Tdx, TOp<T>),
     SetInternal(Tdx, bool),
     // For grouping state removals with transitions?
     //Transaction(Vec<Op<C>>),
 }
 
-impl<C: Context> Op<C> {
-    // TODO: error handling
-    pub fn undo(&self, g: &mut Graph<C>) {
-        match self {
+// TODO: error handling
+impl<C: Context> Graph<C> {
+    pub fn apply_undo(&mut self, op: &Op<C::State, C::Transition>) {
+        let g = &mut self.graph;
+        match op {
             Op::AddState(i, _s) => {
-                let _s = g
-                    .graph
-                    .remove_node(*i)
-                    .expect("add state op does not exist!");
+                let _s = g.remove_node(*i).expect("add state op does not exist!");
             }
             Op::UpdateState(i, s1, _s2) => {
-                g.graph[*i] = s1.clone();
+                g[*i] = s1.clone();
             }
             // The index may be different which may be a problem? Do
             // we need ghost states to save indices from the history?
             Op::RemoveState(i, s) => {
-                let i2 = g.graph.add_node(s.clone());
+                let i2 = g.add_node(s.clone());
                 if *i != i2 {
                     dbg!(i, i2);
                 }
             }
             Op::AddTransition(i, _t) => {
                 let _t = g
-                    .graph
                     .remove_edge(*i)
                     .expect("add transition op does not exist!");
             }
             Op::UpdateTransition(i, (a, b, t1), _) => {
-                g.graph[*i] = t1.clone();
-                let _ = g.move_transition_internal(*i, *a, *b);
+                g[*i] = t1.clone();
+                let _ = self.move_transition_internal(*i, *a, *b);
             }
             Op::RemoveTransition(i, (a, b, t)) => {
-                let i2 = g.graph.add_edge(*a, *b, t.clone());
+                let i2 = g.add_edge(*a, *b, t.clone());
                 if *i != i2 {
                     dbg!(i, i2);
                 }
             }
             Op::SetInternal(i, internal) => {
-                g.graph[*i].internal = !internal;
+                g[*i].internal = !internal;
             }
         }
     }
 
-    pub fn redo(&self, g: &mut Graph<C>) {
-        self.clone().rev().undo(g)
+    pub fn apply_redo(&mut self, op: &Op<C::State, C::Transition>) {
+        self.apply_undo(&op.clone().rev())
     }
+}
 
-    pub fn rev(self) -> Op<C> {
+impl<S, T> Op<S, T> {
+    pub fn rev(self) -> Self {
         match self {
             Op::AddState(i, s) => Op::RemoveState(i, s),
             Op::UpdateState(i, s1, s2) => Op::UpdateState(i, s2, s1),
@@ -76,17 +75,27 @@ impl<C: Context> Op<C> {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct Undo<C: Context> {
-    undos: Vec<Op<C>>,
-    redos: Vec<Op<C>>,
+#[derive(Clone)]
+pub struct Undo<S, T> {
+    undos: Vec<Op<S, T>>,
+    redos: Vec<Op<S, T>>,
     //in_undo: bool,
+}
+
+// Only need this for skipping serialization.
+impl<S, T> Default for Undo<S, T> {
+    fn default() -> Self {
+        Self {
+            undos: Vec::new(),
+            redos: Vec::new(),
+        }
+    }
 }
 
 impl<C: Context> Graph<C> {
     pub fn undo(&mut self) -> bool {
         if let Some(op) = self.undo.undos.pop() {
-            op.undo(self);
+            self.apply_undo(&op);
             self.undo.redos.push(op);
             true
         } else {
@@ -99,7 +108,7 @@ impl<C: Context> Graph<C> {
             .redos
             .pop()
             .map(|op| {
-                op.redo(self);
+                self.apply_redo(&op);
                 self.undo.undos.push(op);
             })
             .is_some()
@@ -109,7 +118,7 @@ impl<C: Context> Graph<C> {
     /// history, we want to preserve them by moving them into the undo
     /// stack, followed by corresponding undos to revert them. Then we
     /// add the new undo at the end.
-    pub fn add_undo(&mut self, undo: Op<C>) {
+    pub fn add_undo(&mut self, undo: Op<C::State, C::Transition>) {
         let redos = std::mem::take(&mut self.undo.redos);
         //let redos = self.undo.redos.drain(..).collect::<Vec<_>>();
 

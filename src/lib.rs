@@ -22,9 +22,9 @@ pub type Tdx = EdgeIndex<u32>;
 /// Both states and transitions require [Clone] for undo/redo operations.
 pub trait Context
 where
-    Self: Sized + Clone + Default,
+    Self: Sized,
 {
-    type Event: std::fmt::Debug;
+    type Event;
     /// The root state uses the default.
     type State: State<Self> + Clone + Default;
     type Transition: Transition<Self> + Clone;
@@ -49,11 +49,11 @@ pub struct Graph<C: Context> {
         serialize = "C::State: Serialize, C::Transition: Serialize",
         deserialize = "C::State: Deserialize<'de>, C::Transition: Deserialize<'de>"
     ))]
-    pub(crate) graph: StableDiGraph<Node<C>, Edge<C::Transition>, u32>,
+    pub(crate) graph: StableDiGraph<Node<C::State>, Edge<C::Transition>, u32>,
     pub root: Idx,
     // Make this an option?
     #[serde(skip_serializing, skip_deserializing)]
-    undo: Undo<C>,
+    undo: Undo<C::State, C::Transition>,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -106,13 +106,10 @@ pub trait State<C: Context> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct Node<C>
-where
-    C: Context,
-{
+pub struct Node<T> {
     pub initial: Initial,
     pub parent: Option<Idx>,
-    pub state: C::State,
+    pub state: T,
 }
 
 /// An internal transition is only valid for self-transitions. The
@@ -275,7 +272,7 @@ impl<C: Context> Graph<C> {
     }
 
     // Once we filter we can't reverse?
-    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &Node<C>)> {
+    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &Node<C::State>)> {
         self.graph
             .node_references()
             .rev()
@@ -607,10 +604,10 @@ where
         Ok(ron::ser::to_string_pretty(&self, Default::default())?)
     }
 
-    pub fn export_to_file(&self, path: &std::path::Path) -> Result<(), ExportError> {
+    pub fn export_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), ExportError> {
         use std::io::Write;
 
-        let mut file = std::fs::File::create(path)?;
+        let mut file = std::fs::File::create(path.as_ref())?;
         file.write_all(self.export()?.as_bytes())?;
         Ok(())
     }
@@ -654,9 +651,7 @@ impl<C: Context> Statechart<C> {
             Initial::Initial(i) => {
                 // recursively find the active state
                 let initial = self.graph.get_initial(i);
-                let mut ctx = self.context.clone();
-                self.transition_to(&mut ctx, initial, None);
-                self.context = ctx;
+                self.transition_to(initial, None);
             }
             Initial::HistoryShallow(_) | Initial::HistoryDeep(_) => {
                 // does this make sense at all?
@@ -673,11 +668,12 @@ impl<C: Context> Statechart<C> {
     // Find a transition out of the active node based on the
     // event. Start with the active state and work through the parent
     // states.
-    fn select(&mut self, ctx: &mut C, event: &C::Event) -> Option<(Idx, bool)> {
+    fn select(&mut self, event: &C::Event) -> Option<(Idx, bool)> {
         let mut path = self.graph.path_walk(self.active);
 
         // Each potential guard can mutate the transition state.
         let g = &mut self.graph;
+        let ctx = &mut self.context;
         while let Some(i) = path.next(g) {
             let mut edges = g.graph.neighbors(i).detach();
             while let Some((edge, next)) = edges.next(&mut g.graph) {
@@ -695,8 +691,8 @@ impl<C: Context> Statechart<C> {
     pub fn transition(&mut self, event: C::Event) -> bool {
         self.context.dispatch(&event);
         // Clone so we can borrow self again.
-        let mut ctx = self.context.clone();
-        let next = self.select(&mut ctx, &event);
+        //let mut ctx = self.context.clone();
+        let next = self.select(&event);
         let res = if let Some((next, internal)) = next {
             dbg!(internal);
             // With an internal transition we don't actually change
@@ -705,7 +701,7 @@ impl<C: Context> Statechart<C> {
             // not a compound state?
             let active = self.active;
             if !internal {
-                self.transition_to(&mut ctx, next, Some(&event));
+                self.transition_to(next, Some(&event));
                 self.context.transition(
                     &self.graph.graph[active].state,
                     &self.graph.graph[next].state,
@@ -715,13 +711,12 @@ impl<C: Context> Statechart<C> {
         } else {
             false
         };
-        self.context = ctx;
         res
     }
 
     // should we be passing new and old state to each action? use Cow?
     // this mutates history when exiting states
-    pub fn transition_to(&mut self, ctx: &mut C, next: Idx, event: Option<&C::Event>) {
+    pub fn transition_to(&mut self, next: Idx, event: Option<&C::Event>) {
         // list of history updates, only applied after the transition
         // succeeds
         let mut h: Vec<(Idx, Idx)> = Vec::new();
@@ -744,8 +739,9 @@ impl<C: Context> Statechart<C> {
             .take_while(not_a)
             .collect::<Vec<_>>();
 
+        // Recursively find initial - this returns next if no initial.
         let initial = self.graph.get_initial(next);
-        assert!(self.graph.is_child(next, initial));
+        assert!(self.graph.in_path(next, initial));
 
         // Path from the common ancestor to the next node (including
         // the initial state).
@@ -756,6 +752,7 @@ impl<C: Context> Statechart<C> {
             .collect::<Vec<_>>();
         p2.reverse();
 
+        let ctx = &mut self.context;
         let g = &mut self.graph.graph;
 
         let mut last = self.active;
@@ -829,12 +826,9 @@ impl PathWalker {
     }
 }
 
-impl<C> Node<C>
-where
-    C: Context,
-{
+impl<T> Node<T> {
     // we can't set initial yet since children don't exist FIX?
-    pub fn new(state: C::State, parent: Option<Idx>) -> Self {
+    pub fn new(state: T, parent: Option<Idx>) -> Self {
         Self {
             state,
             parent,
