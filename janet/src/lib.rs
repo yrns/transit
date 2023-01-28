@@ -1,8 +1,104 @@
 use janetrs::{
     client::{Error, JanetClient},
-    Janet, JanetString, TaggedJanet,
+    Janet, JanetString, JanetSymbol, TaggedJanet,
 };
 use std::{collections::HashMap, path::Path};
+
+pub struct JanetContext {
+    //client: &'a JanetClient,
+    pub context: Janet,
+}
+
+#[derive(Clone, Debug)]
+pub struct State {
+    pub enter: Janet,
+    pub exit: Janet,
+    pub local: Janet,
+}
+
+// Can this be nil instead? This is only used for the root state. Is enter/exit even interesting for
+// root states?
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            enter: Janet::nil(),
+            exit: Janet::nil(),
+            local: Janet::nil(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Transition {
+    pub guard: Janet,
+    pub local: Janet,
+}
+
+impl transit::Context for JanetContext {
+    type Event = Janet;
+    type State = State;
+    type Transition = Transition;
+
+    fn dispatch(&mut self, event: &Janet) {
+        println!("dispatch: event: {:?}", event);
+    }
+
+    fn transition(&mut self, source: &State, target: &State) {
+        println!("transition: source: {:?} target: {:?}", source, target);
+    }
+}
+
+// Resolve a symbol and return the result if it's a function.
+pub fn resolve<'a>(symbol: impl Into<JanetSymbol<'a>>, client: &JanetClient) -> Janet {
+    client
+        .env()
+        .and_then(|env| env.resolve(symbol))
+        .and_then(|value| match value.unwrap() {
+            TaggedJanet::Function(_) => Some(value),
+            _ => None,
+        })
+        .unwrap_or(Janet::nil())
+}
+
+impl transit::State<JanetContext> for State {
+    fn enter(&mut self, ctx: &mut JanetContext, event: Option<&Janet>) {
+        if let TaggedJanet::Function(mut f) = self.enter.unwrap() {
+            match f.call(&[self.local, ctx.context, *event.unwrap_or(&Janet::nil())]) {
+                Ok(_) => (),
+                Err(err) => println!("err in enter: {:?}", err),
+            }
+        }
+    }
+
+    fn exit(&mut self, ctx: &mut JanetContext, event: Option<&Janet>) {
+        if let TaggedJanet::Function(mut f) = self.exit.unwrap() {
+            match f.call(&[self.local, ctx.context, *event.unwrap_or(&Janet::nil())]) {
+                Ok(_) => (),
+                Err(err) => println!("err in enter: {:?}", err),
+            }
+        }
+    }
+}
+
+impl transit::Transition<JanetContext> for Transition {
+    fn guard(&mut self, ctx: &mut JanetContext, event: &Janet) -> bool {
+        if let TaggedJanet::Function(mut f) = self.guard.unwrap() {
+            match f.call(&[self.local, ctx.context, *event]) {
+                Ok(res) => {
+                    println!("guard result: {:?}", res);
+                    !res.is_nil()
+                }
+                Err(err) => {
+                    println!("err in guard: {:?}", err);
+                    false
+                }
+            }
+        } else {
+            println!("no guard");
+            false
+        }
+    }
+}
 
 pub type SymbolMap = HashMap<String, (String, usize, usize)>;
 

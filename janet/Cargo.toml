@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 #janetrs = { version = "0.5.0", features = ["system", "link-system"] }
 janetrs = { git = "ssh://git@github.com/GrayJack/janetrs.git", version = "0.5.0", features = ["amalgation"] }
+transit = { path = ".." }
