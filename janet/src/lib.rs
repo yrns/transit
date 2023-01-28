@@ -1,6 +1,9 @@
+mod from_janet;
+
+use from_janet::FromJanet;
 use janetrs::{
     client::{Error, JanetClient},
-    Janet, JanetString, JanetSymbol, TaggedJanet,
+    Janet, JanetSymbol, TaggedJanet,
 };
 use std::{collections::HashMap, path::Path};
 
@@ -119,47 +122,15 @@ pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
         //dbg!(&query);
 
         let res = client.run(query)?;
-        Ok(convert(res))
+
+        Ok(SymbolMap::from_janet(res)
+            .map_err(|e| {
+                println!("error in SymbolMap::from_janet: {:?}", e);
+                e
+            })
+            .ok())
     } else {
         Ok(None)
-    }
-}
-
-pub fn convert(symbols: Janet) -> Option<SymbolMap> {
-    match symbols.unwrap() {
-        TaggedJanet::Table(table) => {
-            let mut res: SymbolMap = HashMap::new();
-            for (k, v) in table {
-                match (k.unwrap(), v.unwrap()) {
-                    (TaggedJanet::Symbol(k), TaggedJanet::Tuple(v)) => {
-                        match (
-                            v.get(0).unwrap().unwrap(),
-                            v.get(1).unwrap().unwrap(),
-                            v.get(2).unwrap().unwrap(),
-                        ) {
-                            (
-                                TaggedJanet::String(path),
-                                TaggedJanet::Number(line),
-                                TaggedJanet::Number(column),
-                            ) => {
-                                res.insert(
-                                    JanetString::new(k).to_str_lossy().into(),
-                                    (path.to_str_lossy().into(), line as usize, column as usize),
-                                );
-                            }
-                            _ => {
-                                println!("bad value in symbol map: {:?}", v);
-                            }
-                        }
-                    }
-                    _ => {
-                        println!("bad value in symbol map: {:?}: {:?}", k, v);
-                    }
-                }
-            }
-            Some(res)
-        }
-        _ => None,
     }
 }
 
