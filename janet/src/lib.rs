@@ -31,18 +31,37 @@ impl Default for State {
     }
 }
 
+/// Each event has an `id` which must match the transition(s) it corresponds to. This avoids calling
+/// into Janet for every event/transition to see if the guard passes.
+#[derive(Debug)]
+pub struct Event {
+    id: String, // TODO: make id generic?
+    value: Janet,
+}
+
 #[derive(Clone, Debug)]
 pub struct Transition {
+    pub id: String,
     pub guard: Janet,
     pub local: Janet,
 }
 
+impl Transition {
+    pub fn from_str(symbol: &str, client: &JanetClient, local: Janet) -> Self {
+        Self {
+            id: symbol.into(),
+            guard: resolve(symbol, client),
+            local,
+        }
+    }
+}
+
 impl transit::Context for JanetContext {
-    type Event = Janet;
+    type Event = Event;
     type State = State;
     type Transition = Transition;
 
-    fn dispatch(&mut self, event: &Janet) {
+    fn dispatch(&mut self, event: &Event) {
         println!("dispatch: event: {:?}", event);
     }
 
@@ -64,18 +83,26 @@ pub fn resolve<'a>(symbol: impl Into<JanetSymbol<'a>>, client: &JanetClient) -> 
 }
 
 impl transit::State<JanetContext> for State {
-    fn enter(&mut self, ctx: &mut JanetContext, event: Option<&Janet>) {
+    fn enter(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
         if let TaggedJanet::Function(mut f) = self.enter.unwrap() {
-            match f.call(&[self.local, ctx.context, *event.unwrap_or(&Janet::nil())]) {
+            match f.call(&[
+                self.local,
+                ctx.context,
+                *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
+            ]) {
                 Ok(_) => (),
                 Err(err) => println!("err in enter: {:?}", err),
             }
         }
     }
 
-    fn exit(&mut self, ctx: &mut JanetContext, event: Option<&Janet>) {
+    fn exit(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
         if let TaggedJanet::Function(mut f) = self.exit.unwrap() {
-            match f.call(&[self.local, ctx.context, *event.unwrap_or(&Janet::nil())]) {
+            match f.call(&[
+                self.local,
+                ctx.context,
+                *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
+            ]) {
                 Ok(_) => (),
                 Err(err) => println!("err in enter: {:?}", err),
             }
@@ -84,20 +111,25 @@ impl transit::State<JanetContext> for State {
 }
 
 impl transit::Transition<JanetContext> for Transition {
-    fn guard(&mut self, ctx: &mut JanetContext, event: &Janet) -> bool {
-        if let TaggedJanet::Function(mut f) = self.guard.unwrap() {
-            match f.call(&[self.local, ctx.context, *event]) {
-                Ok(res) => {
-                    println!("guard result: {:?}", res);
-                    !res.is_nil()
+    fn guard(&mut self, ctx: &mut JanetContext, event: &Event) -> bool {
+        if event.id == self.id {
+            let value = event.value;
+            if let TaggedJanet::Function(mut f) = self.guard.unwrap() {
+                match f.call(&[self.local, ctx.context, value]) {
+                    Ok(res) => {
+                        println!("guard result: {:?}", res);
+                        !res.is_nil()
+                    }
+                    Err(err) => {
+                        println!("err in guard: {:?}", err);
+                        false
+                    }
                 }
-                Err(err) => {
-                    println!("err in guard: {:?}", err);
-                    false
-                }
+            } else {
+                println!("no guard");
+                false
             }
         } else {
-            println!("no guard");
             false
         }
     }
