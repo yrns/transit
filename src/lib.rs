@@ -132,22 +132,6 @@ impl<T> From<T> for Edge<T> {
     }
 }
 
-pub trait Internal
-where
-    Self: Sized,
-{
-    fn internal(self) -> Edge<Self>;
-}
-
-impl<T> Internal for T {
-    fn internal(self) -> Edge<T> {
-        Edge {
-            transition: self,
-            internal: true,
-        }
-    }
-}
-
 pub trait Transition<C: Context> {
     fn guard(&mut self, ctx: &mut C, event: &C::Event) -> bool;
     //fn action(&mut self); ???

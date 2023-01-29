@@ -1,3 +1,5 @@
+//! A door as statechart.
+
 use serde::{Deserialize, Serialize};
 use transit::*;
 
@@ -16,7 +18,7 @@ impl Default for HitPoints {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Door {
     hit_points: HitPoints,
     key: String,
@@ -260,13 +262,10 @@ pub fn make_graph() -> Graph<Door> {
 
     g.add_transition(intact, destroyed, DoorGuard::Bash(BashGuard {}));
 
-    g.add_transition(
-        intact,
-        intact,
-        // Internal transition -- the guard mutates the context but
-        // does not transition.
-        DoorGuard::BashSelf(BashGuardSelf {}).internal(),
-    );
+    let bash = g.add_transition(intact, intact, DoorGuard::BashSelf(BashGuardSelf {}));
+
+    // Internal transition -- the guard mutates the context but does not transition.
+    g.set_internal(bash, true);
 
     g.add_transition(
         locked,
@@ -307,5 +306,5 @@ pub fn make_door() -> Statechart<Door> {
 #[test]
 fn export() {
     let g = make_graph();
-    g.export_to_file("door.ron").unwrap();
+    g.export_to_file("examples/door.ron").unwrap();
 }

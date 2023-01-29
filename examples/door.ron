@@ -1,34 +1,69 @@
-// a door as a statechart
-
-// resolve state ids, self-referentiality
-
-// statechart events, associated type?
-
-Statechart(
-        id: "door",
-        initial: "locked",
-        states: {
-                locked: {
-                        on: {
-                            UNLOCK: Unlock( // impl Transition
-                                    target: "closed", // state id
-                                    // actions: multiple? trait implements this
-                            ),
-                        },
-                },
-                closed: {
-                        on: {
-                            OPEN: Open( target: "opened" ),
-                            LOCK: Lock( target: "locked" ),
-                        },
-                },
-                open: {
-                      on: {
-                          CLOSE: Close( target: "closed" ),
-                      },
-                },
-                destroyed: {
-                           type: 'final', // enum?
-                },
-        },
+(
+    graph: (
+        nodes: [
+            (
+                initial: Initial(2),
+                parent: None,
+                state: None,
+            ),
+            (
+                initial: None,
+                parent: Some(0),
+                state: Intact,
+            ),
+            (
+                initial: None,
+                parent: Some(1),
+                state: Locked,
+            ),
+            (
+                initial: None,
+                parent: Some(1),
+                state: Closed,
+            ),
+            (
+                initial: None,
+                parent: Some(1),
+                state: Open,
+            ),
+            (
+                initial: None,
+                parent: Some(0),
+                state: Destroyed,
+            ),
+        ],
+        node_holes: [],
+        edge_property: directed,
+        edges: [
+            Some((1, 5, (
+                transition: Bash(()),
+                internal: false,
+            ))),
+            Some((1, 1, (
+                transition: BashSelf(()),
+                internal: true,
+            ))),
+            Some((2, 3, (
+                transition: Unlock((
+                    key: "the right key",
+                )),
+                internal: false,
+            ))),
+            Some((3, 4, (
+                transition: Open(()),
+                internal: false,
+            ))),
+            Some((4, 3, (
+                transition: Close(()),
+                internal: false,
+            ))),
+            Some((3, 2, (
+                transition: Lock((
+                    key: "the right key",
+                )),
+                internal: false,
+            ))),
+        ],
+    ),
+    root: 0,
 )
