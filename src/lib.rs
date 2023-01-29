@@ -243,6 +243,10 @@ impl<C: Context> Graph<C> {
         self.graph.node_references().map(|(i, n)| (i, &n.state))
     }
 
+    pub fn states_mut(&mut self) -> impl Iterator<Item = &mut C::State> {
+        self.graph.node_weights_mut().map(|n| &mut n.state)
+    }
+
     /// Returns a transition reference for index.
     pub fn transition(&self, i: Tdx) -> Option<&C::Transition> {
         self.graph.edge_weight(i).map(|t| &t.transition)
@@ -323,6 +327,10 @@ impl<C: Context> Graph<C> {
             let t = e.weight();
             (e.id(), e.source(), e.target(), &t.transition, t.internal)
         })
+    }
+
+    pub fn transitions_mut(&mut self) -> impl Iterator<Item = &mut C::Transition> {
+        self.graph.edge_weights_mut().map(|e| &mut e.transition)
     }
 
     pub fn endpoints(&self, i: Tdx) -> Option<(Idx, Idx)> {
