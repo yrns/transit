@@ -690,8 +690,6 @@ impl<C: Context> Statechart<C> {
 
     pub fn transition(&mut self, event: C::Event) -> bool {
         self.context.dispatch(&event);
-        // Clone so we can borrow self again.
-        //let mut ctx = self.context.clone();
         let next = self.select(&event);
         let res = if let Some((next, internal)) = next {
             dbg!(internal);

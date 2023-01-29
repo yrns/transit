@@ -35,8 +35,22 @@ impl Default for State {
 /// into Janet for every event/transition to see if the guard passes.
 #[derive(Debug)]
 pub struct Event {
-    id: String, // TODO: make id generic?
-    value: Janet,
+    pub id: String, // TODO: make id generic?
+    pub value: Janet,
+}
+
+impl Event {
+    pub fn id(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            value: Janet::nil(),
+        }
+    }
+
+    pub fn with(mut self, value: impl Into<Janet>) -> Self {
+        self.value = value.into();
+        self
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -47,9 +61,9 @@ pub struct Transition {
 }
 
 impl Transition {
-    pub fn from_str(symbol: &str, client: &JanetClient, local: Janet) -> Self {
+    pub fn new(id: &str, symbol: &str, client: &JanetClient, local: Janet) -> Self {
         Self {
-            id: symbol.into(),
+            id: id.to_owned(),
             guard: resolve(symbol, client),
             local,
         }
@@ -118,7 +132,10 @@ impl transit::Transition<JanetContext> for Transition {
                 match f.call(&[self.local, ctx.context, value]) {
                     Ok(res) => {
                         println!("guard result: {:?}", res);
-                        !res.is_nil()
+                        match res.unwrap() {
+                            TaggedJanet::Boolean(b) => b,
+                            _ => res.is_truthy(),
+                        }
                     }
                     Err(err) => {
                         println!("err in guard: {:?}", err);
@@ -126,8 +143,9 @@ impl transit::Transition<JanetContext> for Transition {
                     }
                 }
             } else {
+                // If there is no guard but the id matches it passes by default.
                 println!("no guard");
-                false
+                true
             }
         } else {
             false
@@ -173,14 +191,14 @@ mod tests {
     #[test]
     fn symbols() {
         assert_eq!(
-            get_symbols("test/symbols")
+            get_symbols("tests/symbols")
                 .unwrap()
                 .unwrap()
                 .remove("a-symbol")
                 .unwrap(),
             (
                 // If the specified path is relative, the returned paths will be, too.
-                "test/symbols.janet".to_owned(),
+                "tests/symbols.janet".to_owned(),
                 1,
                 1
             )
