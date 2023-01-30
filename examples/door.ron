@@ -35,34 +35,16 @@
         node_holes: [],
         edge_property: directed,
         edges: [
-            Some((1, 5, (
-                transition: Bash(()),
-                internal: false,
-            ))),
-            Some((1, 1, (
-                transition: BashSelf(()),
-                internal: true,
-            ))),
-            Some((2, 3, (
-                transition: Unlock((
-                    key: "the right key",
-                )),
-                internal: false,
-            ))),
-            Some((3, 4, (
-                transition: Open(()),
-                internal: false,
-            ))),
-            Some((4, 3, (
-                transition: Close(()),
-                internal: false,
-            ))),
-            Some((3, 2, (
-                transition: Lock((
-                    key: "the right key",
-                )),
-                internal: false,
-            ))),
+            Some((1, 5, Transition(Bash(())))),
+            Some((1, 1, Internal(BashSelf(())))),
+            Some((2, 3, Transition(Unlock((
+                key: "the right key",
+            ))))),
+            Some((3, 4, Transition(Open(())))),
+            Some((4, 3, Transition(Close(())))),
+            Some((3, 2, Transition(Lock((
+                key: "the right key",
+            ))))),
         ],
     ),
     root: 0,

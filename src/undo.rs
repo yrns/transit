@@ -51,7 +51,9 @@ impl<C: Context> Graph<C> {
                 }
             }
             Op::SetInternal(i, internal) => {
-                g[*i].internal = !internal;
+                // We can't move the transition w/o removing/adding the edge.
+                let edge = &mut g[*i];
+                *edge = edge.clone().set_internal(*internal);
             }
         }
     }

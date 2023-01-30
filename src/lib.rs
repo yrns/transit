@@ -4,7 +4,7 @@ use crate::undo::*;
 pub use petgraph::Direction;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
-    stable_graph::StableDiGraph,
+    stable_graph::{EdgeReference, StableDiGraph},
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences},
 };
 use serde::{Deserialize, Serialize};
@@ -118,17 +118,74 @@ pub struct Node<T> {
 /// parent states, which would otherwise transition from child ->
 /// parent, if external.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Edge<T> {
-    transition: T,
-    internal: bool,
+pub enum Edge<T> {
+    Transition(T),
+    Internal(T),
+}
+
+impl<T> Edge<T> {
+    fn set_internal(self, internal: bool) -> Self {
+        match self {
+            Edge::Transition(t) if internal => Edge::Internal(t),
+            Edge::Internal(t) if !internal => Edge::Transition(t),
+            _ => self, // error
+        }
+    }
+
+    fn set_transition(&mut self, transition: T) {
+        match self {
+            Edge::Transition(t) | Edge::Internal(t) => *t = transition,
+            //_ => (), // error
+        }
+    }
+}
+
+pub fn is_transition<T>(edge: &Edge<T>) -> bool {
+    match edge {
+        Edge::Transition(_) | Edge::Internal(_) => true,
+        //_ => false,
+    }
+}
+
+pub fn transition_weight<T>(edge: &Edge<T>) -> Option<&T> {
+    match edge {
+        Edge::Transition(t) | Edge::Internal(t) => Some(t),
+        //_ => None,
+    }
+}
+
+pub fn transition_weight_mut<T>(edge: &mut Edge<T>) -> Option<&mut T> {
+    match edge {
+        Edge::Transition(t) | Edge::Internal(t) => Some(t),
+        //_ => None,
+    }
+}
+
+pub type TransitionRef<'a, T> = (Tdx, Idx, Idx, &'a T, bool);
+
+pub fn edge_transition_filter<'a, C, E>(
+    edge: EdgeReference<'a, Edge<C::Transition>, u32>,
+) -> Option<TransitionRef<'a, C::Transition>>
+where
+    C: Context,
+{
+    match edge.weight() {
+        Edge::Transition(t) => Some((edge.id(), edge.source(), edge.target(), t, false)),
+        Edge::Internal(t) => Some((edge.id(), edge.source(), edge.target(), t, true)),
+        //_ => None,
+    }
+}
+
+pub fn is_internal<T>(edge: &Edge<T>) -> bool {
+    match edge {
+        Edge::Internal(_) => true,
+        _ => false,
+    }
 }
 
 impl<T> From<T> for Edge<T> {
     fn from(transition: T) -> Self {
-        Self {
-            transition,
-            internal: false,
-        }
+        Self::Transition(transition)
     }
 }
 
@@ -233,7 +290,7 @@ impl<C: Context> Graph<C> {
 
     /// Returns a transition reference for index.
     pub fn transition(&self, i: Tdx) -> Option<&C::Transition> {
-        self.graph.edge_weight(i).map(|t| &t.transition)
+        self.graph.edge_weight(i).and_then(transition_weight)
     }
 
     /// Update state.
@@ -279,11 +336,14 @@ impl<C: Context> Graph<C> {
         &self,
         i: Idx,
         direction: Direction,
-    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
-        self.graph.edges_directed(i, direction).map(|e| {
-            let t = e.weight();
-            (e.id(), e.source(), e.target(), &t.transition, t.internal)
-        })
+    ) -> impl Iterator<Item = TransitionRef<C::Transition>> {
+        self.graph
+            .edges_directed(i, direction)
+            .filter_map(|e| match e.weight() {
+                Edge::Transition(t) => Some((e.id(), e.source(), e.target(), t, false)),
+                Edge::Internal(t) => Some((e.id(), e.source(), e.target(), t, true)),
+                //_ => None,
+            })
     }
 
     pub fn transitions_out(
@@ -304,17 +364,20 @@ impl<C: Context> Graph<C> {
         self.graph.edge_indices()
     }
 
-    pub fn transitions(
-        &self,
-    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
-        self.graph.edge_references().map(|e| {
-            let t = e.weight();
-            (e.id(), e.source(), e.target(), &t.transition, t.internal)
-        })
+    pub fn transitions(&self) -> impl Iterator<Item = TransitionRef<C::Transition>> {
+        self.graph
+            .edge_references()
+            .filter_map(|e| match e.weight() {
+                Edge::Transition(t) => Some((e.id(), e.source(), e.target(), t, false)),
+                Edge::Internal(t) => Some((e.id(), e.source(), e.target(), t, true)),
+                //_ => None,
+            })
     }
 
     pub fn transitions_mut(&mut self) -> impl Iterator<Item = &mut C::Transition> {
-        self.graph.edge_weights_mut().map(|e| &mut e.transition)
+        self.graph
+            .edge_weights_mut()
+            .filter_map(transition_weight_mut)
     }
 
     pub fn endpoints(&self, i: Tdx) -> Option<(Idx, Idx)> {
@@ -412,17 +475,18 @@ impl<C: Context> Graph<C> {
     }
 
     pub fn set_internal(&mut self, i: Tdx, internal: bool) {
-        let i0 = self.graph[i].internal;
+        let i0 = is_internal(&self.graph[i]);
         if internal != i0 {
             self.add_undo(Op::SetInternal(i, internal));
-            self.graph[i].internal = internal;
+            let edge = &mut self.graph[i];
+            *edge = edge.clone().set_internal(internal);
         }
     }
 
     // TODO: check root? validation?
     pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<Edge<C::Transition>>) -> Tdx {
         let t = t.into();
-        assert!(!t.internal || a == b);
+        assert!(!is_internal(&t) || a == b);
         // Can't transition to or from root.
         assert!(a != self.root && b != self.root);
         let i = self.graph.add_edge(a, b, t.clone());
@@ -443,7 +507,7 @@ impl<C: Context> Graph<C> {
     pub fn update_transition(&mut self, i: Tdx, t: C::Transition) {
         if let Some((a, b)) = self.graph.edge_endpoints(i) {
             let t0 = self.graph[i].clone();
-            self.graph[i].transition = t;
+            self.graph[i].set_transition(t);
             let t1 = self.graph[i].clone();
             self.add_undo(Op::UpdateTransition(i, (a, b, t0), (a, b, t1)));
         }
@@ -559,7 +623,7 @@ impl<C: Context> Graph<C> {
 
         // Check all internal transitions are self-transitions.
         for edge in self.graph.edge_references() {
-            if edge.source() == edge.target() && edge.weight().internal {
+            if edge.source() == edge.target() && is_internal(edge.weight()) {
                 return Err(format!(
                     "internal transition is not a self-transition {:?}",
                     edge.id()
@@ -669,9 +733,11 @@ impl<C: Context> Statechart<C> {
         while let Some(i) = path.next(g) {
             let mut edges = g.graph.neighbors(i).detach();
             while let Some((edge, next)) = edges.next(&mut g.graph) {
-                let t = &mut g.graph[edge];
-                if t.transition.guard(ctx, event) {
-                    return Some((next, t.internal));
+                let edge = &mut g.graph[edge];
+                if let Some(t) = transition_weight_mut(edge) {
+                    if t.guard(ctx, event) {
+                        return Some((next, is_internal(edge)));
+                    }
                 }
             }
         }
