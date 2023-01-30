@@ -1,7 +1,7 @@
 use janet::{get_symbols, SymbolMap};
 use notify_debouncer_mini::{
-    new_debouncer,
-    notify::{Error, INotifyWatcher, RecursiveMode},
+    new_debouncer, notify,
+    notify::{INotifyWatcher, RecursiveMode},
     DebouncedEvent, Debouncer,
 };
 use std::{
@@ -14,28 +14,34 @@ pub struct Source {
     path: PathBuf,
     //#[allow(unused)]
     _watcher: Debouncer<INotifyWatcher>,
-    rx: Receiver<Result<Vec<DebouncedEvent>, Vec<Error>>>,
-    update: bool,
+    rx: Receiver<Result<Vec<DebouncedEvent>, Vec<notify::Error>>>,
     pub symbols: Option<SymbolMap>,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    Notify(notify::Error),
+    Janet(janet::Error),
+}
+
+// TODO: This needs to be generic over language context.
 impl Source {
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut debouncer = new_debouncer(Duration::from_secs(2), None, tx).unwrap();
+        let mut debouncer =
+            new_debouncer(Duration::from_secs(2), None, tx).map_err(Error::Notify)?;
 
         debouncer
             .watcher()
             .watch(path.as_ref(), RecursiveMode::NonRecursive)
-            .unwrap();
+            .map_err(Error::Notify)?;
 
-        Self {
+        Ok(Self {
             path: path.as_ref().into(),
             _watcher: debouncer,
             rx,
-            update: false,
-            symbols: get_symbols(path).unwrap(),
-        }
+            symbols: get_symbols(path).map_err(Error::Janet)?,
+        })
     }
 
     // Call periodically to clear the channel.

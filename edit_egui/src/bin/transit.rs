@@ -1,4 +1,4 @@
-use edit_egui::{source::*, *};
+use edit_egui::{source::Source, *};
 use eframe::egui;
 
 // TODO wasm https://github.com/emilk/eframe_template
@@ -35,11 +35,11 @@ impl Transit {
             // This imports the graph from the last saved path.
             load(&mut transit.statechart);
             // Start watching source path.
-            transit.statechart.source = transit
-                .statechart
-                .source_path
-                .as_ref()
-                .map(|p| Source::new(p));
+            transit.statechart.source = transit.statechart.source_path.as_ref().and_then(|p| {
+                Source::new(p)
+                    .map_err(|e| println!("error in source: {:?}", e))
+                    .ok()
+            });
             transit
         } else {
             Self::default()

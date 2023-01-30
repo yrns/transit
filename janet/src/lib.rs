@@ -1,10 +1,8 @@
 mod from_janet;
 
 use from_janet::FromJanet;
-use janetrs::{
-    client::{Error, JanetClient},
-    Janet, JanetSymbol, TaggedJanet,
-};
+pub use janetrs::client::Error;
+use janetrs::{client::JanetClient, Janet, JanetSymbol, TaggedJanet};
 use std::{collections::HashMap, path::Path};
 
 pub struct JanetContext {

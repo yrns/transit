@@ -520,8 +520,13 @@ impl Statechart<EditContext> {
                 Command::SetInternal(tdx, internal) => self.graph.set_internal(tdx, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
-                    self.source = Some(Source::new(&p));
-                    self.source_path = Some(p);
+                    match Source::new(&p) {
+                        Ok(s) => {
+                            self.source = Some(s);
+                            self.source_path = Some(p);
+                        }
+                        Err(e) => println!("error: {:?}", e),
+                    }
                 }
                 _ => println!("unhandled command: {:?}", c),
             }
