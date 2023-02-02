@@ -5,17 +5,15 @@ authors = ["Al McElrath <hello@yrns.org>"]
 edition = "2021"
 
 [features]
-# Just for development and ra:
-default = []
-
-#edit = ["egui_egui"]
+default = ["serde"]
+serde = ["dep:serde"]
 
 [workspace]
 members = ["edit_egui", "janet"]
 
 [dependencies]
 petgraph = { version = "0.6", features = ["serde-1"] }
-serde = "1.0"
+serde = { version = "1", optional = true, features = ["derive"] }
 ron = "0.8"
 once_cell = "1.3.1"
 thiserror = "1.0.37"

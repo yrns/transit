@@ -1,4 +1,6 @@
-mod from_janet;
+pub mod from_janet;
+pub mod marshal;
+pub mod pretty;
 
 use from_janet::FromJanet;
 pub use janetrs::client::Error;
@@ -10,10 +12,14 @@ pub struct JanetContext {
     pub context: Janet,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct State {
+    #[serde(with = "pretty")]
     pub enter: Janet,
+    #[serde(with = "pretty")]
     pub exit: Janet,
+    #[serde(with = "pretty")]
     pub local: Janet,
 }
 
@@ -51,10 +57,13 @@ impl Event {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub id: String,
+    #[serde(with = "pretty")]
     pub guard: Janet,
+    #[serde(with = "pretty")]
     pub local: Janet,
 }
 

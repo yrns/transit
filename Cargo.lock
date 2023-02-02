@@ -1123,6 +1123,7 @@ name = "janet"
 version = "0.1.0"
 dependencies = [
  "janetrs",
+ "serde",
  "transit",
 ]
 

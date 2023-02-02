@@ -7,7 +7,6 @@ use petgraph::{
     stable_graph::{EdgeReference, StableDiGraph},
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences},
 };
-use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
@@ -39,24 +38,30 @@ where
 // transition contexts which are mutable currently.
 pub struct Statechart<C: Context> {
     pub context: C,
+    // TODO: this should be a non-mutable ref so it can be shared.
     pub graph: Graph<C>,
     pub active: Idx,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone)]
 pub struct Graph<C: Context> {
-    #[serde(bound(
-        serialize = "C::State: Serialize, C::Transition: Serialize",
-        deserialize = "C::State: Deserialize<'de>, C::Transition: Deserialize<'de>"
-    ))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(bound(
+            serialize = "C::State: serde::Serialize, C::Transition: serde::Serialize",
+            deserialize = "C::State: serde::Deserialize<'de>, C::Transition: serde::Deserialize<'de>"
+        ))
+    )]
     pub(crate) graph: StableDiGraph<Node<C::State>, Edge<C::Transition>, u32>,
     pub root: Idx,
-    // Make this an option?
-    #[serde(skip_serializing, skip_deserializing)]
+    // Make this an option? TODO: move to edit
+    #[cfg_attr(feature = "serde", serde(skip_serializing, skip_deserializing))]
     undo: Undo<C::State, C::Transition>,
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Initial {
     #[default]
     None,
@@ -105,7 +110,8 @@ pub trait State<C: Context> {
     fn exit(&mut self, ctx: &mut C, event: Option<&C::Event>);
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Debug, Default, Clone)]
 pub struct Node<T> {
     pub initial: Initial,
     pub parent: Option<Idx>,
@@ -117,7 +123,8 @@ pub struct Node<T> {
 /// state will not change. This is relevant for self-transitions on
 /// parent states, which would otherwise transition from child ->
 /// parent, if external.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Debug)]
 pub enum Edge<T> {
     Transition(T),
     Internal(T),
@@ -642,6 +649,7 @@ impl<C: Context> Default for Graph<C> {
     }
 }
 
+#[cfg(feature = "serde")]
 #[derive(Error, Debug)]
 pub enum ExportError {
     #[error("{0}")]
@@ -650,11 +658,12 @@ pub enum ExportError {
     Ron(#[from] ron::Error),
 }
 
+#[cfg(feature = "serde")]
 impl<C> Graph<C>
 where
     C: Context,
-    C::State: Serialize,
-    C::Transition: Serialize,
+    C::State: serde::Serialize,
+    C::Transition: serde::Serialize,
 {
     pub fn export(&self) -> Result<String, ExportError> {
         Ok(ron::ser::to_string_pretty(&self, Default::default())?)
@@ -669,6 +678,7 @@ where
     }
 }
 
+#[cfg(feature = "serde")]
 #[derive(Error, Debug)]
 pub enum ImportError {
     #[error("{0}")]
@@ -677,11 +687,12 @@ pub enum ImportError {
     Ron(#[from] ron::error::SpannedError),
 }
 
+#[cfg(feature = "serde")]
 impl<C> Graph<C>
 where
     C: Context,
-    C::State: for<'de> Deserialize<'de>,
-    C::Transition: for<'de> Deserialize<'de>,
+    C::State: for<'de> serde::Deserialize<'de>,
+    C::Transition: for<'de> serde::Deserialize<'de>,
 {
     pub fn import_from_file(path: &std::path::Path) -> Result<Self, ImportError> {
         Ok(ron::de::from_reader(std::fs::File::open(path)?)?)
