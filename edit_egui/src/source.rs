@@ -85,7 +85,7 @@ impl Source {
     //     self.symbols.as_ref().keys()
     // }
 
-    pub fn symbol(&mut self, symbol: &str) -> Option<&(String, usize, usize)> {
+    pub fn symbol(&self, symbol: &str) -> Option<&(String, usize, usize)> {
         self.symbols.as_ref().and_then(|s| s.get(symbol))
     }
 }

@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 // TODO: make a separte crate for the bin and only depend on egui here
 use editabel::Editabel;
+pub use editor::*;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
 use eframe::epaint::RectShape;
@@ -10,6 +11,7 @@ use source::Source;
 use transit::{ExportError, ImportError};
 
 mod editabel;
+mod editor;
 mod search;
 pub mod source;
 
@@ -40,13 +42,21 @@ pub struct Statechart<C: transit::Context> {
 // Initial (destination) port and control points. Similiar to transition.
 pub type Initial = (usize, Vec2, Vec2);
 
+#[derive(Debug)]
+pub enum SymbolId {
+    Enter(transit::Idx),
+    Exit(transit::Idx),
+    Guard(transit::Tdx),
+}
+
+pub type Symbol = Option<String>;
+
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct State {
     id: String,
-    // These needs to be pulled from a contained struct.
-    //enter: String,
-    //exit: String,
+    enter: Option<String>,
+    exit: Option<String>,
     /// Rect relative to parent.
     rect: Rect,
     initial: Option<Initial>,
@@ -63,6 +73,8 @@ impl Default for State {
     fn default() -> Self {
         State {
             id: "untitled".into(),
+            enter: None,
+            exit: None,
             rect: Rect::from_min_size(pos2(0.0, 0.0), Vec2::INFINITY),
             initial: None,
             collapsed: false,
@@ -76,10 +88,10 @@ impl Default for State {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Transition {
-    // event? guard name?
     #[serde(default)]
     id: String,
-    c1: Vec2,
+    guard: Option<String>,
+    c1: Vec2, // tuples?
     c2: Vec2,
     // Source port index.
     port1: usize,
@@ -147,6 +159,8 @@ pub enum Command {
     SetInternal(transit::Tdx, bool),
     UpdateSelection(Selection),
     SelectSourcePath(std::path::PathBuf),
+    GotoSymbol(String, std::path::PathBuf, (usize, usize)),
+    UpdateSymbol(SymbolId, Option<String>),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -528,6 +542,29 @@ impl Statechart<EditContext> {
                         Err(e) => println!("error: {:?}", e),
                     }
                 }
+                Command::UpdateSymbol(symbol, s) => match symbol {
+                    SymbolId::Enter(i) => {
+                        if let Some(state) = self.graph.state(i) {
+                            let mut state = state.clone();
+                            state.enter = s;
+                            self.graph.update_state(i, state);
+                        }
+                    }
+                    SymbolId::Exit(i) => {
+                        if let Some(state) = self.graph.state(i) {
+                            let mut state = state.clone();
+                            state.exit = s;
+                            self.graph.update_state(i, state);
+                        }
+                    }
+                    SymbolId::Guard(i) => {
+                        if let Some(t) = self.graph.transition(i) {
+                            let mut t = t.clone();
+                            t.guard = s;
+                            self.graph.update_transition(i, t);
+                        }
+                    }
+                },
                 _ => println!("unhandled command: {:?}", c),
             }
         }
@@ -728,6 +765,7 @@ impl Statechart<EditContext> {
         (
             Transition {
                 id,
+                guard: None,
                 port1: ports.0,
                 port2: ports.1,
                 c1: cp.0,
@@ -1223,47 +1261,16 @@ impl Statechart<EditContext> {
                 }))
             }
 
-            // Dragging the label drags the state.
+            // Dragging the label drags the state. TODO?
 
+            // Update id.
             if let Some(id) = inner {
                 edit_data
                     .commands
                     .push(Command::UpdateState(idx, state.clone().with_id(id)))
             }
 
-            // hover should show source/location by name? click to
-            // select fns from source?
-            let enter_response = ui.small_button("enter");
-            if enter_response.clicked_by(PointerButton::Primary) {
-                // jump to source location for symbol
-            }
-
-            // Move to pointer.
-            let set_focus = if enter_response.clicked_by(PointerButton::Secondary) {
-                edit_data.symbols.position = ui.ctx().pointer_interact_pos();
-                true
-            } else {
-                false
-            };
-
-            if let Some(symbols) = self
-                .source
-                .as_ref()
-                .and_then(|source| source.symbols.as_ref())
-            {
-                match edit_data
-                    .symbols
-                    .show(set_focus, symbols.keys().cloned(), ui)
-                {
-                    Some(_symbol) => {
-                        // edit_data
-                        //     .commands
-                        //     .push(Command::UpdateSelection(Selection::State(idx)));
-                    }
-                    _ => (),
-                }
-            }; // else error on click?
-            enter_response.on_hover_text("enter source location");
+            self.show_symbol(SymbolId::Enter(idx), &state.enter, edit_data, ui);
 
             if ui.small_button("exit").clicked() {
                 dbg!("clicked exit");
@@ -1272,7 +1279,8 @@ impl Statechart<EditContext> {
             // node index for debugging...
             ui.label(format!("({})", idx.index()));
 
-            // Show source file in the root state.
+            // Show source file in the root state. Maybe this should be left click to goto, right
+            // click to set, like symbols.
             if root {
                 let response = ui.small_button("source");
                 if response.clicked() {
@@ -1293,6 +1301,71 @@ impl Statechart<EditContext> {
                 }
             }
         })
+    }
+
+    pub fn show_symbol(
+        &self,
+        id: SymbolId,
+        symbol: &Symbol,
+        edit_data: &mut EditData,
+        ui: &mut Ui,
+    ) {
+        // hover should show source/location by name? click to
+        // select fns from source?
+        // disable if no source
+        let response = ui
+            .small_button(match id {
+                SymbolId::Enter(_) => "enter",
+                SymbolId::Exit(_) => "exit",
+                SymbolId::Guard(_) => "guard",
+            })
+            .on_hover_text("enter source location");
+
+        if response.clicked_by(PointerButton::Primary) {
+            match symbol {
+                Some(s) => match self.source.as_ref().and_then(|source| source.symbol(s)) {
+                    Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
+                        // This could be a ref (or Cow) into the source instead of cloning?
+                        s.clone(),
+                        std::path::PathBuf::from(path), // FIX back and forth
+                        (*line, *col),
+                    )),
+                    None => (), // Command::InsertSymbol()
+                },
+
+                None => {
+                    // Make up one (based on the state) id and insert?
+                    // Or open search?
+                }
+            }
+        }
+
+        // Move to pointer.
+        let set_focus = if response.clicked_by(PointerButton::Secondary) {
+            edit_data.symbols.position = ui.ctx().pointer_interact_pos();
+            true
+        } else {
+            false
+        };
+
+        if let Some(symbols) = self
+            .source
+            .as_ref()
+            .and_then(|source| source.symbols.as_ref())
+        {
+            // Show search box.
+            match edit_data
+                .symbols
+                .show(set_focus, symbols.keys().cloned(), ui)
+            {
+                Some(symbol) => {
+                    edit_data
+                        .commands
+                        .push(Command::UpdateSymbol(id, Some(symbol)));
+                }
+                _ => (),
+            }
+        }; // else error on click?
     }
 
     /// Each state sets the drag target for its children. The topmost child that contains the

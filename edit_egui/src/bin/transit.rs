@@ -18,6 +18,8 @@ fn main() {
 #[serde(default)]
 struct Transit {
     statechart: Statechart<EditContext>,
+    #[serde(skip)] // TODO configurable?
+    editor: EmacsClient,
 }
 
 fn load(s: &mut Statechart<EditContext>) {
@@ -128,7 +130,7 @@ impl eframe::App for Transit {
                         ui.close_menu();
                     }
                     if ui.button("Quit").clicked() {
-                        // TODO: promp to save?
+                        // TODO: prompt to save?
                         frame.close();
                     }
                 });
@@ -141,7 +143,17 @@ impl eframe::App for Transit {
                 // using the menus, but we want to clear selection too.
                 ctx.data().remove::<Drag>(ui.id());
             }
-            let commands = self.statechart.show(ui);
+            let mut commands = self.statechart.show(ui);
+
+            // Process editor commands.
+            commands.retain(|command| match command {
+                Command::GotoSymbol(symbol, path, loc) => {
+                    self.editor.goto(symbol, path, *loc).unwrap();
+                    false
+                }
+                _ => true,
+            });
+
             self.statechart.process_commands(commands);
         });
     }
