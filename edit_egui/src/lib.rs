@@ -1276,10 +1276,15 @@ impl Statechart<EditContext> {
             if root {
                 let response = ui.small_button("source");
                 if response.clicked() {
-                    if let Ok(Some(p)) = native_dialog::FileDialog::new()
-                        .add_filter("janet", &["janet"])
-                        .show_open_single_file()
+                    let dialog = native_dialog::FileDialog::new().add_filter("janet", &["janet"]);
+                    let dialog = if let Some(p) = self.source_path.as_ref().and_then(|p| p.parent())
                     {
+                        dialog.set_location(p)
+                    } else {
+                        dialog
+                    };
+
+                    if let Ok(Some(p)) = dialog.show_open_single_file() {
                         edit_data.commands.push(Command::SelectSourcePath(p));
                     }
                 }
