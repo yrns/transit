@@ -1324,10 +1324,11 @@ impl Statechart<EditContext> {
         if response.clicked_by(PointerButton::Primary) {
             match symbol {
                 Some(s) => match self.source.as_ref().and_then(|source| source.symbol(s)) {
+                    // We could use references here if source existed outside self. If `commands`
+                    // references self we can't get a mutable ref later to process them.
                     Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
-                        // This could be a ref (or Cow) into the source instead of cloning?
                         s.clone(),
-                        std::path::PathBuf::from(path), // FIX back and forth
+                        path.clone(),
                         (*line, *col),
                     )),
                     None => (), // Command::InsertSymbol()

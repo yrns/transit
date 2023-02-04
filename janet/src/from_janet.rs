@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::path::PathBuf;
 
 use janetrs::*;
 
@@ -79,7 +80,17 @@ impl FromJanet for String {
     }
 }
 
-// impl FromJanet for PathBuf?
+impl FromJanet for PathBuf {
+    fn from_janet(janet: Janet) -> Result<Self, JanetConversionError> {
+        match janet.unwrap() {
+            TaggedJanet::String(s) => s
+                .to_str()
+                .map_err(|_| JanetConversionError)
+                .map(PathBuf::from),
+            _ => Err(JanetConversionError),
+        }
+    }
+}
 
 impl<T> FromJanet for Option<T>
 where

@@ -5,7 +5,10 @@ pub mod pretty;
 use from_janet::FromJanet;
 pub use janetrs::client::Error;
 use janetrs::{client::JanetClient, Janet, JanetSymbol, TaggedJanet};
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 pub struct JanetContext {
     //client: &'a JanetClient,
@@ -160,7 +163,7 @@ impl transit::Transition<JanetContext> for Transition {
     }
 }
 
-pub type SymbolMap = HashMap<String, (String, usize, usize)>;
+pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
 
 pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
     let client = JanetClient::init_with_default_env()?;
@@ -205,7 +208,7 @@ mod tests {
                 .unwrap(),
             (
                 // If the specified path is relative, the returned paths will be, too.
-                "tests/symbols.janet".to_owned(),
+                PathBuf::from("tests/symbols.janet"),
                 1,
                 1
             )

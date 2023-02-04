@@ -781,7 +781,7 @@ impl<C: Context> Statechart<C> {
         res
     }
 
-    // should we be passing new and old state to each action? use Cow?
+    // should we be passing new and old state to each action?
     // this mutates history when exiting states
     pub fn transition_to(&mut self, next: Idx, event: Option<&C::Event>) {
         // list of history updates, only applied after the transition
