@@ -37,11 +37,12 @@ impl Transit {
             // This imports the graph from the last saved path.
             load(&mut transit.statechart);
             // Start watching source path.
-            transit.statechart.source = transit.statechart.source_path.as_ref().and_then(|p| {
-                Source::new(p)
-                    .map_err(|e| println!("error in source: {:?}", e))
-                    .ok()
-            });
+            if let Some(source) = &mut transit.statechart.source {
+                match Source::new(&source.path) {
+                    Ok(s) => *source = s,
+                    Err(e) => println!("error in source: {:?}", e),
+                }
+            }
             transit
         } else {
             Self::default()

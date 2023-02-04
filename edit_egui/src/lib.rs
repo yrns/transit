@@ -29,9 +29,7 @@ pub enum Selection {
 #[derive(Default)]
 pub struct Edit<C: transit::Context> {
     pub path: Option<std::path::PathBuf>,
-    pub source_path: Option<std::path::PathBuf>,
-    #[serde(skip)]
-    pub source: Option<source::Source>,
+    pub source: Option<Source>,
     //statechart: transit::Statechart<C>,
     #[serde(skip)]
     pub graph: transit::Graph<C>,
@@ -537,7 +535,6 @@ impl Edit<EditContext> {
                     match Source::new(&p) {
                         Ok(s) => {
                             self.source = Some(s);
-                            self.source_path = Some(p);
                         }
                         Err(e) => println!("error: {:?}", e),
                     }
@@ -1285,7 +1282,7 @@ impl Edit<EditContext> {
                 let response = ui.small_button("source");
                 if response.clicked() {
                     let dialog = native_dialog::FileDialog::new().add_filter("janet", &["janet"]);
-                    let dialog = if let Some(p) = self.source_path.as_ref().and_then(|p| p.parent())
+                    let dialog = if let Some(p) = self.source.as_ref().and_then(|s| s.path.parent())
                     {
                         dialog.set_location(p)
                     } else {
@@ -1296,8 +1293,8 @@ impl Edit<EditContext> {
                         edit_data.commands.push(Command::SelectSourcePath(p));
                     }
                 }
-                if let Some(p) = &self.source_path {
-                    response.on_hover_text_at_pointer(p.display().to_string());
+                if let Some(source) = &self.source {
+                    response.on_hover_text_at_pointer(source.path.display().to_string());
                 }
             }
         })

@@ -10,11 +10,15 @@ use std::{
     time::Duration,
 };
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Source {
-    path: PathBuf,
-    //#[allow(unused)]
-    _watcher: Debouncer<INotifyWatcher>,
-    rx: Receiver<Result<Vec<DebouncedEvent>, Vec<notify::Error>>>,
+    pub path: PathBuf,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    watcher: Option<(
+        Debouncer<INotifyWatcher>,
+        Receiver<Result<Vec<DebouncedEvent>, Vec<notify::Error>>>,
+    )>,
+    // Skip this too?
     pub symbols: Option<SymbolMap>,
 }
 
@@ -38,8 +42,7 @@ impl Source {
 
         Ok(Self {
             path: path.as_ref().into(),
-            _watcher: debouncer,
-            rx,
+            watcher: Some((debouncer, rx)),
             symbols: get_symbols(path).map_err(Error::Janet)?,
         })
     }
@@ -48,17 +51,19 @@ impl Source {
     pub fn update(&mut self) {
         let mut update = false;
 
-        for res in self.rx.try_iter() {
-            match res {
-                Ok(events) => {
-                    for event in events {
-                        println!("watch event: {:?}", event);
+        if let Some((_, rx)) = &mut self.watcher {
+            for res in rx.try_iter() {
+                match res {
+                    Ok(events) => {
+                        for event in events {
+                            println!("watch event: {:?}", event);
+                        }
+                        update = true;
                     }
-                    update = true;
-                }
-                Err(errors) => {
-                    for err in errors {
-                        println!("watch error: {:?}", err)
+                    Err(errors) => {
+                        for err in errors {
+                            println!("watch error: {:?}", err)
+                        }
                     }
                 }
             }
