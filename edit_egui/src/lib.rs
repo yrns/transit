@@ -24,10 +24,10 @@ pub enum Selection {
     Transition(transit::Tdx),
 }
 
-// Rename Edit?
+/// Statechart graph editor.
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
-pub struct Statechart<C: transit::Context> {
+pub struct Edit<C: transit::Context> {
     pub path: Option<std::path::PathBuf>,
     pub source_path: Option<std::path::PathBuf>,
     #[serde(skip)]
@@ -417,7 +417,7 @@ pub fn approx_cp_self(_start: Pos2, _end: Pos2) -> (Vec2, Vec2) {
     (vec2(128.0, -96.0), vec2(128.0, 96.0))
 }
 
-impl Statechart<EditContext> {
+impl Edit<EditContext> {
     /// Id of the root state.
     pub fn id(&self) -> &str {
         &self.graph.root().id

@@ -17,12 +17,12 @@ fn main() {
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 struct Transit {
-    statechart: Statechart<EditContext>,
+    statechart: Edit<EditContext>,
     #[serde(skip)] // TODO configurable?
     editor: EmacsClient,
 }
 
-fn load(s: &mut Statechart<EditContext>) {
+fn load(s: &mut Edit<EditContext>) {
     match s.load() {
         Err(e) => println!("failed to load {:?}: {}", s.path, e),
         _ => (),
