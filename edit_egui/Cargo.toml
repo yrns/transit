@@ -21,6 +21,8 @@ serde = { version = "1", optional = true, features = ["derive"] }
 nohash-hasher = "0.2.0"
 notify-debouncer-mini = "0.2.1"
 relative-path = "1.7.3"
+ron = "0.8.0"
+thiserror = "1.0.38"
 
 [[bin]]
 name = "transit"

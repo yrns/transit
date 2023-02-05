@@ -1,4 +1,6 @@
-use edit_egui::{source::Source, *};
+use std::path::PathBuf;
+
+use edit_egui::*;
 use eframe::egui;
 
 // TODO wasm https://github.com/emilk/eframe_template
@@ -17,16 +19,12 @@ fn main() {
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 struct Transit {
-    statechart: Edit<EditContext>,
+    /// Most-recently opened file.
+    recent: Option<PathBuf>,
+    #[serde(skip)] // De/serialized from/to `recent`.
+    edit: Edit,
     #[serde(skip)] // TODO configurable?
     editor: EmacsClient,
-}
-
-fn load(s: &mut Edit<EditContext>) {
-    match s.load() {
-        Err(e) => println!("failed to load {:?}: {}", s.path, e),
-        _ => (),
-    }
 }
 
 impl Transit {
@@ -34,13 +32,12 @@ impl Transit {
         if let Some(storage) = cc.storage {
             let mut transit: Transit =
                 eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            // This imports the graph from the last saved path.
-            load(&mut transit.statechart);
-            // Start watching source path.
-            if let Some(source) = &mut transit.statechart.source {
-                match Source::new(&source.path) {
-                    Ok(s) => *source = s,
-                    Err(e) => println!("error in source: {:?}", e),
+
+            // Load recent file.
+            if let Some(path) = &transit.recent {
+                match Edit::load(path) {
+                    Ok(edit) => transit.edit = edit,
+                    Err(e) => println!("error: {:?}", e),
                 }
             }
             transit
@@ -49,35 +46,47 @@ impl Transit {
         }
     }
 
-    // TODO: errors
+    /// Select a path and save.
     fn file_save_as(&mut self) {
         if let Ok(Some(p)) = native_dialog::FileDialog::new()
-            .set_filename(&self.statechart.id())
+            .set_filename(&self.edit.id())
             .add_filter("ron", &["ron"])
             .show_save_single_file()
         {
             println!("saving to {:?}", p);
-            self.statechart.path = Some(p);
-            self.save();
+            match self.edit.save(&p) {
+                Ok(_) => self.recent = Some(p),
+                Err(e) => println!("error saving: {:?}", e),
+            }
         }
     }
 
-    fn save(&mut self) {
-        match self.statechart.save() {
-            Err(e) => println!("failed to save {:?}: {}", &self.statechart.path, e),
-            _ => (),
+    /// Save to recent path. Else, save as.
+    fn file_save(&mut self) {
+        if let Some(p) = &self.recent {
+            if let Err(e) = self.edit.save(p) {
+                println!("failed to save: {:?}", e);
+            }
+        } else {
+            self.file_save_as();
         }
     }
 
-    // TODO: errors
+    /// Open a new file, replacing current.
     fn file_open(&mut self) {
-        if let Ok(Some(p)) = native_dialog::FileDialog::new()
+        match native_dialog::FileDialog::new()
             .add_filter("ron", &["ron"])
             .show_open_single_file()
         {
-            self.statechart = Default::default();
-            self.statechart.path = Some(p);
-            load(&mut self.statechart);
+            Ok(Some(p)) => match Edit::load(&p) {
+                Ok(edit) => {
+                    self.recent = Some(p);
+                    self.edit = edit;
+                }
+                Err(e) => println!("error loading: {:?}", e),
+            },
+            Err(e) => println!("error: {:?}", e),
+            _ => (),
         }
     }
 }
@@ -89,6 +98,7 @@ impl eframe::App for Transit {
         true // can close
     }
 
+    /// Save recent path.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
@@ -98,7 +108,7 @@ impl eframe::App for Transit {
         let mut clear_state = false;
 
         // Check for updates to the source.
-        if let Some(ref mut source) = self.statechart.source {
+        if let Some(ref mut source) = self.edit.source {
             source.update();
         }
 
@@ -108,7 +118,7 @@ impl eframe::App for Transit {
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
                         clear_state = true;
-                        self.statechart = Default::default();
+                        self.edit = Default::default();
                         ui.close_menu();
                     }
                     if ui.button("Open...").clicked() {
@@ -117,13 +127,7 @@ impl eframe::App for Transit {
                         ui.close_menu();
                     }
                     if ui.button("Save").clicked() {
-                        match &self.statechart.path {
-                            Some(p) => {
-                                println!("saving to {:?}", p);
-                                self.save()
-                            }
-                            None => self.file_save_as(),
-                        }
+                        self.file_save();
                         ui.close_menu();
                     }
                     if ui.button("Save as...").clicked() {
@@ -144,7 +148,7 @@ impl eframe::App for Transit {
                 // using the menus, but we want to clear selection too.
                 ctx.data().remove::<Drag>(ui.id());
             }
-            let mut commands = self.statechart.show(ui);
+            let mut commands = self.edit.show(ui);
 
             // Process editor commands.
             commands.retain(|command| match command {
@@ -155,7 +159,7 @@ impl eframe::App for Transit {
                 _ => true,
             });
 
-            self.statechart.process_commands(commands);
+            self.edit.process_commands(commands);
         });
     }
 }

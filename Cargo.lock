@@ -675,7 +675,9 @@ dependencies = [
  "nohash-hasher",
  "notify-debouncer-mini",
  "relative-path",
+ "ron",
  "serde",
+ "thiserror",
  "transit",
 ]
 

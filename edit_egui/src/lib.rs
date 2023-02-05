@@ -1,3 +1,9 @@
+mod editabel;
+mod editor;
+mod search;
+pub mod source;
+
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // TODO: make a separte crate for the bin and only depend on egui here
@@ -8,12 +14,6 @@ use eframe::egui::*;
 use eframe::epaint::RectShape;
 use search::SearchBox;
 use source::Source;
-use transit::{ExportError, ImportError};
-
-mod editabel;
-mod editor;
-mod search;
-pub mod source;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
@@ -27,12 +27,9 @@ pub enum Selection {
 /// Statechart graph editor.
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
-pub struct Edit<C: transit::Context> {
-    pub path: Option<std::path::PathBuf>,
+pub struct Edit {
     pub source: Option<Source>,
-    //statechart: transit::Statechart<C>,
-    #[serde(skip)]
-    pub graph: transit::Graph<C>,
+    pub graph: transit::Graph<EditContext>,
     #[serde(default)]
     pub selection: Selection,
 }
@@ -415,37 +412,60 @@ pub fn approx_cp_self(_start: Pos2, _end: Pos2) -> (Vec2, Vec2) {
     (vec2(128.0, -96.0), vec2(128.0, 96.0))
 }
 
-impl Edit<EditContext> {
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[cfg(feature = "serde")]
+    #[error("{0}")]
+    Import(#[from] ron::error::SpannedError),
+    #[error("{0}")]
+    Export(#[from] ron::Error),
+    #[error("{0}")]
+    Other(String),
+}
+
+impl Edit {
     /// Id of the root state.
     pub fn id(&self) -> &str {
         &self.graph.root().id
     }
 
-    pub fn load(&mut self) -> Result<(), ImportError> {
-        if let Some(path) = &self.path {
-            self.graph = transit::Graph::import_from_file(&path)?;
-        }
+    /// Load from path.
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let mut edit: Self = ron::de::from_reader(std::fs::File::open(path.as_ref())?)?;
 
-        // Validate.
-        self.graph.validate().unwrap();
+        // Validate graph.
+        edit.graph.validate().map_err(Error::Other)?;
 
         // Validate selection.
-        if match self.selection {
-            Selection::State(idx) => self.graph.state(idx).is_none(),
-            Selection::Transition(tdx) => self.graph.transition(tdx).is_none(),
+        if match edit.selection {
+            Selection::State(idx) => edit.graph.state(idx).is_none(),
+            Selection::Transition(tdx) => edit.graph.transition(tdx).is_none(),
             _ => false,
         } {
-            self.selection = Selection::None
+            edit.selection = Selection::None
         }
 
-        Ok(())
+        // Start watching source path.
+        if let Some(source) = &mut edit.source {
+            match Source::new(&source.path) {
+                Ok(s) => *source = s,
+                Err(e) => println!("error in source: {:?}", e),
+            }
+        }
+
+        Ok(edit)
     }
 
-    pub fn save(&mut self) -> Result<(), ExportError> {
-        if let Some(path) = &self.path {
-            self.graph.export_to_file(&path)?;
-        }
-        Ok(())
+    /// Serialize self to path.
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
+        ron::ser::to_writer_pretty(
+            std::fs::File::create(path.as_ref())?,
+            self,
+            ron::ser::PrettyConfig::default(),
+        )
+        .map_err(Error::from)
     }
 
     pub fn process_commands(&mut self, commands: Vec<Command>) {
