@@ -144,9 +144,7 @@ impl eframe::App for Transit {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if clear_state {
-                // TODO: StatechartData? You can't be in-drag when
-                // using the menus, but we want to clear selection too.
-                ctx.data().remove::<Drag>(ui.id());
+                ctx.data().remove::<EditData>(ui.id());
             }
             let mut commands = self.edit.show(ui);
 
