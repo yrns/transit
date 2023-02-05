@@ -1,3 +1,4 @@
+mod app;
 mod editabel;
 mod editor;
 mod search;
@@ -7,6 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // TODO: make a separte crate for the bin and only depend on egui here
+pub use app::*;
 use editabel::Editabel;
 pub use editor::*;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
@@ -98,6 +100,7 @@ pub struct Transition {
 #[derive(Clone, Default)]
 pub struct EditContext {}
 
+// TODO: this does nothing and shouldn't be necessary if we're not running it
 impl transit::Context for EditContext {
     type Event = ();
     type State = State;
