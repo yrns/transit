@@ -4,7 +4,7 @@ use transit::{is_internal, Edge, EditGraph, Idx, Initial, Node, Tdx};
 // (a -> b, edge)
 pub type TOp<T> = (Idx, Idx, Edge<T>);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Op<S, T> {
     AddState(Idx, Node<S>),
     UpdateState(Idx, Node<S>, Node<S>),

@@ -1,4 +1,4 @@
-mod app;
+pub mod app;
 mod editabel;
 mod editor;
 mod search;
@@ -9,7 +9,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // TODO: make a separte crate for the bin and only depend on egui here
-pub use app::*;
 use editabel::Editabel;
 pub use editor::*;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
@@ -493,7 +492,7 @@ impl Edit {
             //dbg!(&c);
             match c {
                 Command::AddState(parent, p) => {
-                    self.graph.add_state(
+                    self.add_state(
                         State {
                             id: "untitled".into(),
                             rect: Rect::from_min_size(p, State::DEFAULT_SIZE),
@@ -503,7 +502,7 @@ impl Edit {
                     );
                 }
                 Command::RemoveState(idx, recur) => {
-                    self.graph.remove_state(idx, !recur, !recur);
+                    self.remove_state(idx, !recur, !recur);
                 }
                 Command::MoveState(idx, parent, offset) => {
                     if let Some(state) = self.graph.state(idx) {
@@ -512,28 +511,28 @@ impl Edit {
 
                         // TODO: merge undos
                         if self.graph.parent(idx) != Some(parent) {
-                            self.graph.set_parent(idx, parent);
+                            self.set_parent(idx, parent);
                         }
-                        self.graph.update_state(idx, state);
+                        self.update_state(idx, state);
                     }
                 }
                 Command::ResizeState(idx, delta) => {
                     if let Some(state) = self.graph.state(idx) {
                         let mut state = state.clone();
                         state.rect = Rect::from_min_size(state.rect.min, state.rect.size() + delta);
-                        self.graph.update_state(idx, state);
+                        self.update_state(idx, state);
                     }
                 }
-                Command::UpdateState(idx, state) => self.graph.update_state(idx, state),
+                Command::UpdateState(idx, state) => self.update_state(idx, state),
                 Command::AddTransition(a, b, t) => {
-                    self.graph.add_transition(a, b, t);
+                    self.add_transition(a, b, t);
                 }
                 Command::UpdateTransition(tdx, t) => {
-                    self.graph.update_transition(tdx, t);
+                    self.update_transition(tdx, t);
                 }
                 Command::MoveTransition(tdx, source, target) => {
                     if let Some(endpoints) = self.graph.endpoints(tdx) {
-                        self.graph.move_transition(
+                        self.move_transition(
                             tdx,
                             source.unwrap_or(endpoints.0),
                             target.unwrap_or(endpoints.1),
@@ -541,7 +540,7 @@ impl Edit {
                     }
                 }
                 Command::RemoveTransition(tdx) => {
-                    self.graph.remove_transition(tdx);
+                    self.remove_transition(tdx);
                 }
                 Command::UpdateSelection(selection) => {
                     // TODO undo?
@@ -550,28 +549,25 @@ impl Edit {
                 Command::SetInitial(idx, target, initial) => {
                     if let Some(state) = self.graph.state(idx) {
                         // Merge undo?
-                        self.graph
-                            .update_state(idx, state.clone().with_initial(Some(initial)));
-                        self.graph
-                            .set_initial(idx, self.graph.initial(idx).set_idx(target));
+                        self.update_state(idx, state.clone().with_initial(Some(initial)));
+                        self.set_initial(idx, self.graph.initial(idx).set_idx(target));
                     }
                 }
                 Command::UnsetInitial(idx) => {
                     if let Some(state) = self.graph.state(idx) {
                         // Merge undo?
-                        self.graph
-                            .update_state(idx, state.clone().with_initial(None));
-                        self.graph.set_initial(idx, transit::Initial::None);
+                        self.update_state(idx, state.clone().with_initial(None));
+                        self.set_initial(idx, transit::Initial::None);
                     }
                 }
                 Command::StepInitial(idx) => {
                     let initial = self.graph.initial(idx);
                     match initial {
                         transit::Initial::None => (), // error?
-                        _ => self.graph.set_initial(idx, initial.step()),
+                        _ => self.set_initial(idx, initial.step()),
                     }
                 }
-                Command::SetInternal(tdx, internal) => self.graph.set_internal(tdx, internal),
+                Command::SetInternal(tdx, internal) => self.set_internal(tdx, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
                     match Source::new(&p) {
@@ -586,21 +582,21 @@ impl Edit {
                         if let Some(state) = self.graph.state(i) {
                             let mut state = state.clone();
                             state.enter = s;
-                            self.graph.update_state(i, state);
+                            self.update_state(i, state);
                         }
                     }
                     SymbolId::Exit(i) => {
                         if let Some(state) = self.graph.state(i) {
                             let mut state = state.clone();
                             state.exit = s;
-                            self.graph.update_state(i, state);
+                            self.update_state(i, state);
                         }
                     }
                     SymbolId::Guard(i) => {
                         if let Some(t) = self.graph.transition(i) {
                             let mut t = t.clone();
                             t.guard = s;
-                            self.graph.update_transition(i, t);
+                            self.update_transition(i, t);
                         }
                     }
                 },

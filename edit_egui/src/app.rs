@@ -2,6 +2,10 @@ use crate::*;
 use eframe::egui;
 use std::path::PathBuf;
 
+pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Z);
+pub const REDO: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Z);
+
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct App {
@@ -100,6 +104,24 @@ impl App {
                     if ui.button("Save as...").clicked() {
                         self.file_save_as();
                         ui.close_menu();
+                    }
+                    if ui
+                        .add_enabled(
+                            !self.edit.undos.is_empty(),
+                            Button::new("Undo").shortcut_text(ui.ctx().format_shortcut(&UNDO)),
+                        )
+                        .clicked()
+                    {
+                        self.edit.undo();
+                    }
+                    if ui
+                        .add_enabled(
+                            !self.edit.redos.is_empty(),
+                            Button::new("Redo").shortcut_text(ui.ctx().format_shortcut(&REDO)),
+                        )
+                        .clicked()
+                    {
+                        self.edit.redo();
                     }
                     if ui.button("Quit").clicked() {
                         // TODO: prompt to save?

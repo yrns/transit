@@ -2,7 +2,7 @@ use eframe::egui;
 
 // TODO wasm https://github.com/emilk/eframe_template
 
-struct App(edit_egui::App);
+struct App(edit_egui::app::App);
 
 fn main() {
     //tracing_subscriber::fmt::init();
@@ -13,7 +13,7 @@ fn main() {
         "transit",
         options,
         Box::new(|cc| {
-            let mut app: edit_egui::App = cc
+            let mut app: edit_egui::app::App = cc
                 .storage
                 .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
                 .unwrap_or_default();
