@@ -3,7 +3,7 @@ mod editabel;
 mod editor;
 mod search;
 pub mod source;
-//mod undo;
+mod undo;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,7 @@ use eframe::epaint::RectShape;
 use search::SearchBox;
 use source::Source;
 use transit::EditGraph;
+use undo::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
@@ -36,6 +37,10 @@ pub struct Edit {
     pub graph: transit::Graph<State, Transition>,
     #[serde(default)]
     pub selection: Selection,
+    #[serde(skip)] // for now
+    undos: Vec<Op<State, Transition>>,
+    #[serde(skip)] // for now
+    redos: Vec<Op<State, Transition>>,
 }
 
 // Initial (destination) port and control points. Similiar to transition.
@@ -79,6 +84,15 @@ impl Default for State {
             collapsed: false,
             pan: Vec2::ZERO,
             zoom: 1.0,
+        }
+    }
+}
+
+impl From<&str> for State {
+    fn from(id: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            ..Default::default()
         }
     }
 }
