@@ -6,7 +6,7 @@ edition = "2021"
 
 [features]
 default = ["serde"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "dep:ron"]
 
 [workspace]
 members = ["edit_egui", "janet"]
@@ -14,7 +14,7 @@ members = ["edit_egui", "janet"]
 [dependencies]
 petgraph = { version = "0.6", features = ["serde-1"] }
 serde = { version = "1", optional = true, features = ["derive"] }
-ron = "0.8"
+ron = { version = "0.8", optional = true }
 once_cell = "1.3.1"
 thiserror = "1.0.38"
 #kurbo = { git = "https://github.com/linebender/kurbo.git", rev = "0ed65ac", features = ["serde"], optional = true }
