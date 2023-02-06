@@ -246,7 +246,7 @@ impl Transition<Door> for DoorGuard {
     }
 }
 
-pub fn make_graph() -> Graph<Door> {
+pub fn make_graph() -> Graph<DoorState, DoorGuard> {
     let mut g = Graph::new();
 
     let intact = g.add_state(DoorState::Intact, None);
@@ -256,7 +256,7 @@ pub fn make_graph() -> Graph<Door> {
     let destroyed = g.add_state(DoorState::Destroyed, None);
 
     // Set the root node initial to "locked".
-    g.set_root_initial(locked);
+    g.set_root_initial(locked.into());
     // Set the intact state initial to "locked"
     //g.graph[intact].set_initial(Initial::Initial(locked));
 

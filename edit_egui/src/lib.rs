@@ -3,6 +3,7 @@ mod editabel;
 mod editor;
 mod search;
 pub mod source;
+//mod undo;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -16,6 +17,7 @@ use eframe::egui::*;
 use eframe::epaint::RectShape;
 use search::SearchBox;
 use source::Source;
+use transit::EditGraph;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
@@ -31,13 +33,13 @@ pub enum Selection {
 #[derive(Default)]
 pub struct Edit {
     pub source: Option<Source>,
-    pub graph: transit::Graph<EditContext>,
+    pub graph: transit::Graph<State, Transition>,
     #[serde(default)]
     pub selection: Selection,
 }
 
 // Initial (destination) port and control points. Similiar to transition.
-pub type Initial = (usize, Vec2, Vec2);
+pub type InitialData = (usize, Vec2, Vec2);
 
 #[derive(Debug)]
 pub enum SymbolId {
@@ -56,7 +58,7 @@ pub struct State {
     exit: Option<String>,
     /// Rect relative to parent.
     rect: Rect,
-    initial: Option<Initial>,
+    initial: Option<InitialData>,
     #[allow(unused)]
     collapsed: bool,
     #[allow(unused)]
@@ -96,44 +98,45 @@ pub struct Transition {
     port2: usize,
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Clone, Default)]
-pub struct EditContext {}
-
 // TODO: this does nothing and shouldn't be necessary if we're not running it
-impl transit::Context for EditContext {
-    type Event = ();
-    type State = State;
-    type Transition = Transition;
-}
 
-impl transit::State<EditContext> for State {
-    fn enter(
-        &mut self,
-        _ctx: &mut EditContext,
-        _event: Option<&<EditContext as transit::Context>::Event>,
-    ) {
-        todo!()
-    }
+// #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+// #[derive(Clone, Default)]
+//pub struct EditContext {}
 
-    fn exit(
-        &mut self,
-        _ctx: &mut EditContext,
-        _event: Option<&<EditContext as transit::Context>::Event>,
-    ) {
-        todo!()
-    }
-}
+// impl transit::Context for EditContext {
+//     type Event = ();
+//     type State = State;
+//     type Transition = Transition;
+// }
 
-impl transit::Transition<EditContext> for Transition {
-    fn guard(
-        &mut self,
-        _ctx: &mut EditContext,
-        _event: &<EditContext as transit::Context>::Event,
-    ) -> bool {
-        todo!()
-    }
-}
+// impl transit::State<EditContext> for State {
+//     fn enter(
+//         &mut self,
+//         _ctx: &mut EditContext,
+//         _event: Option<&<EditContext as transit::Context>::Event>,
+//     ) {
+//         todo!()
+//     }
+
+//     fn exit(
+//         &mut self,
+//         _ctx: &mut EditContext,
+//         _event: Option<&<EditContext as transit::Context>::Event>,
+//     ) {
+//         todo!()
+//     }
+// }
+
+// impl transit::Transition<EditContext> for Transition {
+//     fn guard(
+//         &mut self,
+//         _ctx: &mut EditContext,
+//         _event: &<EditContext as transit::Context>::Event,
+//     ) -> bool {
+//         todo!()
+//     }
+// }
 
 #[derive(Debug)]
 pub enum Command {
@@ -148,7 +151,7 @@ pub enum Command {
     RemoveTransition(transit::Tdx),
     UpdateTransition(transit::Tdx, Transition),
     MoveTransition(transit::Tdx, Option<transit::Idx>, Option<transit::Idx>),
-    SetInitial(transit::Idx, transit::Idx, Initial),
+    SetInitial(transit::Idx, transit::Idx, InitialData),
     UnsetInitial(transit::Idx),
     StepInitial(transit::Idx),
     SetEnter,
@@ -485,7 +488,9 @@ impl Edit {
                         Some(parent),
                     );
                 }
-                Command::RemoveState(idx, recur) => self.graph.remove_state(idx, !recur, !recur),
+                Command::RemoveState(idx, recur) => {
+                    self.graph.remove_state(idx, !recur, !recur);
+                }
                 Command::MoveState(idx, parent, offset) => {
                     if let Some(state) = self.graph.state(idx) {
                         let mut state = state.clone();

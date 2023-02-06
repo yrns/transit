@@ -1,6 +1,8 @@
 //#![allow(unused_imports)]
 
-use crate::undo::*;
+pub mod edit;
+
+pub use edit::*;
 pub use petgraph::Direction;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
@@ -9,8 +11,6 @@ use petgraph::{
 };
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
-
-mod undo;
 
 // TODO: use statecharts as as states, "includes"
 // the statechart needs to implement some interface that makes it behave as a state
@@ -33,31 +33,23 @@ where
     fn transition(&mut self, _source: &Self::State, _target: &Self::State) {}
 }
 
+pub type ContextGraph<C> = Graph<<C as Context>::State, <C as Context>::Transition>;
+
 // TODO: Serialize? Context needs to be separate from the graph so
 // multiple contexts can share one graph. Same for state and
 // transition contexts which are mutable currently.
 pub struct Statechart<C: Context> {
     pub context: C,
     // TODO: this should be a non-mutable ref so it can be shared.
-    pub graph: Graph<C>,
+    pub graph: ContextGraph<C>,
     pub active: Idx,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone)]
-pub struct Graph<C: Context> {
-    #[cfg_attr(
-        feature = "serde",
-        serde(bound(
-            serialize = "C::State: serde::Serialize, C::Transition: serde::Serialize",
-            deserialize = "C::State: serde::Deserialize<'de>, C::Transition: serde::Deserialize<'de>"
-        ))
-    )]
-    pub(crate) graph: StableDiGraph<Node<C::State>, Edge<C::Transition>, u32>,
+pub struct Graph<S, T> {
+    pub graph: StableDiGraph<Node<S>, Edge<T>, u32>,
     pub root: Idx,
-    // Make this an option? TODO: move to edit
-    #[cfg_attr(feature = "serde", serde(skip_serializing, skip_deserializing))]
-    undo: Undo<C::State, C::Transition>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -131,7 +123,7 @@ pub enum Edge<T> {
 }
 
 impl<T> Edge<T> {
-    fn set_internal(self, internal: bool) -> Self {
+    pub fn set_internal(self, internal: bool) -> Self {
         match self {
             Edge::Transition(t) if internal => Edge::Internal(t),
             Edge::Internal(t) if !internal => Edge::Transition(t),
@@ -139,7 +131,7 @@ impl<T> Edge<T> {
         }
     }
 
-    fn set_transition(&mut self, transition: T) {
+    pub fn set_transition(&mut self, transition: T) {
         match self {
             Edge::Transition(t) | Edge::Internal(t) => *t = transition,
             //_ => (), // error
@@ -168,6 +160,7 @@ pub fn transition_weight_mut<T>(edge: &mut Edge<T>) -> Option<&mut T> {
     }
 }
 
+/// A reference to a transition, index, and edge information.
 pub type TransitionRef<'a, T> = (Tdx, Idx, Idx, &'a T, bool);
 
 pub fn edge_transition_filter<'a, C, E>(
@@ -201,111 +194,37 @@ pub trait Transition<C: Context> {
     //fn action(&mut self); ???
 }
 
-impl<C: Context> Graph<C> {
-    pub fn new() -> Self {
+impl<S, T> Graph<S, T> {
+    pub fn new() -> Self
+    where
+        S: Default,
+    {
         let mut graph = StableDiGraph::default();
         let root = graph.add_node(Node::default());
-        Self {
-            graph,
-            root,
-            undo: Undo::default(),
-        }
+        Self { graph, root }
     }
 
-    pub fn root(&self) -> &C::State {
+    pub fn root(&self) -> &S {
         &self.graph[self.root].state
     }
 
-    pub fn add_state(&mut self, state: C::State, parent: Option<Idx>) -> Idx {
-        let s = Node::new(state, parent.or(Some(self.root)));
-        let i = self.graph.add_node(s.clone());
-        self.add_undo(Op::AddState(i, s));
-        i
-    }
-
-    // TODO: undo transaction, error?
-    pub fn remove_state(&mut self, i: Idx, keep_transitions: bool, keep_children: bool) {
-        // Cannot remove the root.
-        assert!(i != self.root);
-
-        // Kept things go to the parent state (if not root).
-        let parent = self.graph.node_weight(i).and_then(|s| s.parent).unwrap();
-        //.filter(|i| *i != self.root);
-
-        // Clean up child states.
-        for child in self.children(i).collect::<Vec<_>>() {
-            if keep_children {
-                self.set_parent(child, parent);
-            } else {
-                self.remove_state(child, keep_transitions, false)
-            }
-        }
-
-        // Clean up initial/history.
-        let mut path = self.path_walk(i);
-        while let Some(p) = path.next(self) {
-            if self.graph[p].initial.idx() == Some(i) {
-                self.set_initial_idx(p, Some(parent));
-            }
-        }
-
-        // petgraph by default removes all edges to and from this
-        // node, which we want to avoid since we want the undo
-        // history.
-
-        // `neighbors` is directed/outgoing... FIX: Self-transitions will show up twice here, but
-        // the comments here indicate that shouldn't happen:
-        // ~/.local/share/cargo/registry/src/github.com-1ecc6299db9ec823/petgraph-0.6.2/src/graph_impl/mod.rs:2023
-        let mut edges = self.graph.neighbors_undirected(i).detach();
-
-        // Can't transition to/from root.
-        if keep_transitions && parent != self.root {
-            // TODO make sure this handles self-transitions correctly
-            while let Some(edge) = edges.next_edge(&mut self.graph) {
-                // We are looking up endpoints again when moving...
-                match self.graph.edge_endpoints(edge) {
-                    Some((a, b)) if a == b => self.move_transition(edge, parent, parent),
-                    Some((a, b)) if a == i => self.move_transition(edge, parent, b),
-                    Some((a, b)) if b == i => self.move_transition(edge, a, parent),
-                    _ => (), // error
-                }
-            }
-        } else {
-            while let Some(edge) = edges.next_edge(&mut self.graph) {
-                self.remove_transition(edge);
-            }
-        }
-
-        if let Some(s) = self.graph.remove_node(i) {
-            self.add_undo(Op::RemoveState(i, s))
-        }
-    }
-
     /// Returns a state reference for index.
-    pub fn state(&self, i: Idx) -> Option<&C::State> {
+    pub fn state(&self, i: Idx) -> Option<&S> {
         self.graph.node_weight(i).map(|s| &s.state)
     }
 
     /// Returns an iterator over all states.
-    pub fn states(&self) -> impl Iterator<Item = (Idx, &C::State)> {
+    pub fn states(&self) -> impl Iterator<Item = (Idx, &S)> {
         self.graph.node_references().map(|(i, n)| (i, &n.state))
     }
 
-    pub fn states_mut(&mut self) -> impl Iterator<Item = &mut C::State> {
+    pub fn states_mut(&mut self) -> impl Iterator<Item = &mut S> {
         self.graph.node_weights_mut().map(|n| &mut n.state)
     }
 
     /// Returns a transition reference for index.
-    pub fn transition(&self, i: Tdx) -> Option<&C::Transition> {
+    pub fn transition(&self, i: Tdx) -> Option<&T> {
         self.graph.edge_weight(i).and_then(transition_weight)
-    }
-
-    /// Update state.
-    pub fn update_state(&mut self, i: Idx, state: C::State) {
-        let s1 = self.graph[i].clone();
-        self.graph[i].state = state;
-        let s2 = self.graph[i].clone();
-        self.add_undo(Op::UpdateState(i, s1, s2));
     }
 
     pub fn contains_state(&self, i: Idx) -> bool {
@@ -324,7 +243,7 @@ impl<C: Context> Graph<C> {
     }
 
     // Once we filter we can't reverse?
-    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &Node<C::State>)> {
+    pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &Node<S>)> {
         self.graph
             .node_references()
             .rev()
@@ -343,7 +262,7 @@ impl<C: Context> Graph<C> {
         &self,
         i: Idx,
         direction: Direction,
-    ) -> impl Iterator<Item = TransitionRef<C::Transition>> {
+    ) -> impl Iterator<Item = TransitionRef<T>> {
         self.graph
             .edges_directed(i, direction)
             .filter_map(|e| match e.weight() {
@@ -353,17 +272,11 @@ impl<C: Context> Graph<C> {
             })
     }
 
-    pub fn transitions_out(
-        &self,
-        i: Idx,
-    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
+    pub fn transitions_out(&self, i: Idx) -> impl Iterator<Item = (Tdx, Idx, Idx, &T, bool)> {
         self.state_transitions(i, Direction::Outgoing)
     }
 
-    pub fn transitions_in(
-        &self,
-        i: Idx,
-    ) -> impl Iterator<Item = (Tdx, Idx, Idx, &<C as Context>::Transition, bool)> {
+    pub fn transitions_in(&self, i: Idx) -> impl Iterator<Item = (Tdx, Idx, Idx, &T, bool)> {
         self.state_transitions(i, Direction::Incoming)
     }
 
@@ -371,7 +284,7 @@ impl<C: Context> Graph<C> {
         self.graph.edge_indices()
     }
 
-    pub fn transitions(&self) -> impl Iterator<Item = TransitionRef<C::Transition>> {
+    pub fn transitions(&self) -> impl Iterator<Item = TransitionRef<T>> {
         self.graph
             .edge_references()
             .filter_map(|e| match e.weight() {
@@ -381,7 +294,7 @@ impl<C: Context> Graph<C> {
             })
     }
 
-    pub fn transitions_mut(&mut self) -> impl Iterator<Item = &mut C::Transition> {
+    pub fn transitions_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.graph
             .edge_weights_mut()
             .filter_map(transition_weight_mut)
@@ -393,67 +306,6 @@ impl<C: Context> Graph<C> {
 
     pub fn is_self_transition(&self, i: Tdx) -> bool {
         self.endpoints(i).map(|(a, b)| a == b).unwrap_or_default()
-    }
-
-    pub fn set_parent(&mut self, i: Idx, parent: Idx) {
-        // Cannot change the parent of the root.
-        assert!(i != self.root);
-
-        // Make sure the new parent isn't a child.
-        assert!(!self.in_path(i, parent));
-
-        // TODO: Op::UpdateParent?
-        let s = &mut self.graph[i];
-        // Save previous parent.
-        let p0 = s.parent;
-        let s0 = s.clone();
-        s.parent = Some(parent);
-        let s = s.clone();
-        self.add_undo(Op::UpdateState(i, s0, s));
-
-        // Validate initial from prior path.
-        if let Some(p) = p0 {
-            let mut path = self.path_walk(p);
-            while let Some(a) = path.next(self) {
-                if let Some(i) = self.initial(a).idx() {
-                    if !self.is_child(a, i) {
-                        self.set_initial(a, Initial::None)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Set initial for the root state (the default state for the
-    /// graph). `set_graph_initial`?
-    pub fn set_root_initial(&mut self, initial: impl Into<Initial>) {
-        self.set_initial(self.root, initial);
-    }
-
-    pub fn set_initial(&mut self, i: Idx, initial: impl Into<Initial>) {
-        let initial = initial.into();
-        assert!(self.graph.contains_node(i));
-        // Make sure the initial state (if any) is a child.
-        if let Some(initial_idx) = initial.idx() {
-            assert!(self.is_child(i, initial_idx));
-        }
-
-        // TODO: Op::UpdateInitial?
-        let s1 = self.graph[i].clone();
-        self.graph[i].initial = initial;
-        let s2 = self.graph[i].clone();
-        self.add_undo(Op::UpdateState(i, s1, s2));
-    }
-
-    // Sets the initial index, preserving the initial variant. If
-    // `initial` is None, sets it to Initial::None.
-    pub fn set_initial_idx(&mut self, i: Idx, initial: Option<Idx>) {
-        self.set_initial(
-            i,
-            initial
-                .map(|i0| self.graph[i].initial.clone().set_idx(i0))
-                .unwrap_or_default(),
-        )
     }
 
     // Return true if b is a child of a.
@@ -481,69 +333,8 @@ impl<C: Context> Graph<C> {
         }
     }
 
-    pub fn set_internal(&mut self, i: Tdx, internal: bool) {
-        let i0 = is_internal(&self.graph[i]);
-        if internal != i0 {
-            self.add_undo(Op::SetInternal(i, internal));
-            let edge = &mut self.graph[i];
-            *edge = edge.clone().set_internal(internal);
-        }
-    }
-
-    // TODO: check root? validation?
-    pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<Edge<C::Transition>>) -> Tdx {
-        let t = t.into();
-        assert!(!is_internal(&t) || a == b);
-        // Can't transition to or from root.
-        assert!(a != self.root && b != self.root);
-        let i = self.graph.add_edge(a, b, t.clone());
-        self.add_undo(Op::AddTransition(i, (a, b, t)));
-        i
-    }
-
-    pub fn remove_transition(&mut self, i: Tdx) -> Option<Edge<C::Transition>> {
-        self.graph
-            .edge_endpoints(i)
-            .zip(self.graph.remove_edge(i))
-            .map(|((a, b), t)| {
-                self.add_undo(Op::RemoveTransition(i, (a, b, t.clone())));
-                t
-            })
-    }
-
-    pub fn update_transition(&mut self, i: Tdx, t: C::Transition) {
-        if let Some((a, b)) = self.graph.edge_endpoints(i) {
-            let t0 = self.graph[i].clone();
-            self.graph[i].set_transition(t);
-            let t1 = self.graph[i].clone();
-            self.add_undo(Op::UpdateTransition(i, (a, b, t0), (a, b, t1)));
-        }
-    }
-
-    // There is no API for updating an existing edge so we add/remove
-    // (see https://github.com/petgraph/petgraph/pull/103).
-    pub(crate) fn move_transition_internal(&mut self, i: Tdx, a: Idx, b: Idx) {
-        if let Some(t) = self.graph.remove_edge(i) {
-            let i2 = self.graph.add_edge(a, b, t);
-            assert_eq!(i, i2);
-        }
-    }
-
-    pub fn move_transition(&mut self, i: Tdx, a: Idx, b: Idx) {
-        // Can't transition to or from the root.
-        assert!(a != self.root);
-        assert!(b != self.root);
-
-        if let Some((a0, b0)) = self.graph.edge_endpoints(i) {
-            // Op::UpdateEndpoints?
-            let t = self.graph[i].clone();
-            self.add_undo(Op::UpdateTransition(i, (a0, b0, t.clone()), (a, b, t)));
-            self.move_transition_internal(i, a, b)
-        }
-    }
-
     // returns an iterator from idx -> root
-    pub fn path_iter(&self, idx: Idx) -> PathIter<'_, C> {
+    pub fn path_iter(&self, idx: Idx) -> PathIter<'_, S, T> {
         PathIter {
             graph: self,
             next: Some(idx),
@@ -643,7 +434,11 @@ impl<C: Context> Graph<C> {
     }
 }
 
-impl<C: Context> Default for Graph<C> {
+/// This creates a root state which requires S: [Default].
+impl<S, T> Default for Graph<S, T>
+where
+    S: Default,
+{
     fn default() -> Self {
         Graph::new()
     }
@@ -659,11 +454,10 @@ pub enum ExportError {
 }
 
 #[cfg(feature = "serde")]
-impl<C> Graph<C>
+impl<S, T> Graph<S, T>
 where
-    C: Context,
-    C::State: serde::Serialize,
-    C::Transition: serde::Serialize,
+    S: serde::Serialize,
+    T: serde::Serialize,
 {
     pub fn export(&self) -> Result<String, ExportError> {
         Ok(ron::ser::to_string_pretty(&self, Default::default())?)
@@ -688,11 +482,10 @@ pub enum ImportError {
 }
 
 #[cfg(feature = "serde")]
-impl<C> Graph<C>
+impl<S, T> Graph<S, T>
 where
-    C: Context,
-    C::State: for<'de> serde::Deserialize<'de>,
-    C::Transition: for<'de> serde::Deserialize<'de>,
+    S: for<'de> serde::Deserialize<'de>,
+    T: for<'de> serde::Deserialize<'de>,
 {
     pub fn import_from_file(path: &std::path::Path) -> Result<Self, ImportError> {
         Ok(ron::de::from_reader(std::fs::File::open(path)?)?)
@@ -700,7 +493,7 @@ where
 }
 
 impl<C: Context> Statechart<C> {
-    pub fn new(graph: Graph<C>, context: C) -> Self {
+    pub fn new(graph: ContextGraph<C>, context: C) -> Self {
         // TODO: verify graph? bindings? when do we apply initial?
         let active = graph.root;
         Self {
@@ -866,12 +659,12 @@ impl<C: Context> Statechart<C> {
     }
 }
 
-pub struct PathIter<'a, C: Context> {
-    graph: &'a Graph<C>,
+pub struct PathIter<'a, S, T> {
+    graph: &'a Graph<S, T>,
     next: Option<Idx>,
 }
 
-impl<'a, C: Context> Iterator for PathIter<'a, C> {
+impl<'a, S, T> Iterator for PathIter<'a, S, T> {
     type Item = Idx;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -885,7 +678,7 @@ impl<'a, C: Context> Iterator for PathIter<'a, C> {
 struct PathWalker(Option<Idx>);
 
 impl PathWalker {
-    fn next<C: Context>(&mut self, graph: &Graph<C>) -> Option<Idx> {
+    fn next<S, T>(&mut self, graph: &Graph<S, T>) -> Option<Idx> {
         self.0.map(|n| {
             self.0 = graph.parent(n);
             n
@@ -908,34 +701,34 @@ impl<T> Node<T> {
 mod tests {
     use super::*;
 
-    impl State<TestContext> for String {
-        fn enter(&mut self, _ctx: &mut TestContext, _event: Option<&()>) {}
-        fn exit(&mut self, _ctx: &mut TestContext, _event: Option<&()>) {}
-    }
+    // impl State<TestContext> for String {
+    //     fn enter(&mut self, _ctx: &mut TestContext, _event: Option<&()>) {}
+    //     fn exit(&mut self, _ctx: &mut TestContext, _event: Option<&()>) {}
+    // }
 
-    impl Transition<TestContext> for () {
-        fn guard(&mut self, _ctx: &mut TestContext, _event: &()) -> bool {
-            todo!()
-        }
-    }
+    // impl Transition<TestContext> for () {
+    //     fn guard(&mut self, _ctx: &mut TestContext, _event: &()) -> bool {
+    //         todo!()
+    //     }
+    // }
 
-    #[derive(Clone, Default)]
-    pub(crate) struct TestContext;
-    impl Context for TestContext {
-        type Event = ();
-        type State = String;
-        type Transition = ();
-    }
+    // #[derive(Clone, Default)]
+    // pub(crate) struct TestContext;
+    // impl Context for TestContext {
+    //     type Event = ();
+    //     type State = String;
+    //     type Transition = ();
+    // }
 
-    pub(crate) fn test_graph() -> Graph<TestContext> {
+    pub(crate) fn test_graph() -> Graph<String, ()> {
         Graph::new()
     }
 
     #[test]
     fn is_child() {
         let mut g = test_graph();
-        let a = g.add_state("a".into(), None);
-        let b = g.add_state("b".into(), Some(a));
+        let a = g.add_state("a".to_owned(), None);
+        let b = g.add_state("b".to_owned(), Some(a));
 
         assert!(g.is_child(a, b));
         assert!(!g.is_child(a, a));
@@ -945,8 +738,8 @@ mod tests {
     #[test]
     fn validate() {
         let mut g = test_graph();
-        let a = g.add_state("a".into(), None);
-        let b = g.add_state("b".into(), Some(a));
+        let a = g.add_state("a".to_owned(), None);
+        let b = g.add_state("b".to_owned(), Some(a));
         g.graph[a].parent = Some(b);
         assert!(g.validate().is_err());
     }

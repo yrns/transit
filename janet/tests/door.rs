@@ -2,10 +2,13 @@ use std::{collections::HashMap, fs::read_to_string};
 
 use janet::*;
 use janetrs::{client::JanetClient, *};
-use transit::{Graph, Idx, Statechart};
+use transit::{EditGraph, Graph, Idx, Statechart};
 
-fn make_door(client: &JanetClient) -> (Graph<JanetContext>, HashMap<Idx, String>) {
-    let mut g = Graph::<JanetContext>::new();
+fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, String>) {
+    let mut g = Graph::new();
+
+    // Track state indices and names for testing. An alternative would be to put the state name in
+    // state local data.
     let mut states = HashMap::new();
 
     let intact = g.add_state(
@@ -53,7 +56,7 @@ fn make_door(client: &JanetClient) -> (Graph<JanetContext>, HashMap<Idx, String>
     );
     states.insert(destroyed, "destroyed".into());
 
-    g.set_root_initial(locked);
+    g.set_root_initial(locked.into());
 
     g.add_transition(
         intact,
