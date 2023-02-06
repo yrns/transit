@@ -83,6 +83,12 @@ impl App {
 
         let mut quit = false;
 
+        if ctx.input_mut().consume_shortcut(&UNDO) {
+            self.edit.undo();
+        } else if ctx.input_mut().consume_shortcut(&REDO) {
+            self.edit.redo();
+        }
+
         #[cfg(not(target_arch = "wasm32"))]
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
