@@ -16,7 +16,7 @@ use eframe::egui::*;
 use eframe::epaint::RectShape;
 use search::SearchBox;
 use source::Source;
-use transit::EditGraph;
+use transit::{Initial, Op};
 use undo::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -36,10 +36,8 @@ pub struct Edit {
     pub graph: transit::Graph<State, Transition>,
     #[serde(default)]
     pub selection: Selection,
-    #[serde(skip)] // for now
-    undos: Vec<Op<State, Transition>>,
-    #[serde(skip)] // for now
-    redos: Vec<Op<State, Transition>>,
+    #[serde(default)]
+    pub undo: Undo,
 }
 
 // Initial (destination) port and control points. Similiar to transition.
@@ -489,85 +487,78 @@ impl Edit {
 
     pub fn process_commands(&mut self, commands: Vec<Command>) {
         for c in commands {
-            //dbg!(&c);
-            match c {
-                Command::AddState(parent, p) => {
-                    self.add_state(
+            let op = match c {
+                Command::AddState(parent, p) => self
+                    .graph
+                    .add_state(
                         State {
                             id: "untitled".into(),
                             rect: Rect::from_min_size(p, State::DEFAULT_SIZE),
                             ..Default::default()
                         },
                         Some(parent),
-                    );
-                }
+                    )
+                    .into(),
                 Command::RemoveState(idx, recur) => {
-                    self.remove_state(idx, !recur, !recur);
+                    self.graph.remove_state(idx, !recur, !recur).into()
                 }
                 Command::MoveState(idx, parent, offset) => {
-                    if let Some(state) = self.graph.state(idx) {
-                        let mut state = state.clone();
-                        state.rect = Rect::from_min_size(offset, state.rect.size());
+                    let mut ops = Vec::new();
 
-                        // TODO: merge undos
-                        if self.graph.parent(idx) != Some(parent) {
-                            self.set_parent(idx, parent);
-                        }
-                        self.update_state(idx, state);
+                    if self.graph.parent(idx) != Some(parent) {
+                        ops.extend(self.graph.set_parent(idx, parent));
                     }
+
+                    let mut state = self.graph.state(idx).unwrap().clone();
+                    state.rect = Rect::from_min_size(offset, state.rect.size());
+                    ops.push(self.graph.update_state(idx, state));
+
+                    ops.into()
                 }
                 Command::ResizeState(idx, delta) => {
-                    if let Some(state) = self.graph.state(idx) {
-                        let mut state = state.clone();
-                        state.rect = Rect::from_min_size(state.rect.min, state.rect.size() + delta);
-                        self.update_state(idx, state);
-                    }
+                    let mut state = self.graph.state(idx).unwrap().clone();
+                    state.rect = Rect::from_min_size(state.rect.min, state.rect.size() + delta);
+                    self.graph.update_state(idx, state)
                 }
-                Command::UpdateState(idx, state) => self.update_state(idx, state),
-                Command::AddTransition(a, b, t) => {
-                    self.add_transition(a, b, t);
-                }
-                Command::UpdateTransition(tdx, t) => {
-                    self.update_transition(tdx, t);
-                }
+                Command::UpdateState(idx, state) => self.graph.update_state(idx, state),
+                Command::AddTransition(a, b, t) => self.graph.add_transition(a, b, t).into(),
+                Command::UpdateTransition(tdx, t) => self.graph.update_transition(tdx, t),
                 Command::MoveTransition(tdx, source, target) => {
-                    if let Some(endpoints) = self.graph.endpoints(tdx) {
-                        self.move_transition(
-                            tdx,
-                            source.unwrap_or(endpoints.0),
-                            target.unwrap_or(endpoints.1),
-                        );
-                    }
+                    let (a, b) = self.graph.endpoints(tdx).expect("endpoints");
+                    self.graph
+                        .move_transition(tdx, source.unwrap_or(a), target.unwrap_or(b))
+                        .into()
                 }
-                Command::RemoveTransition(tdx) => {
-                    self.remove_transition(tdx);
-                }
+                Command::RemoveTransition(tdx) => self.graph.remove_transition(tdx),
                 Command::UpdateSelection(selection) => {
                     // TODO undo?
                     self.selection = selection;
+                    Op::Noop
                 }
-                Command::SetInitial(idx, target, initial) => {
-                    if let Some(state) = self.graph.state(idx) {
-                        // Merge undo?
-                        self.update_state(idx, state.clone().with_initial(Some(initial)));
-                        self.set_initial(idx, self.graph.initial(idx).set_idx(target));
-                    }
+                Command::SetInitial(i, initial, data) => {
+                    let state = self
+                        .graph
+                        .state(i)
+                        .unwrap()
+                        .clone()
+                        .with_initial(Some(data));
+                    vec![
+                        self.graph.update_state(i, state),
+                        self.graph
+                            .set_initial(i, self.graph.initial(i).set_idx(initial)),
+                    ]
+                    .into()
                 }
-                Command::UnsetInitial(idx) => {
-                    if let Some(state) = self.graph.state(idx) {
-                        // Merge undo?
-                        self.update_state(idx, state.clone().with_initial(None));
-                        self.set_initial(idx, transit::Initial::None);
-                    }
+                Command::UnsetInitial(i) => {
+                    let state = self.graph.state(i).unwrap().clone().with_initial(None);
+                    vec![
+                        self.graph.update_state(i, state),
+                        self.graph.set_initial(i, transit::Initial::None),
+                    ]
+                    .into()
                 }
-                Command::StepInitial(idx) => {
-                    let initial = self.graph.initial(idx);
-                    match initial {
-                        transit::Initial::None => (), // error?
-                        _ => self.set_initial(idx, initial.step()),
-                    }
-                }
-                Command::SetInternal(tdx, internal) => self.set_internal(tdx, internal),
+                Command::StepInitial(i) => self.graph.set_initial(i, self.graph.initial(i).step()),
+                Command::SetInternal(i, internal) => self.graph.set_internal(i, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
                     match Source::new(&p) {
@@ -576,31 +567,36 @@ impl Edit {
                         }
                         Err(e) => println!("error: {:?}", e),
                     }
+                    Op::Noop
                 }
                 Command::UpdateSymbol(symbol, s) => match symbol {
                     SymbolId::Enter(i) => {
-                        if let Some(state) = self.graph.state(i) {
-                            let mut state = state.clone();
-                            state.enter = s;
-                            self.update_state(i, state);
-                        }
+                        let state = self.graph.state(i).map(|state| state.clone().with_enter(s));
+                        state
+                            .map(|state| self.graph.update_state(i, state))
+                            .unwrap_or_default()
                     }
                     SymbolId::Exit(i) => {
-                        if let Some(state) = self.graph.state(i) {
-                            let mut state = state.clone();
-                            state.exit = s;
-                            self.update_state(i, state);
-                        }
+                        let state = self.graph.state(i).map(|state| state.clone().with_exit(s));
+                        state
+                            .map(|state| self.graph.update_state(i, state))
+                            .unwrap_or_default()
                     }
                     SymbolId::Guard(i) => {
-                        if let Some(t) = self.graph.transition(i) {
-                            let mut t = t.clone();
-                            t.guard = s;
-                            self.update_transition(i, t);
-                        }
+                        let t = self.graph.transition(i).map(|t| t.clone().with_guard(s));
+                        t.map(|t| self.graph.update_transition(i, t))
+                            .unwrap_or_default()
                     }
                 },
-                _ => println!("unhandled command: {:?}", c),
+                _ => {
+                    println!("unhandled command: {:?}", c);
+                    Op::Noop
+                }
+            };
+
+            match op {
+                Op::Noop => (),
+                _ => self.add_undo(op),
             }
         }
     }
@@ -1274,10 +1270,10 @@ impl Edit {
 
                 // Initial type.
                 match initial {
-                    transit::Initial::HistoryShallow(_) => {
+                    Initial::HistoryShallow(_) => {
                         ui.colored_label(color, "h");
                     }
-                    transit::Initial::HistoryDeep(_) => {
+                    Initial::HistoryDeep(_) => {
                         ui.colored_label(color, "h*");
                     }
                     _ => (),
@@ -1945,6 +1941,15 @@ impl State {
         self.initial = initial;
         self
     }
+
+    pub fn with_enter(mut self, enter: Symbol) -> Self {
+        self.enter = enter;
+        self
+    }
+    pub fn with_exit(mut self, exit: Symbol) -> Self {
+        self.exit = exit;
+        self
+    }
 }
 
 impl Transition {
@@ -1960,6 +1965,11 @@ impl Transition {
 
     pub fn with_port2(mut self, port2: usize) -> Self {
         self.port2 = port2;
+        self
+    }
+
+    pub fn with_guard(mut self, guard: Symbol) -> Self {
+        self.guard = guard;
         self
     }
 }

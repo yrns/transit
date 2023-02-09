@@ -113,7 +113,7 @@ impl App {
                     }
                     if ui
                         .add_enabled(
-                            !self.edit.undos.is_empty(),
+                            self.edit.undo.can_undo(),
                             Button::new("Undo").shortcut_text(ui.ctx().format_shortcut(&UNDO)),
                         )
                         .clicked()
@@ -122,7 +122,7 @@ impl App {
                     }
                     if ui
                         .add_enabled(
-                            !self.edit.redos.is_empty(),
+                            self.edit.undo.can_redo(),
                             Button::new("Redo").shortcut_text(ui.ctx().format_shortcut(&REDO)),
                         )
                         .clicked()

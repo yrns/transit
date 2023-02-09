@@ -256,18 +256,18 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
     let destroyed = g.add_state(DoorState::Destroyed, None);
 
     // Set the root node initial to "locked".
-    g.set_root_initial(locked.into());
+    let _op = g.set_root_initial(locked.into());
     // Set the intact state initial to "locked"
     //g.graph[intact].set_initial(Initial::Initial(locked));
 
-    g.add_transition(intact, destroyed, DoorGuard::Bash(BashGuard {}));
+    let _t = g.add_transition(intact, destroyed, DoorGuard::Bash(BashGuard {}));
 
     let bash = g.add_transition(intact, intact, DoorGuard::BashSelf(BashGuardSelf {}));
 
     // Internal transition -- the guard mutates the context but does not transition.
-    g.set_internal(bash, true);
+    let _op = g.set_internal(bash, true);
 
-    g.add_transition(
+    let _op = g.add_transition(
         locked,
         closed,
         DoorGuard::Unlock(UnlockGuard {
@@ -275,11 +275,11 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
         }),
     );
 
-    g.add_transition(closed, open, DoorGuard::Open(OpenGuard {}));
+    let _op = g.add_transition(closed, open, DoorGuard::Open(OpenGuard {}));
 
-    g.add_transition(open, closed, DoorGuard::Close(CloseGuard {}));
+    let _op = g.add_transition(open, closed, DoorGuard::Close(CloseGuard {}));
 
-    g.add_transition(
+    let _op = g.add_transition(
         closed,
         locked,
         DoorGuard::Lock(LockGuard {

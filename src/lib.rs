@@ -127,14 +127,14 @@ impl<T> Edge<T> {
         match self {
             Edge::Transition(t) if internal => Edge::Internal(t),
             Edge::Internal(t) if !internal => Edge::Transition(t),
-            _ => self, // error
+            _ => panic!("not a transition"),
         }
     }
 
     pub fn set_transition(&mut self, transition: T) {
         match self {
             Edge::Transition(t) | Edge::Internal(t) => *t = transition,
-            //_ => (), // error
+            //_ => panic!("not a transition"),
         }
     }
 }

@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs::read_to_string};
 
 use janet::*;
 use janetrs::{client::JanetClient, *};
-use transit::{EditGraph, Graph, Idx, Statechart};
+use transit::{Graph, Idx, Statechart};
 
 fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, String>) {
     let mut g = Graph::new();
@@ -56,9 +56,9 @@ fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, St
     );
     states.insert(destroyed, "destroyed".into());
 
-    g.set_root_initial(locked.into());
+    let _op = g.set_root_initial(locked.into());
 
-    g.add_transition(
+    let _t = g.add_transition(
         intact,
         destroyed,
         Transition::new("bash", "bash-guard", &client, Janet::nil()),
@@ -72,27 +72,27 @@ fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, St
     // );
     // g.set_internal(bash, true);
 
-    g.add_transition(
+    let _t = g.add_transition(
         locked,
         closed,
         Transition::new("unlock", "unlock-guard", &client, "the right key".into()),
     );
 
     // just match open
-    g.add_transition(
+    let _t = g.add_transition(
         closed,
         open,
         Transition::new("open", "open-guard", &client, Janet::nil()),
     );
 
     // just match close
-    g.add_transition(
+    let _t = g.add_transition(
         open,
         closed,
         Transition::new("close", "close-guard", &client, Janet::nil()),
     );
 
-    g.add_transition(
+    let _t = g.add_transition(
         closed,
         locked,
         Transition::new("lock", "lock-guard", &client, "the right key".into()),
@@ -150,4 +150,20 @@ fn door() {
         true
     ); // bash again
     assert_eq!(states.get(&door.active).unwrap(), "destroyed"); // destroyed
+}
+
+#[test]
+fn export() {
+    let client = JanetClient::init_with_default_env().unwrap();
+
+    let _ = client
+        .run(read_to_string("tests/door.janet").unwrap())
+        .unwrap();
+    //.try_unwrap::<JanetFiber>()
+    //.unwrap();
+
+    //let _root = JanetFiber::root().expect("root fiber");
+
+    let (g, _) = make_door(&client);
+    g.export_to_file("tests/door.ron").unwrap();
 }
