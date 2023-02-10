@@ -73,30 +73,27 @@ impl Edit {
         s
     }
 
-    /// If inserting an undo when there are existing redos in the
-    /// history, we want to preserve them by moving them into the undo
-    /// stack, followed by corresponding undos to revert them. Then we
-    /// add the new undo at the end.
+    /// Add an undo op to the stack, while retaining redo history.
     pub fn add_undo(&mut self, op: impl Into<Op<State, Transition>>) {
         let op = op.into();
 
         let redos = std::mem::take(&mut self.undo.redos);
-        //let redos = self.undo.redos.drain(..).collect::<Vec<_>>();
 
+        // If inserting an undo when there are existing redos in the history, we want to preserve
+        // them by moving them into the undo stack, followed by corresponding undos to revert
+        // them. Then we add the new undo at the end.
         if redos.len() > 1 {
             let g = &mut self.graph;
 
+            // The undo ops don't store current state, and the current operation has already updated
+            // the graph, so we need to undo it first then redo it after.
             let current = op.clone().undo(g);
 
+            // Apply redos.
             let undos: Vec<_> = redos.into_iter().rev().map(|op| op.undo(g)).collect();
-
             self.undo.undos.extend(undos.iter().cloned());
 
-            // match op {
-            //     Op::UpdateNode(i, _) => println!("add_undo: {}", self.history(i)),
-            //     _ => (),
-            // }
-
+            // Undo redos (in reverse).
             self.undo
                 .undos
                 .extend(undos.into_iter().rev().map(|op| op.undo(g)));
