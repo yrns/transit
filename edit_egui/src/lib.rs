@@ -5,7 +5,7 @@ mod search;
 pub mod source;
 mod undo;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 // TODO: make a separte crate for the bin and only depend on egui here
@@ -43,7 +43,7 @@ pub struct Edit {
 // Initial (destination) port and control points. Similiar to transition.
 pub type InitialData = (usize, Vec2, Vec2);
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum SymbolId {
     Enter(transit::Idx),
     Exit(transit::Idx),
@@ -170,9 +170,10 @@ pub enum Command {
     SetGuard,
     SetInternal(transit::Tdx, bool),
     UpdateSelection(Selection),
-    SelectSourcePath(std::path::PathBuf),
-    GotoSymbol(String, std::path::PathBuf, (usize, usize)),
+    SelectSourcePath(PathBuf),
+    GotoSymbol(String, PathBuf, (usize, usize)),
     UpdateSymbol(SymbolId, Option<String>),
+    InsertSymbol(String, PathBuf, String),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -1334,6 +1335,9 @@ impl Edit {
         })
     }
 
+    // TODO: display "left click to goto symbol (if set) or insert based on path id" and "right
+    // click to search for a symbol" somewhere
+    // TODO: validation for symbols if things are renamed in the source
     pub fn show_symbol(
         &self,
         id: SymbolId,
@@ -1341,20 +1345,46 @@ impl Edit {
         edit_data: &mut EditData,
         ui: &mut Ui,
     ) {
+        let location = symbol
+            .as_ref()
+            .and_then(|s| self.source.as_ref().and_then(|source| source.symbol(&s)));
+
+        // Hovering displays symbol name and source location.
+        let hover_text = location.map(|(path, line, col)| {
+            format!(
+                "{} ({} {}:{})",
+                symbol.as_ref().unwrap(), // location -> symbol
+                path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
+                line,
+                col
+            )
+        });
+
         // hover should show source/location by name? click to
         // select fns from source?
         // disable if no source
         let response = ui
-            .small_button(match id {
-                SymbolId::Enter(_) => "enter",
-                SymbolId::Exit(_) => "exit",
-                SymbolId::Guard(_) => "guard",
-            })
-            .on_hover_text("enter source location");
+            .add_enabled(
+                self.source.is_some(),
+                Button::new(match id {
+                    SymbolId::Enter(_) => "enter",
+                    SymbolId::Exit(_) => "exit",
+                    SymbolId::Guard(_) => "guard",
+                })
+                .small(),
+            )
+            .on_hover_text(hover_text.as_deref().unwrap_or("()"))
+            .on_disabled_hover_text("source file is unset");
+
+        // FIX: janet-specific
+        let janet_template = "\n\n(defn {} [self ctx ev]\n  )";
 
         if response.clicked_by(PointerButton::Primary) {
+            // enabled -> clicked -> source exists
+            let source = self.source.as_ref().expect("source");
+
             match symbol {
-                Some(s) => match self.source.as_ref().and_then(|source| source.symbol(s)) {
+                Some(s) => match location {
                     // We could use references here if source existed outside self. If `commands`
                     // references self we can't get a mutable ref later to process them.
                     Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
@@ -1362,18 +1392,27 @@ impl Edit {
                         path.clone(),
                         (*line, *col),
                     )),
-                    None => (), // Command::InsertSymbol()
+                    // A symbol is set but doesn't exist in the source so insert it.
+                    None => edit_data.commands.push(Command::InsertSymbol(
+                        s.clone(),
+                        source.path.clone(),
+                        janet_template.replace("{}", &s),
+                    )),
                 },
-
                 None => {
-                    // Make up one (based on the state) id and insert?
-                    // Or open search?
+                    // Make up a name based on path.
+                    let s = self.generate_symbol(id);
+                    let template = janet_template.replace("{}", &s);
+                    edit_data
+                        .commands
+                        .push(Command::InsertSymbol(s, source.path.clone(), template))
                 }
             }
         }
 
-        // Move to pointer.
+        // Show search and/or focus on right click.
         let set_focus = if response.clicked_by(PointerButton::Secondary) {
+            // Move to pointer.
             edit_data.symbols.position = ui.ctx().pointer_interact_pos();
             true
         } else {
@@ -1398,6 +1437,31 @@ impl Edit {
                 _ => (),
             }
         }; // else error on click?
+    }
+
+    pub fn path_string(&self, i: transit::Idx) -> String {
+        self.graph
+            .path(i)
+            .into_iter()
+            .filter_map(|i| self.graph.state(i).map(|s| &s.id))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("-")
+    }
+
+    pub fn generate_symbol(&self, id: SymbolId) -> String {
+        match id {
+            SymbolId::Enter(i) => self.path_string(i) + "-enter",
+            SymbolId::Exit(i) => self.path_string(i) + "-exit",
+            SymbolId::Guard(t) => {
+                self.graph
+                    .transition(t)
+                    .zip(self.graph.endpoints(t))
+                    .map(|(t, (a, _b))| self.path_string(a) + "-" + &t.id)
+                    .unwrap_or_else(|| "???".into())
+                    + "-guard"
+            }
+        }
     }
 
     /// Each state sets the drag target for its children. The topmost child that contains the

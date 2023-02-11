@@ -149,6 +149,10 @@ impl App {
                     self.editor.goto(symbol, path, *loc).unwrap();
                     false
                 }
+                Command::InsertSymbol(symbol, path, template) => {
+                    self.editor.insert(symbol, path, template).unwrap();
+                    false
+                }
                 _ => true,
             });
 

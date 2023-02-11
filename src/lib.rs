@@ -353,15 +353,6 @@ impl<S, T> Graph<S, T> {
         path
     }
 
-    // This was just used for debugging.
-    // pub fn path_str(&self, i: Idx) -> String {
-    //     self.path(i)
-    //         .iter()
-    //         .map(|i| self.graph[*i].id.clone())
-    //         .collect::<Vec<String>>()
-    //         .join("::")
-    // }
-
     pub fn parent(&self, i: Idx) -> Option<Idx> {
         self.graph[i].parent
     }

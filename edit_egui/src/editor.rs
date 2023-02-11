@@ -22,7 +22,15 @@ impl Editor for EmacsClient {
     }
 
     fn insert(&self, _symbol: &str, path: &Path, template: &str) -> Result<()> {
-        let _output = Command::new("emacsclient").arg("-n").arg(format!(r#"emacsclient -n -e '(with-current-buffer (find-file "{}") (goto-char (point-max)) (insert "{}"))'"#, path.display(), template)).output()?;
+        let _output = Command::new("emacsclient")
+            .arg("-n")
+            .arg("-e")
+            .arg(format!(
+                r#"(with-current-buffer (find-file "{}") (goto-char (point-max)) (insert "{}"))"#,
+                path.display(),
+                template
+            ))
+            .output()?;
         Ok(())
     }
 }
