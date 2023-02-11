@@ -1079,10 +1079,9 @@ impl Edit {
             }))
         }
 
-        // New drags. There is no `drag_started_by`. We should not get a drag here if a drag is
-        // started in a child state, but we check `in_drag` anyway since `dragged` is continuous.
-        let dragged = state_response.dragged_by(PointerButton::Primary);
-        if dragged && !edit_data.drag.in_drag() {
+        // New drags. We should not get a drag here if a drag is started in a child state, but we
+        // check `in_drag` anyway.
+        if state_response.drag_started_by(PointerButton::Primary) && !edit_data.drag.in_drag() {
             if let Some(p) = interact_pos {
                 if ui.input(|i| i.modifiers.shift) {
                     // New transition, drag to target.
