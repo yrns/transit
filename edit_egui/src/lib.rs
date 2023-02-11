@@ -16,7 +16,7 @@ use eframe::egui::*;
 use eframe::epaint::RectShape;
 use search::SearchBox;
 use source::Source;
-use transit::{Initial, Op};
+use transit::{Direction, Graph, Idx, Initial, Op, Tdx};
 use undo::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -24,8 +24,8 @@ use undo::*;
 pub enum Selection {
     #[default]
     None,
-    State(transit::Idx),
-    Transition(transit::Tdx),
+    State(Idx),
+    Transition(Tdx),
 }
 
 /// Statechart graph editor.
@@ -33,7 +33,7 @@ pub enum Selection {
 #[derive(Default)]
 pub struct Edit {
     pub source: Option<Source>,
-    pub graph: transit::Graph<State, Transition>,
+    pub graph: Graph<State, Transition>,
     #[serde(default)]
     pub selection: Selection,
     #[serde(default)]
@@ -45,9 +45,9 @@ pub type InitialData = (usize, Vec2, Vec2);
 
 #[derive(Copy, Clone, Debug)]
 pub enum SymbolId {
-    Enter(transit::Idx),
-    Exit(transit::Idx),
-    Guard(transit::Tdx),
+    Enter(Idx),
+    Exit(Idx),
+    Guard(Tdx),
 }
 
 pub type Symbol = Option<String>;
@@ -151,24 +151,24 @@ pub struct Transition {
 
 #[derive(Debug)]
 pub enum Command {
-    AddState(transit::Idx, Pos2),
-    RemoveState(transit::Idx, bool),
-    UpdateState(transit::Idx, State),
+    AddState(Idx, Pos2),
+    RemoveState(Idx, bool),
+    UpdateState(Idx, State),
     /// Source, target, position (relative to parent), offset of the
     /// parent (relative to root).
-    MoveState(transit::Idx, transit::Idx, Pos2),
-    ResizeState(transit::Idx, Vec2),
-    AddTransition(transit::Idx, transit::Idx, Transition),
-    RemoveTransition(transit::Tdx),
-    UpdateTransition(transit::Tdx, Transition),
-    MoveTransition(transit::Tdx, Option<transit::Idx>, Option<transit::Idx>),
-    SetInitial(transit::Idx, transit::Idx, InitialData),
-    UnsetInitial(transit::Idx),
-    StepInitial(transit::Idx),
+    MoveState(Idx, Idx, Pos2),
+    ResizeState(Idx, Vec2),
+    AddTransition(Idx, Idx, Transition),
+    RemoveTransition(Tdx),
+    UpdateTransition(Tdx, Transition),
+    MoveTransition(Tdx, Option<Idx>, Option<Idx>),
+    SetInitial(Idx, Idx, InitialData),
+    UnsetInitial(Idx),
+    StepInitial(Idx),
     SetEnter,
     SetExit,
     SetGuard,
-    SetInternal(transit::Tdx, bool),
+    SetInternal(Tdx, bool),
     UpdateSelection(Selection),
     SelectSourcePath(PathBuf),
     GotoSymbol(String, PathBuf, (usize, usize)),
@@ -183,22 +183,22 @@ pub enum ControlPoint {
 }
 
 // Drag target index and depth. Or incoming port?
-pub type DragTarget = Option<(transit::Idx, usize)>;
+pub type DragTarget = Option<(Idx, usize)>;
 
 #[derive(Clone, Debug, Default)]
 pub enum Drag {
     #[default]
     None,
-    State(transit::Idx, Vec2, DragTarget, Vec2),
-    Resize(transit::Idx, Vec2),
-    Initial(transit::Idx, DragTarget, (Vec2, Vec2)),
-    InitialControl((transit::Idx, ControlPoint), Vec2),
-    AddTransition(transit::Idx, Option<transit::Idx>),
+    State(Idx, Vec2, DragTarget, Vec2),
+    Resize(Idx, Vec2),
+    Initial(Idx, DragTarget, (Vec2, Vec2)),
+    InitialControl((Idx, ControlPoint), Vec2),
+    AddTransition(Idx, Option<Idx>),
     // For the next two variants the first field is the opposite endpoint!
-    TransitionSource(transit::Idx, Option<transit::Idx>, transit::Tdx),
-    TransitionTarget(transit::Idx, Option<transit::Idx>, transit::Tdx),
-    TransitionControl((transit::Tdx, ControlPoint), Vec2),
-    TransitionId(transit::Tdx, Vec2),
+    TransitionSource(Idx, Option<Idx>, Tdx),
+    TransitionTarget(Idx, Option<Idx>, Tdx),
+    TransitionControl((Tdx, ControlPoint), Vec2),
+    TransitionId(Tdx, Vec2),
 }
 
 impl Drag {
@@ -216,21 +216,21 @@ impl Drag {
         }
     }
 
-    pub fn dragging(&self, idx: transit::Idx) -> bool {
+    pub fn dragging(&self, idx: Idx) -> bool {
         match self {
             Drag::State(i, ..) if *i == idx => true,
             _ => false,
         }
     }
 
-    pub fn resizing(&self, idx: transit::Idx) -> bool {
+    pub fn resizing(&self, idx: Idx) -> bool {
         match self {
             Drag::Resize(i, ..) if *i == idx => true,
             _ => false,
         }
     }
 
-    pub fn is_target(&self, idx: transit::Idx) -> bool {
+    pub fn is_target(&self, idx: Idx) -> bool {
         match self {
             Drag::State(_, _, Some((t, ..)), _)
             | Drag::Initial(_, Some((t, ..)), ..)
@@ -277,26 +277,26 @@ impl Drag {
 //     };
 // }
 
-impl From<transit::Idx> for Drag {
-    fn from(idx: transit::Idx) -> Self {
+impl From<Idx> for Drag {
+    fn from(idx: Idx) -> Self {
         Drag::Resize(idx, Vec2::ZERO)
     }
 }
 
-impl From<transit::Tdx> for Drag {
-    fn from(tdx: transit::Tdx) -> Self {
+impl From<Tdx> for Drag {
+    fn from(tdx: Tdx) -> Self {
         Drag::TransitionId(tdx, Vec2::ZERO)
     }
 }
 
-impl From<(transit::Idx, ControlPoint)> for Drag {
-    fn from(cp: (transit::Idx, ControlPoint)) -> Self {
+impl From<(Idx, ControlPoint)> for Drag {
+    fn from(cp: (Idx, ControlPoint)) -> Self {
         Drag::InitialControl(cp, Vec2::ZERO)
     }
 }
 
-impl From<(transit::Tdx, ControlPoint)> for Drag {
-    fn from(cp: (transit::Tdx, ControlPoint)) -> Self {
+impl From<(Tdx, ControlPoint)> for Drag {
+    fn from(cp: (Tdx, ControlPoint)) -> Self {
         Drag::TransitionControl(cp, Vec2::ZERO)
     }
 }
@@ -336,15 +336,15 @@ pub type MaxPorts = (Option<usize>, Option<usize>);
 pub struct Rects(nohash_hasher::IntMap<usize, (Rect, MaxPorts)>);
 
 impl Rects {
-    pub fn get(&self, idx: transit::Idx) -> Option<(Rect, MaxPorts)> {
+    pub fn get(&self, idx: Idx) -> Option<(Rect, MaxPorts)> {
         self.0.get(&idx.index()).copied()
     }
 
-    pub fn get_rect(&self, idx: transit::Idx) -> Option<Rect> {
+    pub fn get_rect(&self, idx: Idx) -> Option<Rect> {
         self.get(idx).map(|a| a.0)
     }
 
-    pub fn insert_rect<F: FnOnce() -> MaxPorts>(&mut self, idx: transit::Idx, rect: Rect, f: F) {
+    pub fn insert_rect<F: FnOnce() -> MaxPorts>(&mut self, idx: Idx, rect: Rect, f: F) {
         self.0
             .entry(idx.index())
             .and_modify(|a| a.0 = rect)
@@ -352,19 +352,14 @@ impl Rects {
     }
 
     // TODO: unused?
-    pub fn insert_max_port(
-        &mut self,
-        idx: transit::Idx,
-        direction: transit::Direction,
-        max_port: Option<usize>,
-    ) {
+    pub fn insert_max_port(&mut self, idx: Idx, direction: Direction, max_port: Option<usize>) {
         assert!(self
             .0
             .get_mut(&idx.index())
             .map(|(_, (max_in, max_out))| {
                 match direction {
-                    transit::Direction::Incoming => *max_in = max_port,
-                    transit::Direction::Outgoing => *max_out = max_port,
+                    Direction::Incoming => *max_in = max_port,
+                    Direction::Outgoing => *max_out = max_port,
                 }
             })
             .is_some());
@@ -377,16 +372,16 @@ pub struct EditData {
     rects: Rects,
     drag: Drag,
     commands: Vec<Command>,
-    search: SearchBox<transit::Idx>,
+    search: SearchBox<Idx>,
     symbols: SearchBox<String>,
 }
 
 // The drag variants don't need writable access to the drag state. Rename drag variants to New*?
 pub enum Connection<'a, 'b> {
     // Source, control points.
-    Initial(transit::Idx, (Vec2, Vec2), &'b mut Drag),
-    DragInitial(transit::Idx, (Vec2, Vec2)),
-    Transition(transit::Tdx, &'a Transition, bool, &'b mut Drag),
+    Initial(Idx, (Vec2, Vec2), &'b mut Drag),
+    DragInitial(Idx, (Vec2, Vec2)),
+    Transition(Tdx, &'a Transition, bool, &'b mut Drag),
     DragTransition(Vec2, Vec2), // control points
 }
 
@@ -554,7 +549,7 @@ impl Edit {
                     let state = self.graph.state(i).unwrap().clone().with_initial(None);
                     vec![
                         self.graph.update_state(i, state),
-                        self.graph.set_initial(i, transit::Initial::None),
+                        self.graph.set_initial(i, Initial::None),
                     ]
                     .into()
                 }
@@ -698,10 +693,10 @@ impl Edit {
     /// start and end positions.
     pub fn drag_transition(
         &self,
-        a: transit::Idx,
-        b: transit::Idx,
+        a: Idx,
+        b: Idx,
         rects: &Rects,
-        t0: transit::Tdx,
+        t0: Tdx,
     ) -> (Transition, (Pos2, Pos2)) {
         let is_self = a == b;
 
@@ -717,12 +712,12 @@ impl Edit {
         // New ports. Self-transitions take up two outgoing ports - which is a weird special case,
         // but it's visually distinctive and looks better than looping completely around the state.
         let ports = if a != a0 {
-            let port1 = self.free_port(a, transit::Direction::Outgoing);
+            let port1 = self.free_port(a, Direction::Outgoing);
             if is_self {
                 // Reassign b to outgoing too.
                 (
                     port1,
-                    self.free_port_from(a, transit::Direction::Outgoing, port1 + 1),
+                    self.free_port_from(a, Direction::Outgoing, port1 + 1),
                 )
             } else {
                 (port1, t0.port2)
@@ -758,12 +753,7 @@ impl Edit {
         (t, (start, end))
     }
 
-    pub fn new_transition(
-        &self,
-        a: transit::Idx,
-        b: transit::Idx,
-        rects: &Rects,
-    ) -> (Transition, (Pos2, Pos2)) {
+    pub fn new_transition(&self, a: Idx, b: Idx, rects: &Rects) -> (Transition, (Pos2, Pos2)) {
         // TEMP label
         let id = format!(
             "{} > {}",
@@ -773,11 +763,11 @@ impl Edit {
 
         let is_self = a == b;
         let ports = if is_self {
-            self.free_port2(a, transit::Direction::Outgoing)
+            self.free_port2(a, Direction::Outgoing)
         } else {
             (
-                self.free_port(a, transit::Direction::Outgoing),
-                self.free_port(b, transit::Direction::Incoming),
+                self.free_port(a, Direction::Outgoing),
+                self.free_port(b, Direction::Incoming),
             )
         };
 
@@ -917,7 +907,7 @@ impl Edit {
                 }
                 None => {
                     // Put the port in AddTransition?
-                    let port1 = self.free_port(*source, transit::Direction::Outgoing);
+                    let port1 = self.free_port(*source, Direction::Outgoing);
                     if let Some(start) = rects.get(*source).map(|r| port_out(r, port1)) {
                         if let Some(end) = ui.ctx().pointer_interact_pos() {
                             let cp = approx_cp(start, end);
@@ -948,7 +938,7 @@ impl Edit {
 
     pub fn show_state(
         &self,
-        idx: transit::Idx,
+        idx: Idx,
         // Parent rect min.
         offset: Vec2,
         depth: usize,
@@ -984,8 +974,8 @@ impl Edit {
             .rects
             .insert_rect(idx, rect.intersect(ui.clip_rect()), || {
                 (
-                    self.max_port(idx, transit::Direction::Incoming),
-                    self.max_port(idx, transit::Direction::Outgoing),
+                    self.max_port(idx, Direction::Incoming),
+                    self.max_port(idx, Direction::Outgoing),
                 )
             });
 
@@ -1114,8 +1104,8 @@ impl Edit {
         let state_response = if !edit_data.drag.in_drag() {
             let state_response = state_response.on_hover_text_at_pointer(format!(
                 "incoming ports: {:?} outgoing ports: {:?}",
-                self.ports(idx, transit::Direction::Incoming),
-                self.ports(idx, transit::Direction::Outgoing)
+                self.ports(idx, Direction::Incoming),
+                self.ports(idx, Direction::Outgoing)
             ));
 
             state_response.context_menu(|ui| {
@@ -1189,7 +1179,7 @@ impl Edit {
     // Collapsable? How do we redirect incoming transitions to child states?
     pub fn show_header(
         &self,
-        idx: transit::Idx,
+        idx: Idx,
         root: bool,
         state: &State,
         edit_data: &mut EditData,
@@ -1439,7 +1429,7 @@ impl Edit {
         }; // else error on click?
     }
 
-    pub fn path_string(&self, i: transit::Idx) -> String {
+    pub fn path_string(&self, i: Idx) -> String {
         self.graph
             .path(i)
             .into_iter()
@@ -1469,14 +1459,7 @@ impl Edit {
     /// interactions. We can't set the target inside each child recursively because they aren't
     /// aware of siblings or their ordering. In order to reduce the amount of work done here that is
     /// thrown away we could recurse from the root once before drawing anything.
-    pub fn set_drag_target(
-        &self,
-        idx: transit::Idx,
-        rect: Rect,
-        depth: usize,
-        drag: &mut Drag,
-        ui: &Ui,
-    ) {
+    pub fn set_drag_target(&self, idx: Idx, rect: Rect, depth: usize, drag: &mut Drag, ui: &Ui) {
         if !ui.rect_contains_pointer(rect) {
             return;
         }
@@ -1489,9 +1472,9 @@ impl Edit {
 
         // For transition endpoints only.
         let dir = match drag {
-            Drag::TransitionSource(..) => transit::Direction::Outgoing,
+            Drag::TransitionSource(..) => Direction::Outgoing,
             //Drag::TransitionTarget(..) => transit::Direction::Incoming,
-            _ => transit::Direction::Incoming,
+            _ => Direction::Incoming,
         };
 
         match drag {
@@ -1556,24 +1539,22 @@ impl Edit {
     }
 
     /// Returns a list of ports in use for the specified state and direction.
-    pub fn ports(&self, idx: transit::Idx, direction: transit::Direction) -> Vec<usize> {
+    pub fn ports(&self, idx: Idx, direction: Direction) -> Vec<usize> {
         let ports = self.graph.state_transitions(idx, direction);
 
         let mut ports: Vec<usize> = match direction {
             // Include the incoming port for self-transitions. Is there not a way to do this w/
             // flat_map instead of fold?
-            transit::Direction::Outgoing => {
-                ports.fold(Vec::new(), |mut acc, (_, _, target, t, _)| {
-                    if target == idx {
-                        acc.extend([t.port1, t.port2])
-                    } else {
-                        acc.push(t.port1)
-                    }
-                    acc
-                })
-            }
+            Direction::Outgoing => ports.fold(Vec::new(), |mut acc, (_, _, target, t, _)| {
+                if target == idx {
+                    acc.extend([t.port1, t.port2])
+                } else {
+                    acc.push(t.port1)
+                }
+                acc
+            }),
 
-            transit::Direction::Incoming => {
+            Direction::Incoming => {
                 // Filter out self-transitions, and include initial incoming connections. Maybe we
                 // should store initial as an edge in the graph?
                 ports
@@ -1594,18 +1575,13 @@ impl Edit {
         ports
     }
 
-    pub fn max_port(&self, idx: transit::Idx, direction: transit::Direction) -> Option<usize> {
+    pub fn max_port(&self, idx: Idx, direction: Direction) -> Option<usize> {
         self.ports(idx, direction).into_iter().last()
     }
 
     /// Find a free port starting from the specified port. This is used to find a second free port
     /// when adding a new self-transition.
-    pub fn free_port_from(
-        &self,
-        idx: transit::Idx,
-        direction: transit::Direction,
-        from: usize,
-    ) -> usize {
+    pub fn free_port_from(&self, idx: Idx, direction: Direction, from: usize) -> usize {
         let ports = self.ports(idx, direction);
 
         let mut free = from;
@@ -1619,13 +1595,13 @@ impl Edit {
         free
     }
 
-    pub fn free_port2(&self, idx: transit::Idx, direction: transit::Direction) -> (usize, usize) {
+    pub fn free_port2(&self, idx: Idx, direction: Direction) -> (usize, usize) {
         let p1 = self.free_port_from(idx, direction, 0);
         let p2 = self.free_port_from(idx, direction, p1 + 1);
         (p1, p2)
     }
 
-    pub fn free_port(&self, idx: transit::Idx, direction: transit::Direction) -> usize {
+    pub fn free_port(&self, idx: Idx, direction: Direction) -> usize {
         self.free_port_from(idx, direction, 0)
     }
 
@@ -1954,11 +1930,11 @@ pub fn arrow(size: f32, color: Color32) -> Mesh {
 
 // For self-transitions: target takes up an outgoing port.
 #[inline]
-fn target_dir(a: transit::Idx, b: transit::Idx) -> transit::Direction {
+fn target_dir(a: Idx, b: Idx) -> Direction {
     if a == b {
-        transit::Direction::Outgoing
+        Direction::Outgoing
     } else {
-        transit::Direction::Incoming
+        Direction::Incoming
     }
 }
 
@@ -1967,11 +1943,11 @@ const PORT_SPACING: f32 = 10.0;
 
 // Scale based on number of ports and available vertical space. When the state is fully collapsed we
 // don't want to show the endpoints?
-pub fn port_pos(rect: (Rect, MaxPorts), port: usize, direction: transit::Direction) -> Pos2 {
+pub fn port_pos(rect: (Rect, MaxPorts), port: usize, direction: Direction) -> Pos2 {
     let (rect, max_ports) = rect;
     let (origin, max_port) = match direction {
-        transit::Direction::Incoming => (rect.min, max_ports.0),
-        transit::Direction::Outgoing => (rect.right_top(), max_ports.1),
+        Direction::Incoming => (rect.min, max_ports.0),
+        Direction::Outgoing => (rect.right_top(), max_ports.1),
     };
 
     // The port can be higher than the max...
@@ -1986,11 +1962,11 @@ pub fn port_pos(rect: (Rect, MaxPorts), port: usize, direction: transit::Directi
 }
 
 pub fn port_in(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
-    port_pos(rect, port, transit::Direction::Incoming)
+    port_pos(rect, port, Direction::Incoming)
 }
 
 pub fn port_out(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
-    port_pos(rect, port, transit::Direction::Outgoing)
+    port_pos(rect, port, Direction::Outgoing)
 }
 
 impl State {
