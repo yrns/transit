@@ -13,6 +13,14 @@ fn main() {
         "transit",
         options,
         Box::new(|cc| {
+            // Set dark theme w/ smaller shadows.
+            let mut visuals = egui::Visuals::dark();
+            visuals.popup_shadow = egui::epaint::Shadow {
+                extrusion: 4.0,
+                color: egui::Color32::from_black_alpha(64),
+            };
+            cc.egui_ctx.set_visuals(visuals);
+
             let mut app: edit_egui::app::App = cc
                 .storage
                 .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
