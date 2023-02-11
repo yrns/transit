@@ -32,7 +32,7 @@ impl Editabel {
     }
 
     pub fn show(&self, text: &str, ui: &mut Ui) -> InnerResponse<Option<String>> {
-        let state: EditabelState = ui.data().get_temp(ui.id()).unwrap_or_default();
+        let state: EditabelState = ui.data_mut(|d| d.get_temp(ui.id()).unwrap_or_default());
         match state {
             EditabelState::Closed(width) => {
                 let response = ui.add(Label::new(text).sense(self.sense));
@@ -42,10 +42,12 @@ impl Editabel {
 
                 if response.double_clicked() {
                     // Next frame select all?
-                    ui.data().insert_temp(
-                        ui.id(),
-                        EditabelState::Open(text.to_owned(), response.rect.width(), true),
-                    );
+                    ui.data_mut(|d| {
+                        d.insert_temp(
+                            ui.id(),
+                            EditabelState::Open(text.to_owned(), response.rect.width(), true),
+                        )
+                    });
                 }
                 InnerResponse::new(None, response)
             }
@@ -61,18 +63,22 @@ impl Editabel {
                 let response = output.response;
 
                 if request_focus {
-                    ui.memory().request_focus(response.id);
+                    ui.memory_mut(|m| m.request_focus(response.id));
                 }
 
                 // Return new text on enter (else revert).
                 if response.lost_focus() {
-                    ui.data().insert_temp(ui.id(), EditabelState::Closed(width));
-                    InnerResponse::new(ui.input().key_pressed(Key::Enter).then_some(text), response)
+                    ui.data_mut(|d| d.insert_temp(ui.id(), EditabelState::Closed(width)));
+                    InnerResponse::new(
+                        ui.input(|i| i.key_pressed(Key::Enter)).then_some(text),
+                        response,
+                    )
                 } else {
                     // Write new text if changed, or unsetting request_focus.
                     if response.changed() || request_focus {
-                        ui.data()
-                            .insert_temp(ui.id(), EditabelState::Open(text, width, false));
+                        ui.data_mut(|d| {
+                            d.insert_temp(ui.id(), EditabelState::Open(text, width, false))
+                        });
                     }
                     InnerResponse::new(None, response)
                 }

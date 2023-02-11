@@ -10,7 +10,7 @@ persistence = ["eframe/persistence"]
 
 [dependencies]
 #eframe = { version = "0.20.0", path = "../../../clone/egui/crates/eframe", features = ["wgpu"] }
-eframe = { version = "0.20.1", default-features = false, features = ["default_fonts", "wgpu"] }
+eframe = { version = "0.21.0", default-features = false, features = ["default_fonts", "wgpu"] }
 
 [lib]
 crate-type = ["dylib"]

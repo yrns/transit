@@ -69,11 +69,11 @@ where
                     }
 
                     let _submit = if response.lost_focus() {
-                        if ui.input().key_down(Key::Escape) {
+                        if ui.input(|i| i.key_down(Key::Escape)) {
                             self.parent_id = None;
                             return;
                         }
-                        ui.input().key_down(Key::Enter)
+                        ui.input(|i| i.key_down(Key::Enter))
                     } else {
                         false
                     };

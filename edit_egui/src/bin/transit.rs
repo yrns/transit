@@ -30,7 +30,8 @@ fn main() {
 
             Box::new(App(app))
         }),
-    );
+    )
+    .unwrap();
 }
 
 impl eframe::App for App {

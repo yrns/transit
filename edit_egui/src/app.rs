@@ -83,9 +83,9 @@ impl App {
 
         let mut quit = false;
 
-        if ctx.input_mut().consume_shortcut(&UNDO) {
+        if ctx.input_mut(|i| i.consume_shortcut(&UNDO)) {
             self.edit.undo();
-        } else if ctx.input_mut().consume_shortcut(&REDO) {
+        } else if ctx.input_mut(|i| i.consume_shortcut(&REDO)) {
             self.edit.redo();
         }
 
@@ -139,7 +139,7 @@ impl App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if clear_state {
-                ctx.data().remove::<EditData>(ui.id());
+                ctx.data_mut(|d| d.remove::<EditData>(ui.id()));
             }
             let mut commands = self.edit.show(ui);
 

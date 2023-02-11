@@ -256,10 +256,8 @@ impl Drag {
             | Drag::State(..)
             | Drag::TransitionSource(..)
             | Drag::TransitionTarget(..) => {
-                let p = &ui.input().pointer;
-                p.press_origin()
-                    .zip(p.interact_pos())
-                    .map(|(p0, p1)| (p1 - p0).abs().max_elem() >= 1.0)
+                let p = ui.input(|i| i.pointer.press_origin().zip(i.pointer.interact_pos()));
+                p.map(|(p0, p1)| (p1 - p0).abs().max_elem() >= 1.0)
                     .unwrap_or_default()
             }
             Drag::Resize(_, d)
@@ -602,25 +600,25 @@ impl Edit {
         ui.allocate_rect(rect, Sense::hover());
 
         // Toggle debug.
-        let focus = ui.memory().focus();
-        if focus.is_none() && ui.input().key_pressed(Key::D) {
+        let focus = ui.memory(|m| m.focus());
+        if focus.is_none() && ui.input(|i| i.key_pressed(Key::D)) {
             ui.ctx().set_debug_on_hover(!ui.ctx().debug_on_hover());
             ui.style_mut().debug.show_blocking_widget = true;
             ui.style_mut().debug.show_interactive_widgets = true;
         }
 
         // Keep edit data in temp storage.
-        let edit_data = ui.data().get_temp(ui.id());
+        let edit_data = ui.data_mut(|d| d.get_temp(ui.id()));
         let edit_data = edit_data.unwrap_or_else(|| {
             let data = Arc::new(Mutex::new(EditData::default()));
-            ui.data().insert_temp(ui.id(), data.clone());
+            ui.data_mut(|d| d.insert_temp(ui.id(), data.clone()));
             data
         });
         let mut edit_data = edit_data.lock().unwrap();
 
         // Search states, transitions, code?
         match edit_data.search.show(
-            focus.is_none() && ui.input().key_pressed(Key::S),
+            focus.is_none() && ui.input(|i| i.key_pressed(Key::S)),
             self.graph.states(),
             ui,
         ) {
@@ -640,12 +638,12 @@ impl Edit {
         let mut commands = std::mem::take(&mut edit_data.commands);
 
         // Resolve drag. ui.input().pointer.primary_released() doesn't work?
-        if ui.input().pointer.any_released() {
+        if ui.input(|i| i.pointer.any_released()) {
             // Take drag to clear it.
             match std::mem::take(&mut edit_data.drag) {
                 //_ if !drag.min_drag(ui) => (),
                 Drag::State(src, offset, Some((target, _)), parent_root_offset) => {
-                    if let Some(p) = ui.input().pointer.interact_pos() {
+                    if let Some(p) = ui.ctx().pointer_interact_pos() {
                         // Place the state relative to the parent with the offset.
                         let p = p - parent_root_offset - offset;
                         commands.push(Command::MoveState(src, target, p))
@@ -948,7 +946,7 @@ impl Edit {
         let id = Id::new(idx);
         let state = self.graph.state(idx).unwrap();
         let root = idx == self.graph.root;
-        let interact_pos = ui.input().pointer.interact_pos();
+        let interact_pos = ui.ctx().pointer_interact_pos();
 
         // let drag = &mut edit_data.drag;
         // let commands = &mut edit_data.commands;
@@ -1086,7 +1084,7 @@ impl Edit {
         let dragged = state_response.dragged_by(PointerButton::Primary);
         if dragged && !edit_data.drag.in_drag() {
             if let Some(p) = interact_pos {
-                if ui.input().modifiers.shift {
+                if ui.input(|i| i.modifiers.shift) {
                     // New transition, drag to target.
                     //let port1 = self.free_port(idx, transit::Direction::Outgoing);
                     edit_data.drag =
@@ -1464,7 +1462,7 @@ impl Edit {
             return;
         }
 
-        let Some(p) = ui.input().pointer.interact_pos() else {
+        let Some(p) = ui.ctx().pointer_interact_pos() else {
             return
         };
 
