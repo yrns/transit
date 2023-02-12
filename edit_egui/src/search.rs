@@ -7,7 +7,17 @@ pub struct SearchBox<T> {
     pub parent_id: Option<Id>,
     pub query: String,
     pub position: Option<Pos2>,
-    pub results: Vec<(T, LayoutJob)>,
+    pub results: Option<Vec<(T, LayoutJob)>>,
+    /// If true [show] will only ever return an exact match, or the only matching result.
+    pub match_required: bool,
+}
+
+/// If [SearchBox::match_required] is false, [SearchBox::show] can return the query string when
+/// enter is pressed.
+pub enum Submit<T> {
+    None,
+    Result(T),
+    Query(String),
 }
 
 pub trait Matches<T> {
@@ -23,7 +33,13 @@ impl<T> SearchBox<T>
 where
     T: Clone + std::fmt::Debug,
 {
-    pub fn show<'a, U, I>(&mut self, set_focus: bool, iter: I, ui: &mut Ui) -> Option<T>
+    pub fn clear(&mut self) {
+        self.query.clear();
+        self.parent_id = None;
+        self.results = None;
+    }
+
+    pub fn show<'a, U, I>(&mut self, set_focus: bool, iter: I, ui: &mut Ui) -> Submit<T>
     where
         U: Matches<T>,
         I: Iterator<Item = U>,
@@ -31,12 +47,12 @@ where
         if set_focus {
             self.parent_id = Some(ui.id());
         } else if self.parent_id != Some(ui.id()) {
-            return None;
+            return Submit::None;
         }
 
-        let mut selected = None;
+        let mut submit = Submit::None;
 
-        // Split search box and completions?
+        // Split search box and results?
         let area = Area::new(ui.id().with("search")).order(Order::Foreground);
 
         let area = if let Some(p) = self.position {
@@ -53,8 +69,10 @@ where
                         response.request_focus();
                     }
 
-                    if response.changed {
-                        self.results.clear();
+                    // Update results if this is our first time or the query has changed.
+                    if self.results.is_none() || response.changed {
+                        let results = self.results.get_or_insert(Vec::new());
+                        results.clear();
 
                         for i in iter {
                             if let Some(result) = i.matches(
@@ -63,38 +81,78 @@ where
                                 TextFormat::default(),
                                 ui.style().visuals.code_bg_color,
                             ) {
-                                self.results.push(result);
+                                results.push(result);
                             }
                         }
                     }
 
-                    let _submit = if response.lost_focus() {
-                        if ui.input(|i| i.key_down(Key::Escape)) {
-                            self.parent_id = None;
-                            return;
-                        }
-                        ui.input(|i| i.key_down(Key::Enter))
-                    } else {
-                        false
-                    };
+                    // Show results.
+                    let result_has_focus = self
+                        .results
+                        .as_ref()
+                        .map(|results| {
+                            Frame::default()
+                                .show(ui, |ui| {
+                                    ScrollArea::vertical()
+                                        .show(ui, |ui| {
+                                            results.iter().fold(
+                                                false,
+                                                |focus, (result, layout_job)| {
+                                                    // clone layout?
+                                                    let label_response = ui.selectable_label(
+                                                        false,
+                                                        layout_job.clone(),
+                                                    );
+                                                    if label_response.clicked() {
+                                                        submit = Submit::Result(result.clone());
+                                                        self.parent_id = None;
+                                                    }
 
-                    Frame::default().show(ui, |ui| {
-                        ScrollArea::vertical().show(ui, |ui| {
-                            for (i, result) in self.results.iter() {
-                                // clone?
-                                if ui.selectable_label(false, result.clone()).clicked() {
-                                    selected = Some(i.clone());
-                                    self.parent_id = None;
-                                    return;
+                                                    focus || label_response.has_focus()
+                                                },
+                                            )
+                                        })
+                                        .inner
+                                })
+                                .inner
+                        })
+                        .unwrap_or_default();
+
+                    // If a result was clicked we can return now.
+                    if let Submit::Result(_) = submit {
+                        return;
+                    }
+
+                    if response.lost_focus() {
+                        // Submit on enter (if it matches).
+                        if ui.input(|i| i.key_down(Key::Enter)) {
+                            if self.match_required {
+                                // If there is only one result just submit it.
+                                if let Some(results) = &self.results {
+                                    if results.len() == 1 {
+                                        submit = Submit::Result(results[0].0.clone());
+                                    }
+                                } else {
+                                    // No match, just hide? Error?
                                 }
+                                self.clear();
+                            } else {
+                                // Submit the query.
+                                submit = Submit::Query(self.query.clone());
+                                self.clear();
                             }
-                        });
-                    });
+                        } else {
+                            // Nothing has focus, clear. Escape, tab, etc.
+                            if !result_has_focus {
+                                self.clear();
+                            }
+                        }
+                    };
                 });
             });
         });
 
-        selected
+        submit
     }
 }
 

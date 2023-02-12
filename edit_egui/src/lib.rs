@@ -14,7 +14,7 @@ pub use editor::*;
 use eframe::egui::epaint::{CubicBezierShape, Vertex};
 use eframe::egui::*;
 use eframe::epaint::RectShape;
-use search::SearchBox;
+use search::{SearchBox, Submit};
 use source::Source;
 use transit::{Direction, Graph, Idx, Initial, Op, Tdx};
 use undo::*;
@@ -374,6 +374,18 @@ pub struct EditData {
     symbols: SearchBox<String>,
 }
 
+impl EditData {
+    pub fn new() -> Self {
+        Self {
+            search: SearchBox {
+                match_required: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+}
+
 // The drag variants don't need writable access to the drag state. Rename drag variants to New*?
 pub enum Connection<'a, 'b> {
     // Source, control points.
@@ -610,7 +622,7 @@ impl Edit {
         // Keep edit data in temp storage.
         let edit_data = ui.data_mut(|d| d.get_temp(ui.id()));
         let edit_data = edit_data.unwrap_or_else(|| {
-            let data = Arc::new(Mutex::new(EditData::default()));
+            let data = Arc::new(Mutex::new(EditData::new()));
             ui.data_mut(|d| d.insert_temp(ui.id(), data.clone()));
             data
         });
@@ -619,13 +631,17 @@ impl Edit {
         // Search states, transitions, code?
         match edit_data.search.show(
             focus.is_none() && ui.input(|i| i.key_pressed(Key::S)),
-            self.graph.states(),
+            // Can't select the root state.
+            self.graph.states().filter(|(i, _s)| *i != self.graph.root),
             ui,
         ) {
-            Some(idx) => {
+            Submit::Result(idx) => {
                 edit_data
                     .commands
                     .push(Command::UpdateSelection(Selection::State(idx)));
+
+                // Clear search on submit.
+                edit_data.search.query.clear();
             }
             _ => (),
         }
@@ -1347,9 +1363,7 @@ impl Edit {
             )
         });
 
-        // hover should show source/location by name? click to
-        // select fns from source?
-        // disable if no source
+        // Disabled when no source.
         let response = ui
             .add_enabled(
                 self.source.is_some(),
@@ -1399,8 +1413,13 @@ impl Edit {
 
         // Show search and/or focus on right click.
         let set_focus = if response.clicked_by(PointerButton::Secondary) {
-            // Move to pointer.
-            edit_data.symbols.position = ui.ctx().pointer_interact_pos();
+            // Move to response right top.
+            let symbols = &mut edit_data.symbols;
+            symbols.position = Some(response.rect.right_top() + vec2(4.0, 0.0));
+
+            // Set query to the current symbol (if any).
+            symbols.query = symbol.clone().unwrap_or_default();
+            symbols.results = None;
             true
         } else {
             false
@@ -1416,10 +1435,8 @@ impl Edit {
                 .symbols
                 .show(set_focus, symbols.keys().cloned(), ui)
             {
-                Some(symbol) => {
-                    edit_data
-                        .commands
-                        .push(Command::UpdateSymbol(id, Some(symbol)));
+                Submit::Query(s) | Submit::Result(s) => {
+                    edit_data.commands.push(Command::UpdateSymbol(id, Some(s)));
                 }
                 _ => (),
             }
