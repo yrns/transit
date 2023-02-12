@@ -1436,7 +1436,10 @@ impl Edit {
                 .show(set_focus, symbols.keys().cloned(), ui)
             {
                 Submit::Query(s) | Submit::Result(s) => {
-                    edit_data.commands.push(Command::UpdateSymbol(id, Some(s)));
+                    // Clear action/guard if the submit is empty.
+                    edit_data
+                        .commands
+                        .push(Command::UpdateSymbol(id, (!s.is_empty()).then_some(s)));
                 }
                 _ => (),
             }
