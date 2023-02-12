@@ -1348,21 +1348,28 @@ impl Edit {
         edit_data: &mut EditData,
         ui: &mut Ui,
     ) {
-        let location = symbol
+        // What's the right way to do this?
+        let _gensym = match symbol {
+            None => Some(self.generate_symbol(id)),
+            _ => None,
+        };
+        let gensym = symbol.as_ref().or(_gensym.as_ref()).unwrap();
+
+        let location = self
+            .source
             .as_ref()
-            .and_then(|s| self.source.as_ref().and_then(|source| source.symbol(&s)));
+            .and_then(|source| source.symbol(&gensym));
 
         // Hovering displays symbol name and source location.
-        let hover_text = match (symbol.as_ref(), location) {
-            (Some(s), Some((path, line, col))) => format!(
+        let hover_text = match location {
+            Some((path, line, col)) => format!(
                 "{} ({} {}:{})",
-                s,
+                &gensym,
                 path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
                 line,
                 col
             ),
-            (Some(s), None) => format!("{} (???)", s),
-            _ => "()".to_owned(),
+            None => format!("{}?", gensym),
         };
 
         // Disabled when no source.
