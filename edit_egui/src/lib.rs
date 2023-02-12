@@ -1353,15 +1353,17 @@ impl Edit {
             .and_then(|s| self.source.as_ref().and_then(|source| source.symbol(&s)));
 
         // Hovering displays symbol name and source location.
-        let hover_text = location.map(|(path, line, col)| {
-            format!(
+        let hover_text = match (symbol.as_ref(), location) {
+            (Some(s), Some((path, line, col))) => format!(
                 "{} ({} {}:{})",
-                symbol.as_ref().unwrap(), // location -> symbol
+                s,
                 path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
                 line,
                 col
-            )
-        });
+            ),
+            (Some(s), None) => format!("{} (???)", s),
+            _ => "()".to_owned(),
+        };
 
         // Disabled when no source.
         let response = ui
@@ -1374,7 +1376,7 @@ impl Edit {
                 })
                 .small(),
             )
-            .on_hover_text(hover_text.as_deref().unwrap_or("()"))
+            .on_hover_text(hover_text)
             .on_disabled_hover_text("source file is unset");
 
         // FIX: janet-specific
