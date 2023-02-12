@@ -1447,6 +1447,8 @@ impl Edit {
         self.graph
             .path(i)
             .into_iter()
+            // Always skip the root id? We already know its a door.
+            .skip(1)
             .filter_map(|i| self.graph.state(i).map(|s| &s.id))
             .cloned()
             .collect::<Vec<_>>()
