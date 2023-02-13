@@ -1393,30 +1393,20 @@ impl Edit {
             // enabled -> clicked -> source exists
             let source = self.source.as_ref().expect("source");
 
-            match symbol {
-                Some(s) => match location {
-                    // We could use references here if source existed outside self. If `commands`
-                    // references self we can't get a mutable ref later to process them.
-                    Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
-                        s.clone(),
-                        path.clone(),
-                        (*line, *col),
-                    )),
-                    // A symbol is set but doesn't exist in the source so insert it.
-                    None => edit_data.commands.push(Command::InsertSymbol(
-                        s.clone(),
-                        source.path.clone(),
-                        janet_template.replace("{}", &s),
-                    )),
-                },
-                None => {
-                    // Make up a name based on path.
-                    let s = self.generate_symbol(id);
-                    let template = janet_template.replace("{}", &s);
-                    edit_data
-                        .commands
-                        .push(Command::InsertSymbol(s, source.path.clone(), template))
-                }
+            match location {
+                // We could use references here if source existed outside self. If `commands`
+                // references self we can't get a mutable ref later to process them.
+                Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
+                    gensym.clone(),
+                    path.clone(),
+                    (*line, *col),
+                )),
+                // A symbol is set but doesn't exist in the source so insert it.
+                None => edit_data.commands.push(Command::InsertSymbol(
+                    gensym.clone(),
+                    source.path.clone(),
+                    janet_template.replace("{}", &gensym),
+                )),
             }
         }
 
