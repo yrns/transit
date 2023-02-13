@@ -1161,10 +1161,10 @@ impl Edit {
                 style.interact_selectable(&state_response, selected)
             };
 
-            // Alternate background colors based on depth. The default dark theme is very dark here,
-            // closer to the window background.
-            if depth % 2 == 1 && widget_visuals == style.visuals.widgets.inactive {
-                widget_visuals.bg_fill = style.visuals.faint_bg_color;
+            // Alternate background colors based on depth.
+            if !selected && depth % 2 == 1 {
+                widget_visuals.bg_fill = widget_visuals.bg_fill.gamma_multiply(0.65);
+                widget_visuals.bg_fill[3] = 255; // Reset alpha.
             }
 
             let stroke = if edit_data.drag.is_target(idx) {
@@ -1178,13 +1178,14 @@ impl Edit {
                 // which makes all the contained states indiscernible.
                 widget_visuals.fg_stroke
             };
+
             ui.painter().set(
                 bg,
                 RectShape {
                     rect,
                     rounding: widget_visuals.rounding,
                     fill: widget_visuals.bg_fill,
-                    stroke,
+                    stroke, //: Stroke::NONE,
                 },
             );
         }
