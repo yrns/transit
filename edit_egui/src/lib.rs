@@ -1576,7 +1576,7 @@ impl Edit {
                 // Filter out self-transitions, and include initial incoming connections. Maybe we
                 // should store initial as an edge in the graph?
                 ports
-                    .filter_map(|(_, source, _, t, _)| (source != idx).then_some(t.port1))
+                    .filter_map(|(_, source, _, t, _)| (source != idx).then_some(t.port2))
                     .chain(
                         self.graph
                             .path_iter(idx)
