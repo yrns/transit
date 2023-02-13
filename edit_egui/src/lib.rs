@@ -386,12 +386,12 @@ impl EditData {
     }
 }
 
-// The drag variants don't need writable access to the drag state. Rename drag variants to New*?
-pub enum Connection<'a, 'b> {
+// Rename drag variants to New*?
+pub enum Connection<'a> {
     // Source, control points.
-    Initial(Idx, (Vec2, Vec2), &'b mut Drag),
+    Initial(Idx, (Vec2, Vec2)),
     DragInitial(Idx, (Vec2, Vec2)),
-    Transition(Tdx, &'a Transition, bool, &'b mut Drag),
+    Transition(Tdx, &'a Transition, bool),
     DragTransition(Vec2, Vec2), // control points
 }
 
@@ -812,92 +812,92 @@ impl Edit {
     }
 
     pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) -> Option<Transition> {
-        let EditData {
-            rects,
-            drag,
-            commands,
-            ..
-        } = &mut *edit_data;
-
         // Show all transitions.
         let mut drag_transition = None;
         for (tdx, source, target, t, internal) in self.graph.transitions() {
-            match drag {
-                Drag::TransitionSource(b, a, _tdx) if *_tdx == tdx => match a {
-                    Some(a) => {
-                        let (t, (start, end)) = self.drag_transition(*a, *b, rects, tdx);
-                        self.show_connection(
-                            start,
-                            end,
-                            Connection::Transition(tdx, &t, internal, drag),
-                            ui,
-                            commands,
-                        );
-                        drag_transition = Some(t);
-                    }
-                    None => {
-                        if let Some(start) = ui
-                            .ctx()
-                            .pointer_interact_pos()
-                            .or_else(|| rects.get(source).map(|r| port_out(r, t.port1)))
-                        {
-                            if let Some(end) = rects
-                                .get(target)
-                                .map(|r| port_pos(r, t.port2, target_dir(source, target)))
-                            {
-                                self.show_connection(
-                                    start,
-                                    end,
-                                    Connection::Transition(tdx, t, internal, drag),
-                                    ui,
-                                    commands,
-                                );
+            match edit_data.drag {
+                Drag::TransitionSource(b, a, _tdx) if _tdx == tdx => {
+                    match a {
+                        Some(a) => {
+                            let (t, (start, end)) =
+                                self.drag_transition(a, b, &mut edit_data.rects, tdx);
+                            self.show_connection(
+                                start,
+                                end,
+                                Connection::Transition(tdx, &t, internal),
+                                edit_data,
+                                ui,
+                            );
+                            drag_transition = Some(t);
+                        }
+                        None => {
+                            if let Some(start) = ui.ctx().pointer_interact_pos().or_else(|| {
+                                edit_data.rects.get(source).map(|r| port_out(r, t.port1))
+                            }) {
+                                if let Some(end) = edit_data
+                                    .rects
+                                    .get(target)
+                                    .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                                {
+                                    self.show_connection(
+                                        start,
+                                        end,
+                                        Connection::Transition(tdx, t, internal),
+                                        edit_data,
+                                        ui,
+                                    );
+                                }
                             }
                         }
                     }
-                },
-                Drag::TransitionTarget(a, b, _tdx) if *_tdx == tdx => match b {
+                }
+                Drag::TransitionTarget(a, b, _tdx) if _tdx == tdx => match b {
                     Some(b) => {
-                        let (t, (start, end)) = self.drag_transition(*a, *b, rects, tdx);
+                        let (t, (start, end)) =
+                            self.drag_transition(a, b, &mut edit_data.rects, tdx);
                         self.show_connection(
                             start,
                             end,
-                            Connection::Transition(tdx, &t, internal, drag),
+                            Connection::Transition(tdx, &t, internal),
+                            edit_data,
                             ui,
-                            commands,
                         );
                         drag_transition = Some(t);
                     }
                     None => {
-                        if let Some(start) = rects.get(source).map(|r| port_out(r, t.port1)) {
+                        if let Some(start) =
+                            edit_data.rects.get(source).map(|r| port_out(r, t.port1))
+                        {
                             if let Some(end) = ui.ctx().pointer_interact_pos().or_else(|| {
-                                rects
+                                edit_data
+                                    .rects
                                     .get(target)
                                     .map(|r| port_pos(r, t.port2, target_dir(source, target)))
                             }) {
                                 self.show_connection(
                                     start,
                                     end,
-                                    Connection::Transition(tdx, t, internal, drag),
+                                    Connection::Transition(tdx, t, internal),
+                                    edit_data,
                                     ui,
-                                    commands,
                                 );
                             }
                         }
                     }
                 },
                 _ => {
-                    if let Some(start) = rects.get(source).map(|r| port_out(r, t.port1)) {
-                        if let Some(end) = rects
+                    if let Some(start) = edit_data.rects.get(source).map(|r| port_out(r, t.port1)) {
+                        if let Some(end) = edit_data
+                            .rects
                             .get(target)
                             .map(|r| port_pos(r, t.port2, target_dir(source, target)))
                         {
                             self.show_connection(
                                 start,
                                 end,
-                                Connection::Transition(tdx, t, internal, drag),
+                                Connection::Transition(tdx, t, internal),
+                                edit_data,
                                 ui,
-                                commands,
                             );
                         }
                     }
@@ -906,31 +906,32 @@ impl Edit {
         }
 
         // New transition in progress.
-        match drag {
+        match edit_data.drag {
             Drag::AddTransition(source, target) => match target {
                 Some(target) => {
-                    let (t, (start, end)) = self.new_transition(*source, *target, rects);
+                    let (t, (start, end)) =
+                        self.new_transition(source, target, &mut edit_data.rects);
                     self.show_connection(
                         start,
                         end,
                         Connection::DragTransition(t.c1, t.c2),
+                        edit_data,
                         ui,
-                        commands,
                     );
                     drag_transition = Some(t);
                 }
                 None => {
                     // Put the port in AddTransition?
-                    let port1 = self.free_port(*source, Direction::Outgoing);
-                    if let Some(start) = rects.get(*source).map(|r| port_out(r, port1)) {
+                    let port1 = self.free_port(source, Direction::Outgoing);
+                    if let Some(start) = edit_data.rects.get(source).map(|r| port_out(r, port1)) {
                         if let Some(end) = ui.ctx().pointer_interact_pos() {
                             let cp = approx_cp(start, end);
                             self.show_connection(
                                 start,
                                 end,
                                 Connection::DragTransition(cp.0, cp.1),
+                                edit_data,
                                 ui,
-                                commands,
                             );
                         }
                     }
@@ -1235,8 +1236,8 @@ impl Edit {
                                 start,
                                 end,
                                 Connection::DragInitial(idx, *cp),
+                                edit_data,
                                 &mut ui,
-                                &mut edit_data.commands,
                             );
                         }
                         true
@@ -1247,9 +1248,9 @@ impl Edit {
                                 self.show_connection(
                                     start,
                                     end,
-                                    Connection::Initial(idx, (c1, c2), &mut edit_data.drag),
+                                    Connection::Initial(idx, (c1, c2)),
+                                    edit_data,
                                     &mut ui,
-                                    &mut edit_data.commands,
                                 );
                             }
                             true
@@ -1306,10 +1307,7 @@ impl Edit {
             }
 
             self.show_symbol(SymbolId::Enter(idx), &state.enter, edit_data, ui);
-
-            if ui.small_button("exit").clicked() {
-                dbg!("clicked exit");
-            }
+            self.show_symbol(SymbolId::Exit(idx), &state.exit, edit_data, ui);
 
             // node index for debugging...
             ui.label(format!("({})", idx.index()));
@@ -1636,8 +1634,8 @@ impl Edit {
         start: Pos2,
         end: Pos2,
         conn: Connection,
+        edit_data: &mut EditData,
         ui: &mut Ui,
-        commands: &mut Vec<Command>,
     ) {
         let selected = match conn {
             Connection::Transition(tdx, ..) => match self.selection {
@@ -1667,25 +1665,25 @@ impl Edit {
 
         // Set curve points based on the transition drag state.
         let (start, c1, c2, end) = match conn {
-            Connection::Transition(tdx, t, _, ref drag) => {
+            Connection::Transition(tdx, t, _) => {
                 // Include the drag (from last frame). This is the second match on drag - move this
                 // to show_connections?
-                match drag {
-                    Drag::TransitionId(i, delta) if *i == tdx => {
-                        (start, t.c1 + *delta, t.c2 + *delta, end)
+                match edit_data.drag {
+                    Drag::TransitionId(i, delta) if i == tdx => {
+                        (start, t.c1 + delta, t.c2 + delta, end)
                     }
-                    Drag::TransitionControl((i, cp), delta) if *i == tdx => match cp {
-                        ControlPoint::C1 => (start, t.c1 + *delta, t.c2, end),
-                        ControlPoint::C2 => (start, t.c1, t.c2 + *delta, end),
+                    Drag::TransitionControl((i, cp), delta) if i == tdx => match cp {
+                        ControlPoint::C1 => (start, t.c1 + delta, t.c2, end),
+                        ControlPoint::C2 => (start, t.c1, t.c2 + delta, end),
                     },
                     _ => (start, t.c1, t.c2, end),
                 }
             }
             Connection::DragTransition(c1, c2) => (start, c1, c2, end),
-            Connection::Initial(idx, (c1, c2), ref drag) => match drag {
-                Drag::InitialControl((_idx, cp), delta) if idx == *_idx => match cp {
-                    ControlPoint::C1 => (start, c1 + *delta, c2, end),
-                    ControlPoint::C2 => (start, c1, c2 + *delta, end),
+            Connection::Initial(idx, (c1, c2)) => match edit_data.drag {
+                Drag::InitialControl((_idx, cp), delta) if idx == _idx => match cp {
+                    ControlPoint::C1 => (start, c1 + delta, c2, end),
+                    ControlPoint::C2 => (start, c1, c2 + delta, end),
                 },
                 _ => (start, c1, c2, end),
             },
@@ -1715,7 +1713,7 @@ impl Edit {
         ui.painter().add(bezier);
 
         match conn {
-            Connection::Transition(tdx, t, internal, drag) => {
+            Connection::Transition(tdx, t, internal) => {
                 // Pass these in?
                 let endpoints = self.graph.endpoints(tdx).unwrap();
 
@@ -1724,9 +1722,9 @@ impl Edit {
                 if ui.is_rect_visible(source_rect) {
                     let response = ui.allocate_rect(source_rect, Sense::drag());
 
-                    match drag {
+                    match edit_data.drag {
                         Drag::None if response.drag_started() => {
-                            *drag = Drag::TransitionSource(endpoints.1, None, tdx)
+                            edit_data.drag = Drag::TransitionSource(endpoints.1, None, tdx)
                         }
 
                         _ => (),
@@ -1741,9 +1739,9 @@ impl Edit {
                 if ui.is_rect_visible(target_rect) {
                     let response = ui.allocate_rect(target_rect, Sense::drag());
 
-                    match drag {
+                    match edit_data.drag {
                         Drag::None if response.drag_started() => {
-                            *drag = Drag::TransitionTarget(endpoints.0, None, tdx)
+                            edit_data.drag = Drag::TransitionTarget(endpoints.0, None, tdx)
                         }
                         _ => (),
                     }
@@ -1763,6 +1761,7 @@ impl Edit {
                             &mut ui,
                         );
 
+                        let drag = &mut edit_data.drag;
                         drag_delta!(
                             (response, ui, drag, TransitionControl, (tdx, cp)),
                             |delta: &mut Vec2| {
@@ -1771,7 +1770,7 @@ impl Edit {
                                     ControlPoint::C1 => t.c1 += *delta,
                                     ControlPoint::C2 => t.c2 += *delta,
                                 }
-                                commands.push(Command::UpdateTransition(tdx, t))
+                                edit_data.commands.push(Command::UpdateTransition(tdx, t))
                             }
                         );
                     }
@@ -1792,30 +1791,30 @@ impl Edit {
                             let InnerResponse { inner, response } =
                                 Editabel::sense(Sense::click_and_drag()).show(tid, ui);
                             if let Some(id) = inner {
-                                commands.push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
+                                edit_data
+                                    .commands
+                                    .push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
                             }
 
-                            if ui.small_button("guard").clicked() {
-                                dbg!("clicked guard");
-                            };
+                            self.show_symbol(SymbolId::Guard(tdx), &t.guard, edit_data, ui);
 
                             // Self-transition, internal checkbox.
                             if endpoints.0 == endpoints.1 {
                                 let mut internal = internal;
                                 if ui.checkbox(&mut internal, "int.").clicked() {
-                                    commands.push(Command::SetInternal(tdx, internal));
+                                    edit_data.commands.push(Command::SetInternal(tdx, internal));
                                 }
                             }
 
                             // Context menu on right click.
-                            let response = if !drag.in_drag() {
+                            let response = if !edit_data.drag.in_drag() {
                                 let response = response.on_hover_text_at_pointer(format!(
                                     "port1: {} port2: {}",
                                     t.port1, t.port2
                                 ));
                                 response.context_menu(|ui| {
                                     if ui.button("Remove transition").clicked() {
-                                        commands.push(Command::RemoveTransition(tdx));
+                                        edit_data.commands.push(Command::RemoveTransition(tdx));
                                         ui.close_menu();
                                     }
                                 })
@@ -1827,17 +1826,19 @@ impl Edit {
                                 dbg!("double");
                             } else {
                                 if response.clicked() {
-                                    commands
+                                    edit_data
+                                        .commands
                                         .push(Command::UpdateSelection(Selection::Transition(tdx)))
                                 }
 
+                                let drag = &mut edit_data.drag;
                                 drag_delta!(
                                     (response, ui, drag, TransitionId, tdx),
                                     |delta: &Vec2| {
                                         let mut t = t.clone();
                                         t.c1 += *delta;
                                         t.c2 += *delta;
-                                        commands.push(Command::UpdateTransition(tdx, t))
+                                        edit_data.commands.push(Command::UpdateTransition(tdx, t))
                                     }
                                 );
                             }
@@ -1845,7 +1846,7 @@ impl Edit {
                         .response;
                 });
             }
-            Connection::Initial(i, _, drag) => {
+            Connection::Initial(i, _) => {
                 let mut mesh = arrow(control_size, color);
                 mesh.translate(end.to_vec2());
                 ui.painter().add(mesh);
@@ -1858,6 +1859,7 @@ impl Edit {
                             &mut ui,
                         );
 
+                        let drag = &mut edit_data.drag;
                         drag_delta!(
                             (response, ui, drag, InitialControl, (i, cp)),
                             |delta: &Vec2| {
@@ -1868,7 +1870,7 @@ impl Edit {
                                             ControlPoint::C1 => initial.1 += *delta,
                                             ControlPoint::C2 => initial.2 += *delta,
                                         }
-                                        commands.push(Command::UpdateState(i, state))
+                                        edit_data.commands.push(Command::UpdateState(i, state))
                                     }
                                 }
                             }
@@ -1881,9 +1883,9 @@ impl Edit {
                 if ui.is_rect_visible(target_rect) {
                     let response = ui.allocate_rect(target_rect, Sense::drag());
 
-                    match drag {
+                    match edit_data.drag {
                         Drag::None if response.drag_started() => {
-                            *drag = Drag::Initial(i, None, Default::default());
+                            edit_data.drag = Drag::Initial(i, None, Default::default());
                         }
                         _ => (),
                     }
