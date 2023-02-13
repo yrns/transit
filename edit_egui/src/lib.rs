@@ -1456,6 +1456,8 @@ impl Edit {
     }
 
     pub fn generate_symbol(&self, id: SymbolId) -> String {
+        use heck::ToKebabCase;
+
         match id {
             SymbolId::Enter(i) => self.path_string(i) + "-enter",
             SymbolId::Exit(i) => self.path_string(i) + "-exit",
@@ -1468,6 +1470,7 @@ impl Edit {
                     + "-guard"
             }
         }
+        .to_kebab_case()
     }
 
     /// Each state sets the drag target for its children. The topmost child that contains the
