@@ -1,22 +1,22 @@
-pub mod app;
+mod app;
 mod editabel;
 mod editor;
 mod search;
-pub mod source;
+mod source;
 mod undo;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-// TODO: make a separte crate for the bin and only depend on egui here
+pub use app::*;
 use editabel::Editabel;
 pub use editor::*;
-use eframe::egui::epaint::{CubicBezierShape, Vertex};
+// TODO: only depend on egui here
+use eframe::egui::epaint::{CubicBezierShape, RectShape, Vertex};
 use eframe::egui::*;
-use eframe::epaint::RectShape;
 use search::{SearchBox, Submit};
-use source::Source;
-use transit::{Direction, Graph, Idx, Initial, Op, Tdx};
+pub use source::*;
+use transit_graph::{Direction, Graph, Idx, Initial, Op, Tdx};
 use undo::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -30,14 +30,29 @@ pub enum Selection {
 
 /// Statechart graph editor.
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Default)]
-pub struct Edit {
-    pub source: Option<Source>,
+//#[derive(Default)]
+pub struct Edit<S> {
+    /// Source file.
+    pub source: Option<S>,
+    /// Graph structure.
     pub graph: Graph<State, Transition>,
+    /// Current selection.
     #[serde(default)]
     pub selection: Selection,
+    /// Undo history.
     #[serde(default)]
     pub undo: Undo,
+}
+
+impl<S> Default for Edit<S> {
+    fn default() -> Self {
+        Self {
+            source: None,
+            graph: Graph::default(),
+            selection: Selection::None,
+            undo: Undo::default(),
+        }
+    }
 }
 
 // Initial (destination) port and control points. Similiar to transition.
@@ -448,14 +463,16 @@ pub enum Error {
     Other(String),
 }
 
-impl Edit {
-    /// Id of the root state.
-    pub fn id(&self) -> &str {
-        &self.graph.root().id
-    }
-
+impl<S> Edit<S>
+where
+    S: Source,
+{
     /// Load from path.
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
+    #[cfg(feature = "serde")]
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, Error>
+    where
+        S: serde::de::DeserializeOwned,
+    {
         let mut edit: Self = ron::de::from_reader(std::fs::File::open(path.as_ref())?)?;
 
         // Validate graph.
@@ -472,7 +489,7 @@ impl Edit {
 
         // Start watching source path.
         if let Some(source) = &mut edit.source {
-            match Source::new(&source.path) {
+            match S::from_path(&source.path()) {
                 Ok(s) => *source = s,
                 Err(e) => println!("error in source: {:?}", e),
             }
@@ -482,13 +499,27 @@ impl Edit {
     }
 
     /// Serialize self to path.
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
+    #[cfg(feature = "serde")]
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error>
+    where
+        S: serde::Serialize,
+    {
         ron::ser::to_writer_pretty(
             std::fs::File::create(path.as_ref())?,
             self,
             ron::ser::PrettyConfig::default(),
         )
         .map_err(Error::from)
+    }
+}
+
+impl<S> Edit<S>
+where
+    S: Source,
+{
+    /// Id of the root state.
+    pub fn id(&self) -> &str {
+        &self.graph.root().id
     }
 
     pub fn process_commands(&mut self, commands: Vec<Command>) {
@@ -567,7 +598,7 @@ impl Edit {
                 Command::SetInternal(i, internal) => self.graph.set_internal(i, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
-                    match Source::new(&p) {
+                    match S::from_path(&p) {
                         Ok(s) => {
                             self.source = Some(s);
                         }
@@ -1319,19 +1350,19 @@ impl Edit {
                 let response = ui.small_button("source");
                 if response.clicked() {
                     let dialog = native_dialog::FileDialog::new().add_filter("janet", &["janet"]);
-                    let dialog = if let Some(p) = self.source.as_ref().and_then(|s| s.path.parent())
-                    {
-                        dialog.set_location(p)
-                    } else {
-                        dialog
-                    };
+                    let dialog =
+                        if let Some(p) = self.source.as_ref().and_then(|s| s.path().parent()) {
+                            dialog.set_location(p)
+                        } else {
+                            dialog
+                        };
 
                     if let Ok(Some(p)) = dialog.show_open_single_file() {
                         edit_data.commands.push(Command::SelectSourcePath(p));
                     }
                 }
                 if let Some(source) = &self.source {
-                    response.on_hover_text_at_pointer(source.path.display().to_string());
+                    response.on_hover_text_at_pointer(source.path().display().to_string());
                 }
             }
         })
@@ -1385,7 +1416,7 @@ impl Edit {
             .on_hover_text(hover_text)
             .on_disabled_hover_text("source file is unset");
 
-        // FIX: janet-specific
+        // FIX: janet-specific into source
         let janet_template = "\n\n(defn {} [self ctx ev]\n  )";
 
         if response.clicked_by(PointerButton::Primary) {
@@ -1397,13 +1428,13 @@ impl Edit {
                 // references self we can't get a mutable ref later to process them.
                 Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
                     gensym.clone(),
-                    path.clone(),
+                    path.to_path_buf(),
                     (*line, *col),
                 )),
                 // A symbol is set but doesn't exist in the source so insert it.
                 None => edit_data.commands.push(Command::InsertSymbol(
                     gensym.clone(),
-                    source.path.clone(),
+                    source.path().to_path_buf(),
                     janet_template.replace("{}", &gensym),
                 )),
             }
@@ -1423,16 +1454,14 @@ impl Edit {
             false
         };
 
+        // Show search box.
         if let Some(symbols) = self
             .source
             .as_ref()
-            .and_then(|source| source.symbols.as_ref())
+            // We just want the keys.
+            .map(|source| source.symbols().map(|(s, _)| s))
         {
-            // Show search box.
-            match edit_data
-                .symbols
-                .show(set_focus, symbols.keys().cloned(), ui)
-            {
+            match edit_data.symbols.show(set_focus, symbols, ui) {
                 Submit::Query(s) | Submit::Result(s) => {
                     // Clear action/guard if the submit is empty.
                     edit_data
@@ -1441,7 +1470,7 @@ impl Edit {
                 }
                 _ => (),
             }
-        }; // else error on click?
+        }
     }
 
     pub fn path_string(&self, i: Idx) -> String {

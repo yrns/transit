@@ -6,18 +6,32 @@ pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Z
 pub const REDO: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Z);
 
-#[derive(Default, serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
-pub struct App {
+pub struct App<S> {
     /// Most-recently opened file.
     pub recent: Option<PathBuf>,
     #[serde(skip)] // De/serialized from/to `recent`.
-    pub edit: Edit,
+    pub edit: Edit<S>,
     #[serde(skip)] // TODO configurable?
     pub editor: EmacsClient,
 }
 
-impl App {
+/// There is no default for Source.
+impl<S> Default for App<S> {
+    fn default() -> Self {
+        Self {
+            recent: None,
+            edit: Edit::default(),
+            editor: EmacsClient::default(),
+        }
+    }
+}
+
+impl<'de, S> App<S>
+where
+    S: Source + serde::de::DeserializeOwned + serde::Serialize,
+{
     pub fn load(&mut self) {
         // Load recent file.
         if let Some(path) = &self.recent {
@@ -78,7 +92,7 @@ impl App {
 
         // Check for updates to the source.
         if let Some(ref mut source) = self.edit.source {
-            source.update();
+            source.update().unwrap_or_else(|e| eprintln!("{e:?}"));
         }
 
         let mut quit = false;
@@ -146,11 +160,11 @@ impl App {
             // Process editor commands.
             commands.retain(|command| match command {
                 Command::GotoSymbol(symbol, path, loc) => {
-                    self.editor.goto(symbol, path, *loc).unwrap();
+                    self.editor.goto(&symbol, &path, *loc).unwrap();
                     false
                 }
                 Command::InsertSymbol(symbol, path, template) => {
-                    self.editor.insert(symbol, path, template).unwrap();
+                    self.editor.insert(&symbol, &path, &template).unwrap();
                     false
                 }
                 _ => true,

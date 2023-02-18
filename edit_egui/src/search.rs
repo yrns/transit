@@ -1,6 +1,6 @@
 use crate::*;
 use eframe::egui::text::*;
-use transit::Idx;
+use transit_graph::Idx;
 
 #[derive(Default)]
 pub struct SearchBox<T> {
@@ -193,13 +193,13 @@ impl<'a> Matches<Idx> for (Idx, &'a State) {
     }
 }
 
-impl<'a> Matches<String> for String {
+impl Matches<String> for &String {
     fn matches(
         &self,
         query: &str,
         text_format: TextFormat,
         match_color: Color32,
     ) -> Option<(String, LayoutJob)> {
-        match_layout(self, query, text_format, match_color).map(|a| (self.clone(), a))
+        match_layout(self, query, text_format, match_color).map(|a| (self.to_string(), a))
     }
 }

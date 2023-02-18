@@ -1,4 +1,3 @@
-use janet::{get_symbols, SymbolMap};
 use notify_debouncer_mini::{
     new_debouncer, notify,
     notify::{INotifyWatcher, RecursiveMode},
@@ -9,88 +8,92 @@ use std::{
     sync::mpsc::Receiver,
     time::Duration,
 };
+use transit_graph::Context;
 
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub struct Source {
-    pub path: PathBuf,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    watcher: Option<(
-        Debouncer<INotifyWatcher>,
-        Receiver<Result<Vec<DebouncedEvent>, Vec<notify::Error>>>,
-    )>,
-    // Skip this too?
-    pub symbols: Option<SymbolMap>,
-}
+/// Symbol locator consisting of a path, line no., and column.
+pub type Locator = (PathBuf, usize, usize);
 
-#[derive(Debug)]
-pub enum Error {
-    Notify(notify::Error),
-    Janet(janet::Error),
-}
+pub type WatchError = notify::Error;
 
-// TODO: This needs to be generic over language context.
-impl Source {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
+pub type Rx = Receiver<Result<Vec<DebouncedEvent>, Vec<WatchError>>>;
+
+/// Watches source file for changes.
+pub struct Watcher(Debouncer<INotifyWatcher>, Rx);
+
+impl Watcher {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, notify::Error> {
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut debouncer =
-            new_debouncer(Duration::from_secs(2), None, tx).map_err(Error::Notify)?;
+        let mut debouncer = new_debouncer(Duration::from_secs(2), None, tx)?;
 
         debouncer
             .watcher()
-            .watch(path.as_ref(), RecursiveMode::NonRecursive)
-            .map_err(Error::Notify)?;
+            .watch(path.as_ref(), RecursiveMode::NonRecursive)?;
 
-        Ok(Self {
-            path: path.as_ref().into(),
-            watcher: Some((debouncer, rx)),
-            symbols: get_symbols(path).map_err(Error::Janet)?,
-        })
+        Ok(Watcher(debouncer, rx))
     }
 
-    // Call periodically to clear the channel.
-    pub fn update(&mut self) {
-        let mut update = false;
+    /// Call periodically to clear the channel.
+    pub fn changed(&mut self) -> bool {
+        let mut changed = false;
 
-        if let Some((_, rx)) = &mut self.watcher {
-            for res in rx.try_iter() {
-                match res {
-                    Ok(events) => {
-                        for event in events {
-                            println!("watch event: {:?}", event);
-                        }
-                        update = true;
+        for res in self.1.try_iter() {
+            match res {
+                Ok(events) => {
+                    for event in events {
+                        println!("watch event: {:?}", event);
                     }
-                    Err(errors) => {
-                        for err in errors {
-                            println!("watch error: {:?}", err)
-                        }
+                    changed = true;
+                }
+                Err(errors) => {
+                    for err in errors {
+                        println!("watch error: {:?}", err)
                     }
                 }
             }
         }
 
-        // Update symbols if needed.
-        if update {
-            match get_symbols(&self.path) {
-                Ok(symbols) => match symbols {
-                    Some(symbols) => {
-                        self.symbols = Some(symbols);
-                    }
-                    None => {
-                        println!("no symbols"); // warn?
-                    }
-                },
-                _ => (), // error?
-            }
-        }
+        changed
     }
+}
 
-    // Why is this an option?
-    // pub fn symbols(&self) -> impl Iterator<Item = &str> {
-    //     self.symbols.as_ref().keys()
-    // }
+// TODO:
+// ✓ Produce symbols from a source file.
+// ✓ Watch source file(s) for changes.
+// Produce itself from an edit graph (or symbols).
+// Produce viewable/editable events for debugging/testing.
+// Viewable/editable state.
+// Goto symbol?
+// Templating. Insert.
+// Process symbol names (i.e. kebab-case).
+// Extension(s)?
 
-    pub fn symbol(&self, symbol: &str) -> Option<&(PathBuf, usize, usize)> {
-        self.symbols.as_ref().and_then(|s| s.get(symbol))
-    }
+/// Provides language-dependent facilities for dealing with source code.
+pub trait Source {
+    /// Type of context this source produces.
+    type Context: Context;
+
+    /// Iterator over all symbols.
+    type Symbols<'a>: Iterator<Item = (&'a String, &'a Locator)>
+    where
+        Self: 'a;
+
+    /// Error kind.
+    type Error: std::error::Error;
+
+    /// Create a new source from a path.
+    fn from_path(path: &Path) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
+
+    /// Path to source.
+    fn path(&self) -> &Path; // Option?
+
+    /// Returns a symbol locator from source.
+    fn symbol(&self, symbol: &str) -> Option<&Locator>;
+
+    /// Returns an iterator over all symbols.
+    fn symbols<'a>(&'a self) -> Self::Symbols<'a>;
+
+    /// Called every frame; checks source file for changes.
+    fn update(&mut self) -> Result<(), Self::Error>;
 }

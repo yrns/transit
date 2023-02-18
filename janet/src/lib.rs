@@ -2,13 +2,77 @@ pub mod from_janet;
 pub mod marshal;
 pub mod pretty;
 
+use edit_egui as edit;
 use from_janet::FromJanet;
-pub use janetrs::client::Error;
 use janetrs::{client::JanetClient, Janet, JanetSymbol, TaggedJanet};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
+
+pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("watch error")]
+    Watch(#[from] edit::WatchError),
+    #[error("janet error")]
+    Janet(#[from] janetrs::client::Error),
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct Source {
+    pub path: PathBuf,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    watcher: Option<edit::Watcher>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub symbols: SymbolMap,
+}
+
+impl edit::Source for Source {
+    type Context = JanetContext;
+
+    type Symbols<'a> = std::collections::hash_map::Iter<'a, String, (PathBuf, usize, usize)>;
+
+    type Error = Error;
+
+    fn from_path(path: &Path) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        let watcher = Some(edit::Watcher::new(path)?);
+
+        Ok(Self {
+            path: path.to_path_buf(),
+            watcher,
+            symbols: Default::default(),
+        })
+    }
+
+    fn path(&self) -> &Path {
+        self.path.as_path()
+    }
+
+    fn symbol(&self, symbol: &str) -> Option<&edit::Locator> {
+        self.symbols.get(symbol)
+    }
+
+    fn symbols<'a>(&'a self) -> Self::Symbols<'a> {
+        self.symbols.iter()
+    }
+
+    fn update(&mut self) -> Result<(), Self::Error> {
+        if let Some(watcher) = &mut self.watcher {
+            if watcher.changed() {
+                if let Some(symbols) = get_symbols(&self.path)? {
+                    self.symbols = symbols;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 pub struct JanetContext {
     //client: &'a JanetClient,
@@ -26,8 +90,7 @@ pub struct State {
     pub local: Janet,
 }
 
-// Can this be nil instead? This is only used for the root state. Is enter/exit even interesting for
-// root states?
+// Can this be nil instead? This is only used for the root state.
 impl Default for State {
     fn default() -> Self {
         Self {
@@ -80,7 +143,7 @@ impl Transition {
     }
 }
 
-impl transit::Context for JanetContext {
+impl transit_graph::Context for JanetContext {
     type Event = Event;
     type State = State;
     type Transition = Transition;
@@ -106,7 +169,7 @@ pub fn resolve<'a>(symbol: impl Into<JanetSymbol<'a>>, client: &JanetClient) -> 
         .unwrap_or(Janet::nil())
 }
 
-impl transit::State<JanetContext> for State {
+impl transit_graph::State<JanetContext> for State {
     fn enter(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
         if let TaggedJanet::Function(mut f) = self.enter.unwrap() {
             match f.call(&[
@@ -134,7 +197,7 @@ impl transit::State<JanetContext> for State {
     }
 }
 
-impl transit::Transition<JanetContext> for Transition {
+impl transit_graph::Transition<JanetContext> for Transition {
     fn guard(&mut self, ctx: &mut JanetContext, event: &Event) -> bool {
         if event.id == self.id {
             let value = event.value;
@@ -162,8 +225,6 @@ impl transit::Transition<JanetContext> for Transition {
         }
     }
 }
-
-pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
 
 pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
     let client = JanetClient::init_with_default_env()?;

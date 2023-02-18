@@ -1,7 +1,7 @@
 //! A door as statechart.
 
 use serde::{Deserialize, Serialize};
-use transit::*;
+use transit_graph::*;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HitPoints {

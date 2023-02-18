@@ -3,7 +3,7 @@ name = "eframe-dynamic"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# https://robert.kra.hn/posts/2022-09-09-speeding-up-incremental-rust-compilation-with-dylibs/
 
 [features]
 persistence = ["eframe/persistence"]

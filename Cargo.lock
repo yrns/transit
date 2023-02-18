@@ -613,7 +613,6 @@ version = "0.1.0"
 dependencies = [
  "eframe-dynamic",
  "heck",
- "janet",
  "native-dialog",
  "nohash-hasher",
  "notify-debouncer-mini",
@@ -621,7 +620,7 @@ dependencies = [
  "ron",
  "serde",
  "thiserror",
- "transit",
+ "transit-graph",
 ]
 
 [[package]]
@@ -1027,9 +1026,11 @@ dependencies = [
 name = "janet"
 version = "0.1.0"
 dependencies = [
+ "edit_egui",
  "janetrs",
  "serde",
- "transit",
+ "thiserror",
+ "transit-graph",
 ]
 
 [[package]]
@@ -2032,7 +2033,15 @@ dependencies = [
 name = "transit"
 version = "0.1.0"
 dependencies = [
- "once_cell",
+ "edit_egui",
+ "eframe-dynamic",
+ "janet",
+]
+
+[[package]]
+name = "transit-graph"
+version = "0.1.0"
+dependencies = [
  "petgraph",
  "ron",
  "rustyline",

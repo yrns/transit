@@ -1,5 +1,5 @@
 use crate::{Edit, State, Transition};
-use transit::{Idx, Op};
+use transit_graph::{Idx, Op};
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
@@ -18,7 +18,7 @@ impl Undo {
     }
 }
 
-impl Edit {
+impl<S> Edit<S> {
     pub fn undo(&mut self) -> bool {
         if let Some(op) = self.undo.undos.pop() {
             self.undo.redos.push(op.undo(&mut self.graph));
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn undo_redo() {
-        let mut g = Edit::default();
+        let mut g: Edit<()> = Edit::default();
 
         let a = g.graph.add_state("a".into(), None);
         g.add_undo(a);
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn rewrite_redos() {
-        let mut g = Edit::default();
+        let mut g: Edit<()> = Edit::default();
 
         let a = g.graph.add_state("a".into(), None);
         g.add_undo(a);
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn ghosts() {
-        let mut g = Edit::default();
+        let mut g: Edit<()> = Edit::default();
 
         let a = g.graph.add_state("a".into(), None);
         g.add_undo(a);

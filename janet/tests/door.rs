@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs::read_to_string};
 
 use janet::*;
 use janetrs::{client::JanetClient, *};
-use transit::{Graph, Idx, Statechart};
+use transit_graph::{Graph, Idx, Statechart};
 
 fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, String>) {
     let mut g = Graph::new();

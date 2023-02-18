@@ -1,8 +1,9 @@
+use edit_egui as edit;
 use eframe::egui;
 
 // TODO wasm https://github.com/emilk/eframe_template
 
-struct App(edit_egui::app::App);
+struct App(edit::App<janet::Source>);
 
 fn main() {
     //tracing_subscriber::fmt::init();
@@ -21,7 +22,7 @@ fn main() {
             };
             cc.egui_ctx.set_visuals(visuals);
 
-            let mut app: edit_egui::app::App = cc
+            let mut app: edit::App<janet::Source> = cc
                 .storage
                 .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
                 .unwrap_or_default();
