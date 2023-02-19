@@ -14,3 +14,5 @@ members = ["transit-graph", "edit_egui", "janet", "eframe-dynamic"]
 edit_egui = { path = "./edit_egui" }
 janet = { path = "./janet" }
 eframe = { path = "./eframe-dynamic", package = "eframe-dynamic" }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = "0.3"

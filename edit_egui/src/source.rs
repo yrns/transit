@@ -8,6 +8,7 @@ use std::{
     sync::mpsc::Receiver,
     time::Duration,
 };
+use tracing::{error, info};
 use transit_graph::Context;
 
 /// Symbol locator consisting of a path, line no., and column.
@@ -40,13 +41,13 @@ impl Watcher {
             match res {
                 Ok(events) => {
                     for event in events {
-                        println!("watch event: {:?}", event);
+                        info!("watch event: {:?}", event);
                     }
                     changed = true;
                 }
                 Err(errors) => {
                     for err in errors {
-                        println!("watch error: {:?}", err)
+                        error!("watch error: {:?}", err)
                     }
                 }
             }

@@ -1,12 +1,30 @@
 use edit_egui as edit;
 use eframe::egui;
+use tracing::info;
+use tracing_subscriber::{
+    filter::{LevelFilter, Targets},
+    fmt::Subscriber,
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
 
 // TODO wasm https://github.com/emilk/eframe_template
 
 struct App(edit::App<janet::Source>);
 
 fn main() {
-    //tracing_subscriber::fmt::init();
+    // Trace only transit crates.
+    Subscriber::builder()
+        // .with_file(true)
+        // .with_line_number(true)
+        .finish()
+        .with(Targets::new().with_targets(vec![
+            ("transit", LevelFilter::INFO),
+            ("edit_egui", LevelFilter::INFO),
+            ("janet", LevelFilter::INFO),
+        ]))
+        .try_init()
+        .expect("tracing");
 
     let options = eframe::NativeOptions::default();
 
@@ -38,7 +56,7 @@ fn main() {
 impl eframe::App for App {
     // Prompt for save?
     fn on_close_event(&mut self) -> bool {
-        dbg!("on close");
+        info!("closing");
         true // can close
     }
 

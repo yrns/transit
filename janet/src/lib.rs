@@ -9,6 +9,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
+use tracing::{error, info};
 
 pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
 
@@ -149,11 +150,11 @@ impl transit_graph::Context for JanetContext {
     type Transition = Transition;
 
     fn dispatch(&mut self, event: &Event) {
-        println!("dispatch: event: {:?}", event);
+        info!("dispatch: event: {:?}", event);
     }
 
     fn transition(&mut self, source: &State, target: &State) {
-        println!("transition: source: {:?} target: {:?}", source, target);
+        info!("transition: source: {:?} target: {:?}", source, target);
     }
 }
 
@@ -178,7 +179,7 @@ impl transit_graph::State<JanetContext> for State {
                 *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
             ]) {
                 Ok(_) => (),
-                Err(err) => println!("err in enter: {:?}", err),
+                Err(e) => error!("error in enter: {e:?}"),
             }
         }
     }
@@ -191,7 +192,7 @@ impl transit_graph::State<JanetContext> for State {
                 *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
             ]) {
                 Ok(_) => (),
-                Err(err) => println!("err in enter: {:?}", err),
+                Err(e) => error!("error in exit: {e:?}"),
             }
         }
     }
@@ -204,20 +205,20 @@ impl transit_graph::Transition<JanetContext> for Transition {
             if let TaggedJanet::Function(mut f) = self.guard.unwrap() {
                 match f.call(&[self.local, ctx.context, value]) {
                     Ok(res) => {
-                        println!("guard result: {:?}", res);
+                        info!("guard result: {:?}", res);
                         match res.unwrap() {
                             TaggedJanet::Boolean(b) => b,
                             _ => res.is_truthy(),
                         }
                     }
-                    Err(err) => {
-                        println!("err in guard: {:?}", err);
+                    Err(e) => {
+                        error!("error in guard: {e:?}");
                         false
                     }
                 }
             } else {
                 // If there is no guard but the id matches it passes by default.
-                println!("no guard");
+                info!("no guard");
                 true
             }
         } else {
@@ -246,7 +247,7 @@ pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
 
         Ok(SymbolMap::from_janet(res)
             .map_err(|e| {
-                println!("error in SymbolMap::from_janet: {:?}", e);
+                error!("error in SymbolMap::from_janet: {e:?}");
                 e
             })
             .ok())

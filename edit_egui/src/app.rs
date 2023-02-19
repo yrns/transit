@@ -1,6 +1,7 @@
 use crate::*;
 use eframe::egui;
 use std::path::PathBuf;
+use tracing::error;
 
 pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Z);
 pub const REDO: KeyboardShortcut =
@@ -36,8 +37,11 @@ where
         // Load recent file.
         if let Some(path) = &self.recent {
             match Edit::load(path) {
-                Ok(edit) => self.edit = edit,
-                Err(e) => println!("error: {:?}", e),
+                Ok(edit) => {
+                    info!("loaded from recent: {}", path.display());
+                    self.edit = edit;
+                }
+                Err(e) => error!("error: {:?}", e),
             }
         }
     }
@@ -49,10 +53,13 @@ where
             .add_filter("ron", &["ron"])
             .show_save_single_file()
         {
-            println!("saving to {:?}", p);
             match self.edit.save(&p) {
-                Ok(_) => self.recent = Some(p),
-                Err(e) => println!("error saving: {:?}", e),
+                Ok(_) => {
+                    info!("file saved: {}", p.display());
+                    //info!("file saved: {p:#?}");
+                    self.recent = Some(p);
+                }
+                Err(e) => error!("error saving: {e:?}"),
             }
         }
     }
@@ -60,8 +67,9 @@ where
     /// Save to recent path. Else, save as.
     pub fn file_save(&mut self) {
         if let Some(p) = &self.recent {
-            if let Err(e) = self.edit.save(p) {
-                println!("failed to save: {:?}", e);
+            match self.edit.save(p) {
+                Ok(_) => info!("file saved: {}", p.display()),
+                Err(e) => error!("error saving: {e:?}"),
             }
         } else {
             self.file_save_as();
@@ -79,9 +87,9 @@ where
                     self.recent = Some(p);
                     self.edit = edit;
                 }
-                Err(e) => println!("error loading: {:?}", e),
+                Err(e) => error!("error loading: {:?}", e),
             },
-            Err(e) => println!("error: {:?}", e),
+            Err(e) => error!("error: {:?}", e),
             _ => (),
         }
     }
@@ -92,7 +100,7 @@ where
 
         // Check for updates to the source.
         if let Some(ref mut source) = self.edit.source {
-            source.update().unwrap_or_else(|e| eprintln!("{e:?}"));
+            source.update().unwrap_or_else(|e| error!("{e:?}"));
         }
 
         let mut quit = false;

@@ -16,6 +16,7 @@ use eframe::egui::epaint::{CubicBezierShape, RectShape, Vertex};
 use eframe::egui::*;
 use search::{SearchBox, Submit};
 pub use source::*;
+use tracing::{error, info, warn};
 use transit_graph::{Direction, Graph, Idx, Initial, Op, Tdx};
 use undo::*;
 
@@ -123,46 +124,6 @@ pub struct Transition {
     /// Destination port index.
     port2: usize,
 }
-
-// TODO: this does nothing and shouldn't be necessary if we're not running it
-
-// #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-// #[derive(Clone, Default)]
-//pub struct EditContext {}
-
-// impl transit::Context for EditContext {
-//     type Event = ();
-//     type State = State;
-//     type Transition = Transition;
-// }
-
-// impl transit::State<EditContext> for State {
-//     fn enter(
-//         &mut self,
-//         _ctx: &mut EditContext,
-//         _event: Option<&<EditContext as transit::Context>::Event>,
-//     ) {
-//         todo!()
-//     }
-
-//     fn exit(
-//         &mut self,
-//         _ctx: &mut EditContext,
-//         _event: Option<&<EditContext as transit::Context>::Event>,
-//     ) {
-//         todo!()
-//     }
-// }
-
-// impl transit::Transition<EditContext> for Transition {
-//     fn guard(
-//         &mut self,
-//         _ctx: &mut EditContext,
-//         _event: &<EditContext as transit::Context>::Event,
-//     ) -> bool {
-//         todo!()
-//     }
-// }
 
 #[derive(Debug)]
 pub enum Command {
@@ -491,7 +452,7 @@ where
         if let Some(source) = &mut edit.source {
             match S::from_path(&source.path()) {
                 Ok(s) => *source = s,
-                Err(e) => println!("error in source: {:?}", e),
+                Err(e) => error!("error in source: {:?}", e),
             }
         }
 
@@ -602,7 +563,7 @@ where
                         Ok(s) => {
                             self.source = Some(s);
                         }
-                        Err(e) => println!("error: {:?}", e),
+                        Err(e) => error!("error: {:?}", e),
                     }
                     Op::Noop
                 }
@@ -626,7 +587,7 @@ where
                     }
                 },
                 _ => {
-                    println!("unhandled command: {:?}", c);
+                    error!("unhandled command: {:?}", c);
                     Op::Noop
                 }
             };
@@ -645,9 +606,11 @@ where
         // Toggle debug.
         let focus = ui.memory(|m| m.focus());
         if focus.is_none() && ui.input(|i| i.key_pressed(Key::D)) {
-            ui.ctx().set_debug_on_hover(!ui.ctx().debug_on_hover());
+            let d = !ui.ctx().debug_on_hover();
+            ui.ctx().set_debug_on_hover(d);
             ui.style_mut().debug.show_blocking_widget = true;
             ui.style_mut().debug.show_interactive_widgets = true;
+            info!("debug_on_hover: {}", d);
         }
 
         // Keep edit data in temp storage.
@@ -696,28 +659,36 @@ where
                         commands.push(Command::MoveState(src, target, p))
                     }
                 }
-                Drag::AddTransition(a, Some(b)) => {
-                    if let Some(t) = drag_transition {
-                        edit_data.commands.push(Command::AddTransition(a, b, t))
-                    } // else error?
-                }
+                Drag::AddTransition(a, Some(b)) => match drag_transition {
+                    Some(t) => edit_data.commands.push(Command::AddTransition(a, b, t)),
+                    None => {
+                        warn!("no drag_transition!");
+                    }
+                },
                 Drag::TransitionSource(b, Some(a), tdx)
                 | Drag::TransitionTarget(a, Some(b), tdx) => {
                     if let Some((a0, b0)) = self.graph.endpoints(tdx) {
                         // Check if changed. We were doing this inside drag_transition to avoid
                         // looking up endpoints twice...
                         if a != a0 || b != b0 {
-                            if let Some(t) = drag_transition {
-                                commands.push(Command::UpdateTransition(tdx, t));
+                            match drag_transition {
+                                Some(t) => {
+                                    commands.push(Command::UpdateTransition(tdx, t));
 
-                                commands.push(Command::MoveTransition(
-                                    tdx,
-                                    (a != a0).then_some(a),
-                                    (b != b0).then_some(b),
-                                ))
-                            } // error?
+                                    commands.push(Command::MoveTransition(
+                                        tdx,
+                                        (a != a0).then_some(a),
+                                        (b != b0).then_some(b),
+                                    ))
+                                }
+                                None => {
+                                    warn!("no drag_transition!");
+                                }
+                            }
                         }
-                    } // else, error?
+                    } else {
+                        warn!("no endpoints!");
+                    }
                 }
                 Drag::Initial(i, Some((target, port)), (c1, c2)) => {
                     commands.push(Command::SetInitial(i, target, (port, c1, c2)))
