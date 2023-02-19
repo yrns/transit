@@ -55,8 +55,7 @@ where
         {
             match self.edit.save(&p) {
                 Ok(_) => {
-                    info!("file saved: {}", p.display());
-                    //info!("file saved: {p:#?}");
+                    info!("file saved: {p:?}");
                     self.recent = Some(p);
                 }
                 Err(e) => error!("error saving: {e:?}"),
@@ -168,11 +167,15 @@ where
             // Process editor commands.
             commands.retain(|command| match command {
                 Command::GotoSymbol(symbol, path, loc) => {
-                    self.editor.goto(&symbol, &path, *loc).unwrap();
+                    if let Err(e) = self.editor.goto(&symbol, &path, *loc) {
+                        error!("goto failed: {e:?}");
+                    }
                     false
                 }
                 Command::InsertSymbol(symbol, path, template) => {
-                    self.editor.insert(&symbol, &path, &template).unwrap();
+                    if let Err(e) = self.editor.insert(&symbol, &path, &template) {
+                        error!("insert failed: {e:?}");
+                    }
                     false
                 }
                 _ => true,

@@ -50,7 +50,7 @@ fn main() {
             Box::new(App(app))
         }),
     )
-    .unwrap();
+    .expect("run")
 }
 
 impl eframe::App for App {
