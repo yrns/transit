@@ -64,9 +64,9 @@ impl Watcher {
 // Produce viewable/editable events for debugging/testing.
 // Viewable/editable state.
 // Goto symbol?
-// Templating. Insert.
-// Process symbol names (i.e. kebab-case).
-// Extension(s)?
+// ✓ Templating. Insert.
+// ✓ Process symbol names (i.e. kebab-case).
+// ✓ Extension(s)?
 
 /// Provides language-dependent facilities for dealing with source code.
 pub trait Source {

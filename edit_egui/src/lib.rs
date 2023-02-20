@@ -1453,7 +1453,7 @@ where
         self.graph
             .path(i)
             .into_iter()
-            // Always skip the root id? We already know its a door.
+            // Always skip the root id? We already know it's a door.
             .skip(1)
             .filter_map(|i| self.graph.state(i).map(|s| &s.id))
             .cloned()
