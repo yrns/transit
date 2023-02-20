@@ -1119,11 +1119,12 @@ where
 
         // Context menu on right click.
         let state_response = if !edit_data.drag.in_drag() {
-            let state_response = state_response.on_hover_text_at_pointer(format!(
-                "incoming ports: {:?} outgoing ports: {:?}",
-                self.ports(idx, Direction::Incoming),
-                self.ports(idx, Direction::Outgoing)
-            ));
+            // debug ports:
+            // let state_response = state_response.on_hover_text_at_pointer(format!(
+            //     "incoming ports: {:?} outgoing ports: {:?}",
+            //     self.ports(idx, Direction::Incoming),
+            //     self.ports(idx, Direction::Outgoing)
+            // ));
 
             state_response.context_menu(|ui| {
                 if ui.button("Add state").clicked() {
@@ -1812,10 +1813,11 @@ where
 
                             // Context menu on right click.
                             let response = if !edit_data.drag.in_drag() {
-                                let response = response.on_hover_text_at_pointer(format!(
-                                    "port1: {} port2: {}",
-                                    t.port1, t.port2
-                                ));
+                                // debug ports:
+                                // let response = response.on_hover_text_at_pointer(format!(
+                                //     "port1: {} port2: {}",
+                                //     t.port1, t.port2
+                                // ));
                                 response.context_menu(|ui| {
                                     if ui.button("Remove transition").clicked() {
                                         edit_data.commands.push(Command::RemoveTransition(tdx));
