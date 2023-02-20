@@ -612,7 +612,6 @@ name = "edit_egui"
 version = "0.1.0"
 dependencies = [
  "eframe-dynamic",
- "heck",
  "native-dialog",
  "nohash-hasher",
  "notify-debouncer-mini",
@@ -1028,6 +1027,7 @@ name = "janet"
 version = "0.1.0"
 dependencies = [
  "edit_egui",
+ "heck",
  "janetrs",
  "serde",
  "thiserror",

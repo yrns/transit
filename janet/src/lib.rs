@@ -4,6 +4,7 @@ pub mod pretty;
 
 use edit_egui as edit;
 use from_janet::FromJanet;
+use heck::ToKebabCase;
 use janetrs::{client::JanetClient, Janet, JanetSymbol, TaggedJanet};
 use std::{
     collections::HashMap,
@@ -72,6 +73,10 @@ impl edit::Source for Source {
         }
 
         Ok(())
+    }
+
+    fn normalize_symbol(&self, symbol: &str) -> String {
+        symbol.to_kebab_case()
     }
 }
 

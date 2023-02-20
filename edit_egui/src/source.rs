@@ -89,6 +89,9 @@ pub trait Source {
     /// Path to source.
     fn path(&self) -> &Path; // Option?
 
+    /// Kebab-case for lisps, etc.
+    fn normalize_symbol(&self, symbol: &str) -> String;
+
     /// Returns a symbol locator from source.
     fn symbol(&self, symbol: &str) -> Option<&Locator>;
 

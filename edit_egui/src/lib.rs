@@ -5,6 +5,7 @@ mod search;
 mod source;
 mod undo;
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -1349,28 +1350,26 @@ where
         edit_data: &mut EditData,
         ui: &mut Ui,
     ) {
-        // What's the right way to do this?
-        let _gensym = match symbol {
-            None => Some(self.generate_symbol(id)),
-            _ => None,
-        };
-        let gensym = symbol.as_ref().or(_gensym.as_ref()).unwrap();
+        let symbol = symbol
+            .as_ref()
+            .map(Cow::from)
+            .unwrap_or_else(|| self.generate_symbol(id).into());
 
         let location = self
             .source
             .as_ref()
-            .and_then(|source| source.symbol(&gensym));
+            .and_then(|source| source.symbol(&symbol));
 
         // Hovering displays symbol name and source location.
         let hover_text = match location {
             Some((path, line, col)) => format!(
                 "{} ({} {}:{})",
-                &gensym,
+                symbol,
                 path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
                 line,
                 col
             ),
-            None => format!("{}?", gensym),
+            None => format!("{}?", symbol),
         };
 
         // Disabled when no source.
@@ -1393,21 +1392,25 @@ where
         if response.clicked_by(PointerButton::Primary) {
             // enabled -> clicked -> source exists
             let source = self.source.as_ref().expect("source");
+            let symbol = source.normalize_symbol(&symbol);
 
             match location {
                 // We could use references here if source existed outside self. If `commands`
                 // references self we can't get a mutable ref later to process them.
                 Some((path, line, col)) => edit_data.commands.push(Command::GotoSymbol(
-                    gensym.clone(),
+                    symbol,
                     path.to_path_buf(),
                     (*line, *col),
                 )),
                 // A symbol is set but doesn't exist in the source so insert it.
-                None => edit_data.commands.push(Command::InsertSymbol(
-                    gensym.clone(),
-                    source.path().to_path_buf(),
-                    janet_template.replace("{}", &gensym),
-                )),
+                None => {
+                    let template = janet_template.replace("{}", &symbol);
+                    edit_data.commands.push(Command::InsertSymbol(
+                        symbol,
+                        source.path().to_path_buf(),
+                        template,
+                    ));
+                }
             }
         }
 
@@ -1418,7 +1421,7 @@ where
             symbols.position = Some(response.rect.right_top() + vec2(4.0, 0.0));
 
             // Set query to the current symbol (if any).
-            symbols.query = symbol.clone().unwrap_or_default();
+            symbols.query = symbol.to_string();
             symbols.results = None;
             true
         } else {
@@ -1457,8 +1460,6 @@ where
     }
 
     pub fn generate_symbol(&self, id: SymbolId) -> String {
-        use heck::ToKebabCase;
-
         match id {
             SymbolId::Enter(i) => self.path_string(i) + "-enter",
             SymbolId::Exit(i) => self.path_string(i) + "-exit",
@@ -1471,7 +1472,6 @@ where
                     + "-guard"
             }
         }
-        .to_kebab_case()
     }
 
     /// Each state sets the drag target for its children. The topmost child that contains the
