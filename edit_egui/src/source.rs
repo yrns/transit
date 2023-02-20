@@ -100,4 +100,13 @@ pub trait Source {
 
     /// Called every frame; checks source file for changes.
     fn update(&mut self) -> Result<(), Self::Error>;
+
+    /// Insertion template for new symbols.
+    fn insert_template(&self) -> &str;
+
+    /// Source file type description.
+    fn description(&self) -> &str;
+
+    /// Source file extensions.
+    fn extensions(&self) -> &[&str];
 }

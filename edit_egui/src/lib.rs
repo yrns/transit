@@ -1322,13 +1322,17 @@ where
             if root {
                 let response = ui.small_button("source");
                 if response.clicked() {
-                    let dialog = native_dialog::FileDialog::new().add_filter("janet", &["janet"]);
-                    let dialog =
-                        if let Some(p) = self.source.as_ref().and_then(|s| s.path().parent()) {
-                            dialog.set_location(p)
-                        } else {
-                            dialog
-                        };
+                    let dialog = native_dialog::FileDialog::new();
+                    let dialog = match self.source.as_ref() {
+                        Some(source) => {
+                            let dialog = match source.path().parent() {
+                                Some(p) => dialog.set_location(p),
+                                None => dialog,
+                            };
+                            dialog.add_filter(source.description(), source.extensions())
+                        }
+                        None => dialog,
+                    };
 
                     if let Ok(Some(p)) = dialog.show_open_single_file() {
                         edit_data.commands.push(Command::SelectSourcePath(p));
@@ -1387,9 +1391,6 @@ where
             .on_hover_text(hover_text)
             .on_disabled_hover_text("source file is unset");
 
-        // FIX: janet-specific into source
-        let janet_template = "\n\n(defn {} [self ctx ev]\n  )";
-
         if response.clicked_by(PointerButton::Primary) {
             // enabled -> clicked -> source exists
             let source = self.source.as_ref().expect("source");
@@ -1405,7 +1406,7 @@ where
                 )),
                 // A symbol is set but doesn't exist in the source so insert it.
                 None => {
-                    let template = janet_template.replace("{}", &symbol);
+                    let template = source.insert_template().replace("{}", &symbol);
                     edit_data.commands.push(Command::InsertSymbol(
                         symbol,
                         source.path().to_path_buf(),

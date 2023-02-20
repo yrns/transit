@@ -78,6 +78,18 @@ impl edit::Source for Source {
     fn normalize_symbol(&self, symbol: &str) -> String {
         symbol.to_kebab_case()
     }
+
+    fn insert_template(&self) -> &str {
+        "\n\n(defn {} [self ctx ev]\n  )"
+    }
+
+    fn description(&self) -> &str {
+        "Janet"
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["janet"]
+    }
 }
 
 pub struct JanetContext {
