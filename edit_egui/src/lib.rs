@@ -187,39 +187,25 @@ impl Drag {
     }
 
     pub fn in_drag(&self) -> bool {
-        match self {
-            Drag::None => false,
-            _ => true,
-        }
+        !matches!(self, Drag::None)
     }
 
     pub fn dragging(&self, idx: Idx) -> bool {
-        match self {
-            Drag::State(i, ..) if *i == idx => true,
-            _ => false,
-        }
+        matches!(self, Drag::State(i, ..) if *i == idx)
     }
 
     pub fn resizing(&self, idx: Idx) -> bool {
-        match self {
-            Drag::Resize(i, ..) if *i == idx => true,
-            _ => false,
-        }
+        matches!(self, Drag::Resize(i, ..) if *i == idx)
     }
 
     pub fn is_target(&self, idx: Idx) -> bool {
-        match self {
+        matches!(self,
             Drag::State(_, _, Some((t, ..)), _)
             | Drag::Initial(_, Some((t, ..)), ..)
             | Drag::AddTransition(_, Some(t), ..)
             | Drag::TransitionSource(_, Some(t), ..)
             | Drag::TransitionTarget(_, Some(t), ..)
-                if *t == idx =>
-            {
-                true
-            }
-            _ => false,
-        }
+                if *t == idx)
     }
 
     /// Is the drag greater than some minimum?
@@ -451,7 +437,7 @@ where
 
         // Start watching source path.
         if let Some(source) = &mut edit.source {
-            match S::from_path(&source.path()) {
+            match S::from_path(source.path()) {
                 Ok(s) => *source = s,
                 Err(e) => error!("error in source: {:?}", e),
             }
@@ -628,21 +614,18 @@ where
         let mut edit_data = edit_data.lock().unwrap();
 
         // Search states, transitions, code?
-        match edit_data.search.show(
+        if let Submit::Result(idx) = edit_data.search.show(
             focus.is_none() && ui.input(|i| i.key_pressed(Key::S)),
             // Can't select the root state.
             self.graph.states().filter(|(i, _s)| *i != self.graph.root),
             ui,
         ) {
-            Submit::Result(idx) => {
-                edit_data
-                    .commands
-                    .push(Command::UpdateSelection(Selection::State(idx)));
+            edit_data
+                .commands
+                .push(Command::UpdateSelection(Selection::State(idx)));
 
-                // Clear search on submit.
-                edit_data.search.query.clear();
-            }
-            _ => (),
+            // Clear search on submit.
+            edit_data.search.query.clear();
         }
 
         // Show root and recursively show children.
@@ -708,7 +691,7 @@ where
         }
 
         // Invalidate max ports if anything has changed. TODO: optimize this
-        if commands.len() > 0 {
+        if !commands.is_empty() {
             edit_data.rects.0.clear();
         }
 
@@ -828,45 +811,43 @@ where
         let mut drag_transition = None;
         for (tdx, source, target, t, internal) in self.graph.transitions() {
             match edit_data.drag {
-                Drag::TransitionSource(b, a, _tdx) if _tdx == tdx => {
-                    match a {
-                        Some(a) => {
-                            let (t, (start, end)) =
-                                self.drag_transition(a, b, &mut edit_data.rects, tdx);
-                            self.show_connection(
-                                start,
-                                end,
-                                Connection::Transition(tdx, &t, internal),
-                                edit_data,
-                                ui,
-                            );
-                            drag_transition = Some(t);
-                        }
-                        None => {
-                            if let Some(start) = ui.ctx().pointer_interact_pos().or_else(|| {
-                                edit_data.rects.get(source).map(|r| port_out(r, t.port1))
-                            }) {
-                                if let Some(end) = edit_data
-                                    .rects
-                                    .get(target)
-                                    .map(|r| port_pos(r, t.port2, target_dir(source, target)))
-                                {
-                                    self.show_connection(
-                                        start,
-                                        end,
-                                        Connection::Transition(tdx, t, internal),
-                                        edit_data,
-                                        ui,
-                                    );
-                                }
+                Drag::TransitionSource(b, a, _tdx) if _tdx == tdx => match a {
+                    Some(a) => {
+                        let (t, (start, end)) = self.drag_transition(a, b, &edit_data.rects, tdx);
+                        self.show_connection(
+                            start,
+                            end,
+                            Connection::Transition(tdx, &t, internal),
+                            edit_data,
+                            ui,
+                        );
+                        drag_transition = Some(t);
+                    }
+                    None => {
+                        if let Some(start) = ui
+                            .ctx()
+                            .pointer_interact_pos()
+                            .or_else(|| edit_data.rects.get(source).map(|r| port_out(r, t.port1)))
+                        {
+                            if let Some(end) = edit_data
+                                .rects
+                                .get(target)
+                                .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                            {
+                                self.show_connection(
+                                    start,
+                                    end,
+                                    Connection::Transition(tdx, t, internal),
+                                    edit_data,
+                                    ui,
+                                );
                             }
                         }
                     }
-                }
+                },
                 Drag::TransitionTarget(a, b, _tdx) if _tdx == tdx => match b {
                     Some(b) => {
-                        let (t, (start, end)) =
-                            self.drag_transition(a, b, &mut edit_data.rects, tdx);
+                        let (t, (start, end)) = self.drag_transition(a, b, &edit_data.rects, tdx);
                         self.show_connection(
                             start,
                             end,
@@ -918,11 +899,10 @@ where
         }
 
         // New transition in progress.
-        match edit_data.drag {
-            Drag::AddTransition(source, target) => match target {
+        if let Drag::AddTransition(source, target) = edit_data.drag {
+            match target {
                 Some(target) => {
-                    let (t, (start, end)) =
-                        self.new_transition(source, target, &mut edit_data.rects);
+                    let (t, (start, end)) = self.new_transition(source, target, &edit_data.rects);
                     self.show_connection(
                         start,
                         end,
@@ -948,8 +928,7 @@ where
                         }
                     }
                 }
-            },
-            _ => (),
+            }
         }
 
         drag_transition
@@ -1046,11 +1025,11 @@ where
                 // will shift the header down while dragging. We can't set the layer_id directly. We
                 // could also fix this by drawing the header at a specific rect.
                 inner_ui.spacing_mut().item_spacing = Vec2::ZERO;
-                inner_ui.with_layer_id(layer_id, |mut ui| {
+                inner_ui.with_layer_id(layer_id, |ui| {
                     ui.reset_style(); // HACK see above
                     let root_rect = edit_data.rects.get_rect(self.graph.root).unwrap();
                     ui.set_clip_rect(root_rect);
-                    self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, &mut ui);
+                    self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, ui);
                     ui.set_clip_rect(clip_rect);
                 });
                 inner_ui.reset_style(); // HACK see above
@@ -1161,10 +1140,7 @@ where
         // TODO: Make a background for the root so we can show drag_valid.
         if !root {
             let style = ui.style();
-            let selected = match self.selection {
-                Selection::State(i) if i == idx => true,
-                _ => false,
-            };
+            let selected = matches!(self.selection, Selection::State(i) if i == idx);
 
             // There is some weirdness with the response and the layer change while dragging, so
             // just force it to active if not selected:
@@ -1215,7 +1191,7 @@ where
     ) -> InnerResponse<()> {
         ui.horizontal(|ui| {
             // Initial first, with less spacing between the initial control and the history indicator.
-            ui.horizontal(|mut ui| {
+            ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
 
                 let initial_size = Vec2::splat(6.0);
@@ -1251,7 +1227,7 @@ where
                                 end,
                                 Connection::DragInitial(idx, *cp),
                                 edit_data,
-                                &mut ui,
+                                ui,
                             );
                         }
                         true
@@ -1266,7 +1242,7 @@ where
                                     end,
                                     Connection::Initial(idx, (c1, c2)),
                                     edit_data,
-                                    &mut ui,
+                                    ui,
                                 );
                             }
                             true
@@ -1657,14 +1633,12 @@ where
         ui: &mut Ui,
     ) {
         let selected = match conn {
-            Connection::Transition(tdx, ..) => match self.selection {
-                Selection::Transition(i) if i == tdx => true,
-                _ => false,
-            },
-            Connection::Initial(idx, ..) => match self.selection {
-                Selection::State(i) if i == idx => true,
-                _ => false,
-            },
+            Connection::Transition(tdx, ..) => {
+                matches!(self.selection, Selection::Transition(i) if i == tdx)
+            }
+            Connection::Initial(idx, ..) => {
+                matches!(self.selection, Selection::State(i) if i == idx)
+            }
             _ => false,
         };
 

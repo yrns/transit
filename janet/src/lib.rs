@@ -59,7 +59,7 @@ impl edit::Source for Source {
         self.symbols.get(symbol)
     }
 
-    fn symbols<'a>(&'a self) -> Self::Symbols<'a> {
+    fn symbols(&self) -> Self::Symbols<'_> {
         self.symbols.iter()
     }
 
@@ -184,13 +184,13 @@ pub fn resolve<'a>(symbol: impl Into<JanetSymbol<'a>>, client: &JanetClient) -> 
             TaggedJanet::Function(_) => Some(value),
             _ => None,
         })
-        .unwrap_or(Janet::nil())
+        .unwrap_or_else(Janet::nil)
 }
 
 impl transit_graph::State<JanetContext> for State {
     fn enter(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
         if let TaggedJanet::Function(mut f) = self.enter.unwrap() {
-            match f.call(&[
+            match f.call([
                 self.local,
                 ctx.context,
                 *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
@@ -203,7 +203,7 @@ impl transit_graph::State<JanetContext> for State {
 
     fn exit(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
         if let TaggedJanet::Function(mut f) = self.exit.unwrap() {
-            match f.call(&[
+            match f.call([
                 self.local,
                 ctx.context,
                 *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
@@ -220,7 +220,7 @@ impl transit_graph::Transition<JanetContext> for Transition {
         if event.id == self.id {
             let value = event.value;
             if let TaggedJanet::Function(mut f) = self.guard.unwrap() {
-                match f.call(&[self.local, ctx.context, value]) {
+                match f.call([self.local, ctx.context, value]) {
                     Ok(res) => {
                         info!("guard result: {:?}", res);
                         match res.unwrap() {

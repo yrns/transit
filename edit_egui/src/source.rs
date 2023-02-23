@@ -96,7 +96,7 @@ pub trait Source {
     fn symbol(&self, symbol: &str) -> Option<&Locator>;
 
     /// Returns an iterator over all symbols.
-    fn symbols<'a>(&'a self) -> Self::Symbols<'a>;
+    fn symbols(&self) -> Self::Symbols<'_>;
 
     /// Called every frame; checks source file for changes.
     fn update(&mut self) -> Result<(), Self::Error>;

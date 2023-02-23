@@ -39,7 +39,7 @@ where
         self.results = None;
     }
 
-    pub fn show<'a, U, I>(&mut self, set_focus: bool, iter: I, ui: &mut Ui) -> Submit<T>
+    pub fn show<U, I>(&mut self, set_focus: bool, iter: I, ui: &mut Ui) -> Submit<T>
     where
         U: Matches<T>,
         I: Iterator<Item = U>,
@@ -164,7 +164,7 @@ fn match_layout(
     match_color: Color32,
 ) -> Option<LayoutJob> {
     let mut indices = search.match_indices(query).peekable();
-    if indices.peek() != None {
+    if indices.peek().is_some() {
         let mut result = LayoutJob::default();
         let mut last_end = 0;
         let mut match_format = text_format.clone();
@@ -175,7 +175,7 @@ fn match_layout(
             result.append(part, 0.0, match_format.clone());
             last_end = start + part.len();
         }
-        result.append(&search[last_end..], 0.0, text_format.clone());
+        result.append(&search[last_end..], 0.0, text_format);
         Some(result)
     } else {
         None

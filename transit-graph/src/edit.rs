@@ -108,7 +108,7 @@ where
         // Can't transition to/from root.
         if keep_transitions && parent != self.root {
             // TODO make sure this handles self-transitions correctly
-            while let Some(edge) = edges.next_edge(&mut self.graph) {
+            while let Some(edge) = edges.next_edge(&self.graph) {
                 // We are looking up endpoints again when moving...
                 ops.extend(match self.graph.edge_endpoints(edge) {
                     Some((a, b)) if a == b => self.move_transition(edge, parent, parent),
@@ -118,7 +118,7 @@ where
                 })
             }
         } else {
-            while let Some(edge) = edges.next_edge(&mut self.graph) {
+            while let Some(edge) = edges.next_edge(&self.graph) {
                 ops.push(self.remove_transition(edge))
             }
         }
@@ -207,13 +207,12 @@ where
                     }
                 }
             }
-            None => match initial {
-                Some((initial, j)) => {
+            None => {
+                if let Some((initial, j)) = initial {
                     assert!(self.is_child(i, j));
                     ops.push(self.graph.add_edge(i, j, Edge::Initial(initial)).into())
                 }
-                None => (), // do nothing
-            },
+            }
         }
 
         ops

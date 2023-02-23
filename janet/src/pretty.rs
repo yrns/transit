@@ -27,7 +27,7 @@ where
             formatter.write_str("string")
         }
 
-        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
         where
             E: serde::de::Error,
         {

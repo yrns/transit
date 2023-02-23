@@ -29,7 +29,7 @@ impl<S> Default for App<S> {
     }
 }
 
-impl<'de, S> App<S>
+impl<S> App<S>
 where
     S: Source + serde::de::DeserializeOwned + serde::Serialize,
 {
@@ -49,7 +49,7 @@ where
     /// Select a path and save.
     pub fn file_save_as(&mut self) {
         if let Ok(Some(p)) = native_dialog::FileDialog::new()
-            .set_filename(&self.edit.id())
+            .set_filename(self.edit.id())
             .add_filter("ron", &["ron"])
             .show_save_single_file()
         {
@@ -167,13 +167,13 @@ where
             // Process editor commands.
             commands.retain(|command| match command {
                 Command::GotoSymbol(symbol, path, loc) => {
-                    if let Err(e) = self.editor.goto(&symbol, &path, *loc) {
+                    if let Err(e) = self.editor.goto(symbol, path, *loc) {
                         error!("goto failed: {e:?}");
                     }
                     false
                 }
                 Command::InsertSymbol(symbol, path, template) => {
-                    if let Err(e) = self.editor.insert(&symbol, &path, &template) {
+                    if let Err(e) = self.editor.insert(symbol, path, template) {
                         error!("insert failed: {e:?}");
                     }
                     false

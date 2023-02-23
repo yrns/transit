@@ -113,10 +113,7 @@ impl<T> Edge<T> {
 }
 
 pub fn is_transition<T>(edge: &Edge<T>) -> bool {
-    match edge {
-        Edge::Transition(_) | Edge::Internal(_) => true,
-        _ => false,
-    }
+    matches!(edge, Edge::Transition(_) | Edge::Internal(_))
 }
 
 pub fn transition_weight<T>(edge: &Edge<T>) -> Option<&T> {
@@ -136,9 +133,9 @@ pub fn transition_weight_mut<T>(edge: &mut Edge<T>) -> Option<&mut T> {
 /// A reference to a transition, index, and edge information.
 pub type TransitionRef<'a, T> = (Tdx, Idx, Idx, &'a T, bool);
 
-pub fn edge_transition_filter<'a, C, E>(
-    edge: EdgeReference<'a, Edge<C::Transition>, u32>,
-) -> Option<TransitionRef<'a, C::Transition>>
+pub fn edge_transition_filter<C, E>(
+    edge: EdgeReference<Edge<C::Transition>, u32>,
+) -> Option<TransitionRef<'_, C::Transition>>
 where
     C: Context,
 {
@@ -150,10 +147,7 @@ where
 }
 
 pub fn is_internal<T>(edge: &Edge<T>) -> bool {
-    match edge {
-        Edge::Internal(_) => true,
-        _ => false,
-    }
+    matches!(edge, Edge::Internal(_))
 }
 
 impl<T> From<T> for Edge<T> {
@@ -499,7 +493,7 @@ impl<C: Context> Statechart<C> {
         let ctx = &mut self.context;
         while let Some(i) = path.next(g) {
             let mut edges = g.graph.neighbors(i).detach();
-            while let Some((edge, next)) = edges.next(&mut g.graph) {
+            while let Some((edge, next)) = edges.next(&g.graph) {
                 let edge = &mut g.graph[edge];
                 if let Some(t) = transition_weight_mut(edge) {
                     if t.guard(ctx, event) {
@@ -609,14 +603,11 @@ impl<C: Context> Statechart<C> {
 
         // Apply history.
         for (idx, prev) in h {
-            match self.graph.initial(idx) {
-                Some((initial, _)) => {
-                    if matches!(initial, Initial::HistoryShallow | Initial::HistoryDeep) {
-                        // Discard op.
-                        let _ = self.graph.set_initial(idx, Some((initial, prev)));
-                    }
+            if let Some((initial, _)) = self.graph.initial(idx) {
+                if matches!(initial, Initial::HistoryShallow | Initial::HistoryDeep) {
+                    // Discard op.
+                    let _ = self.graph.set_initial(idx, Some((initial, prev)));
                 }
-                _ => (),
             }
         }
 
