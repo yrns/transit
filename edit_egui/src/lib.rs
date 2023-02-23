@@ -139,7 +139,7 @@ pub enum Command {
     RemoveTransition(Tdx),
     UpdateTransition(Tdx, Transition),
     MoveTransition(Tdx, Option<Idx>, Option<Idx>),
-    SetInitial(Idx, Idx, InitialData),
+    SetInitial(Idx, (Initial, Idx), InitialData),
     UnsetInitial(Idx),
     StepInitial(Idx),
     SetEnter,
@@ -535,28 +535,32 @@ where
                     Op::Noop
                 }
                 Command::SetInitial(i, initial, data) => {
+                    // TODO? we still have to update the state unless we stick InitialData into the edge
                     let state = self
                         .graph
                         .state(i)
                         .unwrap()
                         .clone()
                         .with_initial(Some(data));
-                    vec![
-                        self.graph.update_state(i, state),
-                        self.graph
-                            .set_initial(i, self.graph.initial(i).set_idx(initial)),
-                    ]
-                    .into()
+                    let mut ops = vec![self.graph.update_state(i, state)];
+                    ops.extend(self.graph.set_initial(i, Some(initial)));
+                    ops.into()
                 }
                 Command::UnsetInitial(i) => {
                     let state = self.graph.state(i).unwrap().clone().with_initial(None);
-                    vec![
-                        self.graph.update_state(i, state),
-                        self.graph.set_initial(i, Initial::None),
-                    ]
-                    .into()
+                    let mut ops = vec![self.graph.update_state(i, state)];
+                    ops.extend(self.graph.set_initial(i, None));
+                    ops.into()
                 }
-                Command::StepInitial(i) => self.graph.set_initial(i, self.graph.initial(i).step()),
+                Command::StepInitial(i) => self
+                    .graph
+                    .set_initial(
+                        i,
+                        self.graph
+                            .initial(i)
+                            .map(|(initial, i)| (initial.step(), i)),
+                    )
+                    .into(),
                 Command::SetInternal(i, internal) => self.graph.set_internal(i, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
@@ -692,7 +696,12 @@ where
                     }
                 }
                 Drag::Initial(i, Some((target, port)), (c1, c2)) => {
-                    commands.push(Command::SetInitial(i, target, (port, c1, c2)))
+                    let initial = self
+                        .graph
+                        .initial(i)
+                        .map(|(initial, _)| (initial, target))
+                        .unwrap_or_else(|| (Initial::Initial, target));
+                    commands.push(Command::SetInitial(i, initial, (port, c1, c2)))
                 }
                 _ => (),
             }
@@ -1248,7 +1257,9 @@ where
                         true
                     }
                     _ => {
-                        if let Some((i, (port, c1, c2))) = initial.idx().zip(state.initial) {
+                        if let Some((i, (port, c1, c2))) =
+                            initial.map(|(_, i)| i).zip(state.initial)
+                        {
                             if let Some(end) = edit_data.rects.get(i).map(|r| port_in(r, port)) {
                                 self.show_connection(
                                     start,
@@ -1279,14 +1290,16 @@ where
                 );
 
                 // Initial type.
-                match initial {
-                    Initial::HistoryShallow(_) => {
-                        ui.colored_label(color, "h");
+                if let Some((initial, _)) = initial {
+                    match initial {
+                        Initial::HistoryShallow => {
+                            ui.colored_label(color, "h");
+                        }
+                        Initial::HistoryDeep => {
+                            ui.colored_label(color, "h*");
+                        }
+                        _ => (),
                     }
-                    Initial::HistoryDeep(_) => {
-                        ui.colored_label(color, "h*");
-                    }
-                    _ => (),
                 }
             }); // end initial
 
@@ -1584,7 +1597,7 @@ where
                     .chain(
                         self.graph
                             .path_iter(idx)
-                            .filter(|i| self.graph.initial(*i).idx() == Some(idx))
+                            .filter(|i| self.graph.initial(*i).map(|(_, j)| j) == Some(idx))
                             .filter_map(|i| {
                                 self.graph.state(i).and_then(|s| s.initial).map(|i| i.0)
                             }),

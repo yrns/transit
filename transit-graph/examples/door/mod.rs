@@ -256,7 +256,7 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
     let destroyed = g.add_state(DoorState::Destroyed, None);
 
     // Set the root node initial to "locked".
-    let _op = g.set_root_initial(locked.into());
+    let _op = g.set_root_initial((Initial::Initial, locked));
     // Set the intact state initial to "locked"
     //g.graph[intact].set_initial(Initial::Initial(locked));
 

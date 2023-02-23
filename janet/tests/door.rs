@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs::read_to_string};
 
 use janet::*;
 use janetrs::{client::JanetClient, *};
-use transit_graph::{Graph, Idx, Statechart};
+use transit_graph::{Graph, Idx, Initial, Statechart};
 
 fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, String>) {
     let mut g = Graph::new();
@@ -56,7 +56,7 @@ fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, St
     );
     states.insert(destroyed, "destroyed".into());
 
-    let _op = g.set_root_initial(locked.into());
+    let _op = g.set_root_initial((Initial::Initial, locked));
 
     let _t = g.add_transition(
         intact,

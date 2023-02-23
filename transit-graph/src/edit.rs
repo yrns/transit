@@ -91,8 +91,8 @@ where
         // Clean up initial/history.
         let mut path = self.path_walk(i);
         while let Some(p) = path.next(self) {
-            if self.graph[p].initial.idx() == Some(i) {
-                ops.push(self.set_initial_idx(p, Some(parent)))
+            if let Some((initial, _)) = self.initial(p) {
+                ops.extend(self.set_initial(p, Some((initial, parent))))
             }
         }
 
@@ -164,9 +164,9 @@ where
         if let Some(p) = p0 {
             let mut path = self.path_walk(p);
             while let Some(a) = path.next(self) {
-                if let Some(i) = self.initial(a).idx() {
+                if let Some((_, i)) = self.initial(a) {
                     if !self.is_child(a, i) {
-                        ops.push(self.set_initial(a, Initial::None));
+                        ops.extend(self.set_initial(a, None));
                     }
                 }
             }
@@ -178,37 +178,45 @@ where
     /// Set initial for the root state (the default state for the
     /// graph). `set_graph_initial`?
     #[must_use = "op"]
-    pub fn set_root_initial(&mut self, initial: Initial) -> Op<S, T> {
-        self.set_initial(self.root, initial)
+    pub fn set_root_initial(&mut self, initial: (Initial, Idx)) -> Vec<Op<S, T>> {
+        self.set_initial(self.root, Some(initial))
     }
 
     #[must_use = "op"]
-    pub fn set_initial(&mut self, i: Idx, initial: Initial) -> Op<S, T> {
+    pub fn set_initial(&mut self, i: Idx, initial: Option<(Initial, Idx)>) -> Vec<Op<S, T>> {
         assert!(self.graph.contains_node(i));
 
-        // Make sure the initial state (if any) is a child.
-        if let Some(initial_idx) = initial.idx() {
-            assert!(self.is_child(i, initial_idx));
+        // This can return 0-2 ops (remove, update, remove/add, add, or nothing).
+        let mut ops = vec![];
+
+        match self.initial_edge(i) {
+            Some((_, edge)) => {
+                match initial {
+                    None => ops.push(self.remove_edge(edge.id())),
+                    Some((initial, j)) => {
+                        // Make sure the initial state (if any) is a child.
+                        assert!(self.is_child(i, j));
+                        let initial = Edge::Initial(initial);
+                        if edge.target() == j {
+                            // Same target, just update.
+                            ops.push(self.update_edge(edge.id(), initial))
+                        } else {
+                            ops.push(self.remove_edge(edge.id()));
+                            ops.push(self.graph.add_edge(i, j, initial).into())
+                        }
+                    }
+                }
+            }
+            None => match initial {
+                Some((initial, j)) => {
+                    assert!(self.is_child(i, j));
+                    ops.push(self.graph.add_edge(i, j, Edge::Initial(initial)).into())
+                }
+                None => (), // do nothing
+            },
         }
 
-        // TODO: We are cloning the state while only changing the initial. This can go away when we
-        // switch initial to edge type.
-        let n = &mut self.graph[i];
-        let op = Op::UpdateNode(i, n.clone());
-        n.initial = initial;
-        op
-    }
-
-    // Sets the initial index, preserving the initial variant. If
-    // `initial` is None, sets it to Initial::None.
-    #[must_use = "op"]
-    pub fn set_initial_idx(&mut self, i: Idx, initial: Option<Idx>) -> Op<S, T> {
-        self.set_initial(
-            i,
-            initial
-                .map(|i0| self.graph[i].initial.clone().set_idx(i0))
-                .unwrap_or_default(),
-        )
+        ops
     }
 
     #[must_use = "op"]
@@ -234,7 +242,7 @@ where
     }
 
     #[must_use = "op"]
-    pub fn remove_transition(&mut self, i: Tdx) -> Op<S, T> {
+    pub fn remove_edge(&mut self, i: Tdx) -> Op<S, T> {
         Op::RemoveEdge(
             i,
             self.graph
@@ -243,6 +251,12 @@ where
                 .map(|((a, b), t)| (a, b, t))
                 .unwrap(),
         )
+    }
+
+    #[must_use = "op"]
+    pub fn remove_transition(&mut self, i: Tdx) -> Op<S, T> {
+        // TODO: assert on type
+        self.remove_edge(i)
     }
 
     #[must_use = "op"]

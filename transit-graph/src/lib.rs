@@ -53,47 +53,20 @@ pub struct Graph<S, T> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Initial {
-    #[default]
-    None,
-    Initial(Idx),
-    HistoryShallow(Idx),
-    HistoryDeep(Idx),
+    Initial,
+    HistoryShallow,
+    HistoryDeep,
 }
 
 impl Initial {
-    pub fn idx(&self) -> Option<Idx> {
-        match *self {
-            Initial::Initial(i) | Initial::HistoryShallow(i) | Initial::HistoryDeep(i) => Some(i),
-            Initial::None => None,
-        }
-    }
-
-    pub fn set_idx(self, i: Idx) -> Self {
-        match self {
-            Initial::None => Initial::Initial(i),
-            Initial::Initial(_) => Initial::Initial(i),
-            Initial::HistoryDeep(_) => Initial::HistoryDeep(i),
-            Initial::HistoryShallow(_) => Initial::HistoryShallow(i),
-        }
-    }
-
     pub fn step(self) -> Self {
         match self {
-            // can't step from none
-            Initial::None => self,
-            Initial::Initial(i) => Initial::HistoryShallow(i),
-            Initial::HistoryShallow(i) => Initial::HistoryDeep(i),
-            // can't step to none? how do we unset?
-            Initial::HistoryDeep(i) => Initial::Initial(i),
+            Initial::Initial => Initial::HistoryShallow,
+            Initial::HistoryShallow => Initial::HistoryDeep,
+            Initial::HistoryDeep => Initial::Initial,
         }
-    }
-}
-
-impl From<Idx> for Initial {
-    fn from(i: Idx) -> Self {
-        Initial::Initial(i)
     }
 }
 
@@ -105,7 +78,6 @@ pub trait State<C: Context> {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
 pub struct Node<T> {
-    pub initial: Initial,
     pub parent: Option<Idx>,
     pub state: T,
 }
@@ -120,6 +92,7 @@ pub struct Node<T> {
 pub enum Edge<T> {
     Transition(T),
     Internal(T),
+    Initial(Initial),
 }
 
 impl<T> Edge<T> {
@@ -134,7 +107,7 @@ impl<T> Edge<T> {
     pub fn set_transition(&mut self, transition: T) {
         match self {
             Edge::Transition(t) | Edge::Internal(t) => *t = transition,
-            //_ => panic!("not a transition"),
+            _ => panic!("not a transition"),
         }
     }
 }
@@ -142,21 +115,21 @@ impl<T> Edge<T> {
 pub fn is_transition<T>(edge: &Edge<T>) -> bool {
     match edge {
         Edge::Transition(_) | Edge::Internal(_) => true,
-        //_ => false,
+        _ => false,
     }
 }
 
 pub fn transition_weight<T>(edge: &Edge<T>) -> Option<&T> {
     match edge {
         Edge::Transition(t) | Edge::Internal(t) => Some(t),
-        //_ => None,
+        _ => None,
     }
 }
 
 pub fn transition_weight_mut<T>(edge: &mut Edge<T>) -> Option<&mut T> {
     match edge {
         Edge::Transition(t) | Edge::Internal(t) => Some(t),
-        //_ => None,
+        _ => None,
     }
 }
 
@@ -172,7 +145,7 @@ where
     match edge.weight() {
         Edge::Transition(t) => Some((edge.id(), edge.source(), edge.target(), t, false)),
         Edge::Internal(t) => Some((edge.id(), edge.source(), edge.target(), t, true)),
-        //_ => None,
+        _ => None,
     }
 }
 
@@ -231,6 +204,7 @@ impl<S, T> Graph<S, T> {
         self.graph.contains_node(i)
     }
 
+    // FIX: no longer valid -- is_transition?
     pub fn contains_transition(&self, i: Tdx) -> bool {
         self.graph.edge_weight(i).is_some()
     }
@@ -268,7 +242,7 @@ impl<S, T> Graph<S, T> {
             .filter_map(|e| match e.weight() {
                 Edge::Transition(t) => Some((e.id(), e.source(), e.target(), t, false)),
                 Edge::Internal(t) => Some((e.id(), e.source(), e.target(), t, true)),
-                //_ => None,
+                _ => None,
             })
     }
 
@@ -290,7 +264,7 @@ impl<S, T> Graph<S, T> {
             .filter_map(|e| match e.weight() {
                 Edge::Transition(t) => Some((e.id(), e.source(), e.target(), t, false)),
                 Edge::Internal(t) => Some((e.id(), e.source(), e.target(), t, true)),
-                //_ => None,
+                _ => None,
             })
     }
 
@@ -318,18 +292,26 @@ impl<S, T> Graph<S, T> {
         self.path_iter(b).any(|i| i == a)
     }
 
-    pub fn initial(&self, i: Idx) -> Initial {
-        self.graph[i].initial
+    fn initial_edge(&self, i: Idx) -> Option<(Initial, EdgeReference<'_, Edge<T>>)> {
+        self.graph
+            .edges_directed(i, Direction::Outgoing)
+            .find_map(|e| match e.weight() {
+                Edge::Initial(initial) => Some((*initial, e)),
+                _ => None,
+            })
     }
 
-    // initial_recur?
-    pub fn get_initial(&self, i: Idx) -> Idx {
-        match self.graph[i].initial {
-            // no initial state, return i
-            Initial::None => i,
-            Initial::Initial(i) => self.get_initial(i),
-            Initial::HistoryShallow(i) => self.get_initial(i),
-            Initial::HistoryDeep(i) => self.get_initial(i),
+    pub fn initial(&self, i: Idx) -> Option<(Initial, Idx)> {
+        self.initial_edge(i)
+            .map(|(initial, edge)| (initial, edge.target()))
+    }
+
+    /// Recursively find an initial state.
+    pub fn initial_recur(&self, i: Idx) -> Idx {
+        match self.initial(i) {
+            // No initial state, return i.
+            None => i,
+            Some((_, i)) => self.initial_recur(i),
         }
     }
 
@@ -386,18 +368,15 @@ impl<S, T> Graph<S, T> {
             }
 
             // Initial.
-            if let Some(initial) = s.initial.idx() {
+            if let Some((_, j)) = self.initial(i) {
                 if !self.graph.contains_node(i) {
-                    return Err(format!(
-                        "initial state ({:?}) missing for: {:?}",
-                        initial, i
-                    ));
+                    return Err(format!("initial state ({:?}) missing for: {:?}", j, i));
                 }
                 // Initial state is a child.
-                if !self.is_child(i, initial) {
+                if !self.is_child(i, j) {
                     return Err(format!(
                         "initial state ({:?}) is not a child of: {:?}",
-                        initial, i
+                        j, i
                     ));
                 }
             }
@@ -495,20 +474,13 @@ impl<C: Context> Statechart<C> {
     }
 
     // TODO: how do we reset history state?
+    // TODO: does history make sense for the root initial?
     pub fn reset(&mut self) {
-        let root = &self.graph.graph[self.graph.root];
-        match root.initial {
-            Initial::None => panic!("no initial state set"),
-            Initial::Initial(i) => {
-                // recursively find the active state
-                let initial = self.graph.get_initial(i);
-                self.transition_to(initial, None);
-            }
-            Initial::HistoryShallow(_) | Initial::HistoryDeep(_) => {
-                // does this make sense at all?
-                panic!("invalid initial value (history)");
-            }
-        }
+        assert!(
+            self.graph.initial(self.graph.root).is_some(),
+            "initial for root"
+        );
+        self.transition_to(self.graph.initial_recur(self.graph.root), None)
     }
 
     // set initial states and return a channel?
@@ -591,7 +563,7 @@ impl<C: Context> Statechart<C> {
             .collect::<Vec<_>>();
 
         // Recursively find initial - this returns next if no initial.
-        let initial = self.graph.get_initial(next);
+        let initial = self.graph.initial_recur(next);
         assert!(self.graph.in_path(next, initial));
 
         // Path from the common ancestor to the next node (including
@@ -604,18 +576,20 @@ impl<C: Context> Statechart<C> {
         p2.reverse();
 
         let ctx = &mut self.context;
-        let g = &mut self.graph.graph;
 
         let mut last = self.active;
         for i in p1 {
-            let s = &mut g[i];
-            s.state.exit(ctx, event);
+            self.graph.graph[i].state.exit(ctx, event);
+
             // track history when exiting a state
-            match s.initial {
-                Initial::HistoryShallow(_) => h.push((i, last)),
-                Initial::HistoryDeep(_) => h.push((i, self.active)),
-                _ => (),
+            if let Some((initial, i)) = self.graph.initial(i) {
+                match initial {
+                    Initial::HistoryShallow => h.push((i, last)),
+                    Initial::HistoryDeep => h.push((i, self.active)),
+                    _ => (),
+                }
             };
+
             // you can't have a history with no child
             // states, and we're not checking that
             // here - FIX?
@@ -628,17 +602,20 @@ impl<C: Context> Statechart<C> {
         // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
 
         for i in p2 {
-            let s = &mut g[i];
-            s.state.enter(ctx, event);
+            self.graph.graph[i].state.enter(ctx, event);
             //Ok(())
         }
         //.collect::<Result<_>>()?;
 
-        // apply history
+        // Apply history.
         for (idx, prev) in h {
-            let s = &mut self.graph.graph[idx];
-            match s.initial {
-                Initial::HistoryShallow(ref mut i) | Initial::HistoryDeep(ref mut i) => *i = prev,
+            match self.graph.initial(idx) {
+                Some((initial, _)) => {
+                    if matches!(initial, Initial::HistoryShallow | Initial::HistoryDeep) {
+                        // Discard op.
+                        let _ = self.graph.set_initial(idx, Some((initial, prev)));
+                    }
+                }
                 _ => (),
             }
         }
@@ -678,13 +655,8 @@ impl PathWalker {
 }
 
 impl<T> Node<T> {
-    // we can't set initial yet since children don't exist FIX?
     pub fn new(state: T, parent: Option<Idx>) -> Self {
-        Self {
-            state,
-            parent,
-            initial: Initial::None,
-        }
+        Self { state, parent }
     }
 }
 
