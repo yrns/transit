@@ -121,7 +121,7 @@ fn door() {
     };
 
     let mut door = Statechart::new(
-        graph,
+        &graph,
         JanetContext {
             context: door.into(),
         },

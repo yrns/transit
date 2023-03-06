@@ -232,7 +232,7 @@ where
         let t = t.into();
 
         // Only self-transitions can be internal.
-        assert!(!is_internal(&t) || a == b);
+        assert!(!t.is_internal() || a == b);
 
         // Can't transition to or from root.
         assert!(a != self.root && b != self.root);

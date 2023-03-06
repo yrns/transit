@@ -38,11 +38,25 @@ pub type ContextGraph<C> = Graph<<C as Context>::State, <C as Context>::Transiti
 // TODO: Serialize? Context needs to be separate from the graph so
 // multiple contexts can share one graph. Same for state and
 // transition contexts which are mutable currently.
-pub struct Statechart<C: Context> {
+pub struct Statechart<'a, C: Context> {
     pub context: C,
-    // TODO: this should be a non-mutable ref so it can be shared.
-    pub graph: ContextGraph<C>,
+    pub graph: &'a ContextGraph<C>,
     pub active: Idx,
+    pub locals: Locals<C::State, C::Transition>,
+    pub history: History,
+}
+
+pub type History = nohash_hasher::IntMap<usize, Idx>;
+
+pub struct Locals<S, T>(
+    nohash_hasher::IntMap<usize, S>,
+    nohash_hasher::IntMap<usize, T>,
+);
+
+impl<S, T> Default for Locals<S, T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default())
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -110,29 +124,35 @@ impl<T> Edge<T> {
             _ => panic!("not a transition"),
         }
     }
-}
 
-pub fn is_transition<T>(edge: &Edge<T>) -> bool {
-    matches!(edge, Edge::Transition(_) | Edge::Internal(_))
-}
-
-pub fn transition_weight<T>(edge: &Edge<T>) -> Option<&T> {
-    match edge {
-        Edge::Transition(t) | Edge::Internal(t) => Some(t),
-        _ => None,
+    pub fn is_transition(&self) -> bool {
+        matches!(self, Edge::Transition(_) | Edge::Internal(_))
     }
-}
 
-pub fn transition_weight_mut<T>(edge: &mut Edge<T>) -> Option<&mut T> {
-    match edge {
-        Edge::Transition(t) | Edge::Internal(t) => Some(t),
-        _ => None,
+    pub fn transition(&self) -> Option<&T> {
+        match self {
+            Edge::Transition(t) | Edge::Internal(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn transition_mut(&mut self) -> Option<&mut T> {
+        match self {
+            Edge::Transition(t) | Edge::Internal(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    // Should this panic if !is_transition? Validation uses this as a filter.
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Edge::Internal(_))
     }
 }
 
 /// A reference to a transition, index, and edge information.
 pub type TransitionRef<'a, T> = (Tdx, Idx, Idx, &'a T, bool);
 
+// Unused?
 pub fn edge_transition_filter<C, E>(
     edge: EdgeReference<Edge<C::Transition>, u32>,
 ) -> Option<TransitionRef<'_, C::Transition>>
@@ -144,10 +164,6 @@ where
         Edge::Internal(t) => Some((edge.id(), edge.source(), edge.target(), t, true)),
         _ => None,
     }
-}
-
-pub fn is_internal<T>(edge: &Edge<T>) -> bool {
-    matches!(edge, Edge::Internal(_))
 }
 
 impl<T> From<T> for Edge<T> {
@@ -191,16 +207,15 @@ impl<S, T> Graph<S, T> {
 
     /// Returns a transition reference for index.
     pub fn transition(&self, i: Tdx) -> Option<&T> {
-        self.graph.edge_weight(i).and_then(transition_weight)
+        self.graph.edge_weight(i).and_then(Edge::transition)
     }
 
     pub fn contains_state(&self, i: Idx) -> bool {
         self.graph.contains_node(i)
     }
 
-    // FIX: no longer valid -- is_transition?
     pub fn contains_transition(&self, i: Tdx) -> bool {
-        self.graph.edge_weight(i).is_some()
+        self.transition(i).is_some()
     }
 
     // We could eliminate searching every node by using a relational edge instead of an index?
@@ -265,7 +280,7 @@ impl<S, T> Graph<S, T> {
     pub fn transitions_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.graph
             .edge_weights_mut()
-            .filter_map(transition_weight_mut)
+            .filter_map(Edge::transition_mut)
     }
 
     pub fn endpoints(&self, i: Tdx) -> Option<(Idx, Idx)> {
@@ -298,15 +313,6 @@ impl<S, T> Graph<S, T> {
     pub fn initial(&self, i: Idx) -> Option<(Initial, Idx)> {
         self.initial_edge(i)
             .map(|(initial, edge)| (initial, edge.target()))
-    }
-
-    /// Recursively find an initial state.
-    pub fn initial_recur(&self, i: Idx) -> Idx {
-        match self.initial(i) {
-            // No initial state, return i.
-            None => i,
-            Some((_, i)) => self.initial_recur(i),
-        }
     }
 
     // returns an iterator from idx -> root
@@ -456,14 +462,16 @@ where
     }
 }
 
-impl<C: Context> Statechart<C> {
-    pub fn new(graph: ContextGraph<C>, context: C) -> Self {
+impl<'a, C: Context> Statechart<'a, C> {
+    pub fn new(graph: &'a ContextGraph<C>, context: C) -> Self {
         // TODO: verify graph? bindings? when do we apply initial?
         let active = graph.root;
         Self {
             graph,
             context,
             active,
+            locals: Default::default(),
+            history: Default::default(),
         }
     }
 
@@ -474,7 +482,7 @@ impl<C: Context> Statechart<C> {
             self.graph.initial(self.graph.root).is_some(),
             "initial for root"
         );
-        self.transition_to(self.graph.initial_recur(self.graph.root), None)
+        self.transition_to(self.initial(self.graph.root), None)
     }
 
     // set initial states and return a channel?
@@ -482,22 +490,28 @@ impl<C: Context> Statechart<C> {
         self.reset()
     }
 
-    // Find a transition out of the active node based on the
-    // event. Start with the active state and work through the parent
-    // states.
+    /// Find a transition out of the active node based on the event. Start with the active state and
+    /// work through the parent states.
     fn select(&mut self, event: &C::Event) -> Option<(Idx, bool)> {
         let mut path = self.graph.path_walk(self.active);
 
-        // Each potential guard can mutate the transition state.
-        let g = &mut self.graph;
-        let ctx = &mut self.context;
-        while let Some(i) = path.next(g) {
-            let mut edges = g.graph.neighbors(i).detach();
-            while let Some((edge, next)) = edges.next(&g.graph) {
-                let edge = &mut g.graph[edge];
-                if let Some(t) = transition_weight_mut(edge) {
-                    if t.guard(ctx, event) {
-                        return Some((next, is_internal(edge)));
+        // Each potential guard can mutate the transition state and context.
+        while let Some(i) = path.next(&self.graph) {
+            // TODO since we are only mutating the context/locals we don't need the walker anymore?
+            let mut edges = self.graph.graph.neighbors(i).detach();
+            while let Some((edge, next)) = edges.next(&self.graph.graph) {
+                let index = edge.index();
+                let edge = &self.graph.graph[edge];
+                if let Some(t) = edge.transition() {
+                    // Get a mutable ref to the local transition (after copying it from the graph).
+                    if self
+                        .locals
+                        .1
+                        .entry(index)
+                        .or_insert_with(|| t.clone())
+                        .guard(&mut self.context, event)
+                    {
+                        return Some((next, edge.is_internal()));
                     }
                 }
             }
@@ -509,13 +523,9 @@ impl<C: Context> Statechart<C> {
 
     pub fn transition(&mut self, event: C::Event) -> bool {
         self.context.dispatch(&event);
-        let next = self.select(&event);
-        let res = if let Some((next, internal)) = next {
-            dbg!(internal);
-            // With an internal transition we don't actually change
-            // states, so we don't do anything else except copy the
-            // context back. Should we verify the active state is
-            // not a compound state?
+        let res = if let Some((next, internal)) = self.select(&event) {
+            // With an internal transition the guard is called but we don't actually change
+            // states. Should we verify the active state is not a compound state?
             let active = self.active;
             if !internal {
                 self.transition_to(next, Some(&event));
@@ -531,17 +541,20 @@ impl<C: Context> Statechart<C> {
         res
     }
 
-    // should we be passing new and old state to each action?
-    // this mutates history when exiting states
-    pub fn transition_to(&mut self, next: Idx, event: Option<&C::Event>) {
-        // list of history updates, only applied after the transition
-        // succeeds
-        let mut h: Vec<(Idx, Idx)> = Vec::new();
+    /// Recursively find an initial state using local history.
+    pub fn initial(&self, i: Idx) -> Idx {
+        match self.graph.initial(i) {
+            // No initial state, return i.
+            None => i,
+            // We don't check the initial type.
+            Some((_initial, j)) => self.initial(*self.history.get(&j.index()).unwrap_or(&j)),
+        }
+    }
 
-        // We will traverse states up to a common ancestor (calling
-        // [State::exit] on each) and back down to the next state
-        // (calling [State::enter] on each). When does this return
-        // None given there is always a root? FIX.
+    /// Traverse states up to a common ancestor (calling [State::exit] on each) and back down to the
+    /// next state (calling [State::enter] on each).
+    pub fn transition_to(&mut self, next: Idx, event: Option<&C::Event>) {
+        // When does this return None given there is always a root?
         let a = self.graph.common_ancestor(self.active, next);
 
         let not_a = |i: &Idx| a.map_or(true, |a| *i != a);
@@ -556,12 +569,12 @@ impl<C: Context> Statechart<C> {
             .take_while(not_a)
             .collect::<Vec<_>>();
 
-        // Recursively find initial - this returns next if no initial.
-        let initial = self.graph.initial_recur(next);
+        // Recursively find initial using local history.
+        let initial = self.initial(next);
+
         assert!(self.graph.in_path(next, initial));
 
-        // Path from the common ancestor to the next node (including
-        // the initial state).
+        // Path from the common ancestor to the next node (including the initial state).
         let mut p2 = self
             .graph
             .path_iter(initial)
@@ -569,19 +582,21 @@ impl<C: Context> Statechart<C> {
             .collect::<Vec<_>>();
         p2.reverse();
 
-        let ctx = &mut self.context;
-
         let mut last = self.active;
         for i in p1 {
-            self.graph.graph[i].state.exit(ctx, event);
+            self.locals
+                .0
+                .entry(i.index())
+                .or_insert_with(|| self.graph.graph[i].state.clone())
+                .exit(&mut self.context, event);
 
-            // track history when exiting a state
+            // Update history when exiting a state.
             if let Some((initial, i)) = self.graph.initial(i) {
-                match initial {
-                    Initial::HistoryShallow => h.push((i, last)),
-                    Initial::HistoryDeep => h.push((i, self.active)),
-                    _ => (),
-                }
+                _ = match initial {
+                    Initial::HistoryShallow => self.history.insert(i.index(), last),
+                    Initial::HistoryDeep => self.history.insert(i.index(), self.active),
+                    _ => None,
+                };
             };
 
             // you can't have a history with no child
@@ -596,20 +611,14 @@ impl<C: Context> Statechart<C> {
         // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
 
         for i in p2 {
-            self.graph.graph[i].state.enter(ctx, event);
+            self.locals
+                .0
+                .entry(i.index())
+                .or_insert_with(|| self.graph.graph[i].state.clone())
+                .enter(&mut self.context, event);
             //Ok(())
         }
         //.collect::<Result<_>>()?;
-
-        // Apply history.
-        for (idx, prev) in h {
-            if let Some((initial, _)) = self.graph.initial(idx) {
-                if matches!(initial, Initial::HistoryShallow | Initial::HistoryDeep) {
-                    // Discard op.
-                    let _ = self.graph.set_initial(idx, Some((initial, prev)));
-                }
-            }
-        }
 
         // set active state
         self.active = next;

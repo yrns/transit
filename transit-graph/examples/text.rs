@@ -3,9 +3,21 @@ mod door;
 use door::*;
 ///! this is a door
 use rustyline::error::ReadlineError;
+use transit_graph::Statechart;
 
 fn main() {
-    let mut door = make_door();
+    let door = Door {
+        hit_points: HitPoints {
+            current: 100.,
+            max: 100.,
+        },
+        key: "the right key".to_string(),
+        attempts: 0,
+    };
+
+    let graph = make_graph();
+
+    let mut door = Statechart::new(&graph, door);
 
     // this does nothing
     door.run();

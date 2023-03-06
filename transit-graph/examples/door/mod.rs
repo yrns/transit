@@ -5,8 +5,8 @@ use transit_graph::*;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HitPoints {
-    current: f32,
-    max: f32,
+    pub current: f32,
+    pub max: f32,
 }
 
 impl Default for HitPoints {
@@ -20,9 +20,9 @@ impl Default for HitPoints {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Door {
-    hit_points: HitPoints,
-    key: String,
-    attempts: u32,
+    pub hit_points: HitPoints,
+    pub key: String,
+    pub attempts: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -288,19 +288,6 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
     );
 
     g
-}
-
-pub fn make_door() -> Statechart<Door> {
-    let door = Door {
-        hit_points: HitPoints {
-            current: 100.,
-            max: 100.,
-        },
-        key: "the right key".to_string(),
-        attempts: 0,
-    };
-
-    Statechart::new(make_graph(), door)
 }
 
 #[test]
