@@ -12,5 +12,6 @@ persistence = ["eframe/persistence"]
 #eframe = { version = "0.20.0", path = "../../../clone/egui/crates/eframe", features = ["wgpu"] }
 eframe = { version = "0.21.0", default-features = false, features = ["default_fonts", "wgpu"] }
 
+# Its not clear why rlib is necessary but it fixes this issue when running "cargo test --workspace": https://github.com/rust-lang/rust/issues/34909
 [lib]
-crate-type = ["dylib"]
+crate-type = ["rlib", "dylib"]
