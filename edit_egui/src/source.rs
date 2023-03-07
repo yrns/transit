@@ -9,7 +9,9 @@ use std::{
     time::Duration,
 };
 use tracing::{error, info};
-use transit_graph::Context;
+use transit_graph::{Context, Graph};
+
+use crate::Edit;
 
 /// Symbol locator consisting of a path, line no., and column.
 pub type Locator = (PathBuf, usize, usize);
@@ -73,6 +75,9 @@ pub trait Source {
     /// Type of context this source produces.
     type Context: Context;
 
+    /// Runtime context used in [Source::resolve].
+    type RunContext;
+
     /// Iterator over all symbols.
     type Symbols<'a>: Iterator<Item = (&'a String, &'a Locator)>
     where
@@ -109,4 +114,13 @@ pub trait Source {
 
     /// Source file extensions.
     fn extensions(&self) -> &[&str];
+
+    /// Resolve edit graph to a graph usable with [Self::Context].
+    fn resolve(
+        &self,
+        edit: &Edit<Self>,
+        run: &Self::RunContext,
+    ) -> Graph<<Self::Context as Context>::State, <Self::Context as Context>::Transition>
+    where
+        Self: Sized;
 }

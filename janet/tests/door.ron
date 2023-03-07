@@ -1,0 +1,2424 @@
+(
+    source: Some((
+        path: "/home/al/src/transit/janet/tests/door.janet",
+    )),
+    graph: (
+        graph: (
+            nodes: [
+                (
+                    parent: None,
+                    state: (
+                        id: "door",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: Some((0, (
+                            x: 0.0,
+                            y: 429.25015,
+                        ), (
+                            x: -48.408802,
+                            y: 42.925014,
+                        ))),
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(0),
+                    state: (
+                        id: "intact",
+                        enter: Some("intact-enter"),
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 72.35544,
+                                y: 73.854675,
+                            ),
+                            max: (
+                                x: 676.3917,
+                                y: 339.67505,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(0),
+                    state: (
+                        id: "destroyed",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 762.05334,
+                                y: 137.94246,
+                            ),
+                            max: (
+                                x: 969.04346,
+                                y: 194.55956,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(1),
+                    state: (
+                        id: "closed",
+                        enter: Some("closed-enter"),
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 386.972,
+                                y: 89.92084,
+                            ),
+                            max: (
+                                x: 557.4927,
+                                y: 145.08737,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(1),
+                    state: (
+                        id: "open",
+                        enter: Some("open-enter"),
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 39.188354,
+                                y: 164.08878,
+                            ),
+                            max: (
+                                x: 295.18832,
+                                y: 228.08878,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(1),
+                    state: (
+                        id: "locked",
+                        enter: Some("locked-enter"),
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 38.441086,
+                                y: 46.628662,
+                            ),
+                            max: (
+                                x: 294.44107,
+                                y: 110.62866,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+            ],
+            node_holes: [],
+            edge_property: directed,
+            edges: [
+                Some((0, 5, Initial(Initial))),
+                Some((3, 4, Transition((
+                    id: "open",
+                    guard: None,
+                    c1: (
+                        x: 90.82437,
+                        y: 26.52826,
+                    ),
+                    c2: (
+                        x: -147.61707,
+                        y: -36.464005,
+                    ),
+                    port1: 0,
+                    port2: 0,
+                )))),
+                Some((1, 2, Transition((
+                    id: "bash",
+                    guard: Some("bash-guard"),
+                    c1: (
+                        x: 117.42656,
+                        y: -26.924713,
+                    ),
+                    c2: (
+                        x: -106.41063,
+                        y: 59.550858,
+                    ),
+                    port1: 0,
+                    port2: 1,
+                )))),
+                Some((5, 3, Transition((
+                    id: "unlock",
+                    guard: Some("unlock-guard"),
+                    c1: (
+                        x: 41.17546,
+                        y: -39.136734,
+                    ),
+                    c2: (
+                        x: -42.937805,
+                        y: 52.277557,
+                    ),
+                    port1: 0,
+                    port2: 0,
+                )))),
+                Some((4, 3, Transition((
+                    id: "close",
+                    guard: None,
+                    c1: (
+                        x: 104.55472,
+                        y: -1.7017822,
+                    ),
+                    c2: (
+                        x: -65.08902,
+                        y: 19.69513,
+                    ),
+                    port1: 0,
+                    port2: 1,
+                )))),
+                Some((3, 5, Transition((
+                    id: "lock",
+                    guard: Some("lock-guard"),
+                    c1: (
+                        x: -68.02899,
+                        y: 183.21426,
+                    ),
+                    c2: (
+                        x: 133.54976,
+                        y: 250.91098,
+                    ),
+                    port1: 1,
+                    port2: 1,
+                )))),
+            ],
+        ),
+        root: 0,
+    ),
+    selection: None,
+    undo: (
+        undos: [
+            Transaction([
+                UpdateNode(5, (
+                    parent: Some(1),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 75.48418,
+                                y: 218.78326,
+                            ),
+                            max: (
+                                x: 331.48416,
+                                y: 282.78326,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                UpdateNode(5, (
+                    parent: Some(0),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 75.48418,
+                                y: 218.78326,
+                            ),
+                            max: (
+                                x: 331.48416,
+                                y: 282.78326,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+            ]),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 271.16333,
+                            y: 593.4078,
+                        ),
+                        max: (
+                            x: 527.1633,
+                            y: 657.4078,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 171.68161,
+                            y: 599.5422,
+                        ),
+                        max: (
+                            x: 427.6816,
+                            y: 663.5422,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "lockedd",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 171.68161,
+                            y: 599.5422,
+                        ),
+                        max: (
+                            x: 427.6816,
+                            y: 663.5422,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 171.68161,
+                            y: 599.5422,
+                        ),
+                        max: (
+                            x: 427.6816,
+                            y: 663.5422,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            Transaction([
+                UpdateNode(5, (
+                    parent: Some(0),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 271.16333,
+                                y: 593.4078,
+                            ),
+                            max: (
+                                x: 527.1633,
+                                y: 657.4078,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                UpdateNode(5, (
+                    parent: Some(0),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 75.48418,
+                                y: 218.78326,
+                            ),
+                            max: (
+                                x: 331.48416,
+                                y: 282.78326,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+            ]),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 75.48418,
+                            y: 218.78326,
+                        ),
+                        max: (
+                            x: 331.48416,
+                            y: 282.78326,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "lockedxxx",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 75.48418,
+                            y: 218.78326,
+                        ),
+                        max: (
+                            x: 331.48416,
+                            y: 282.78326,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            Transaction([
+                UpdateNode(5, (
+                    parent: Some(1),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 75.48418,
+                                y: 218.78326,
+                            ),
+                            max: (
+                                x: 331.48416,
+                                y: 282.78326,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                UpdateNode(5, (
+                    parent: Some(0),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 75.48418,
+                                y: 218.78326,
+                            ),
+                            max: (
+                                x: 331.48416,
+                                y: 282.78326,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+            ]),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 271.16333,
+                            y: 593.4078,
+                        ),
+                        max: (
+                            x: 527.1633,
+                            y: 657.4078,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 171.68161,
+                            y: 599.5422,
+                        ),
+                        max: (
+                            x: 427.6816,
+                            y: 663.5422,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "lockedd",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 171.68161,
+                            y: 599.5422,
+                        ),
+                        max: (
+                            x: 427.6816,
+                            y: 663.5422,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(0),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 171.68161,
+                            y: 599.5422,
+                        ),
+                        max: (
+                            x: 427.6816,
+                            y: 663.5422,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            Transaction([
+                UpdateNode(5, (
+                    parent: Some(0),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 271.16333,
+                                y: 593.4078,
+                            ),
+                            max: (
+                                x: 527.1633,
+                                y: 657.4078,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                UpdateNode(5, (
+                    parent: Some(0),
+                    state: (
+                        id: "locked",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 75.48418,
+                                y: 218.78326,
+                            ),
+                            max: (
+                                x: 331.48416,
+                                y: 282.78326,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+            ]),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 40.724472,
+                            y: 49.798355,
+                        ),
+                        max: (
+                            x: 211.24516,
+                            y: 104.96489,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 34.563324,
+                            y: 125.22035,
+                        ),
+                        max: (
+                            x: 290.5633,
+                            y: 189.22035,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 75.48418,
+                            y: 218.78326,
+                        ),
+                        max: (
+                            x: 331.48416,
+                            y: 282.78326,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 34.563324,
+                            y: 125.22037,
+                        ),
+                        max: (
+                            x: 290.5633,
+                            y: 189.22037,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 125.15103,
+                            y: 213.46689,
+                        ),
+                        max: (
+                            x: 472.81268,
+                            y: 514.67236,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.944,
+                            y: 126.59329,
+                        ),
+                        max: (
+                            x: 295.94397,
+                            y: 190.59329,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("door-intact-open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.944,
+                            y: 126.59329,
+                        ),
+                        max: (
+                            x: 295.94397,
+                            y: 190.59329,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some(""),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.944,
+                            y: 126.59329,
+                        ),
+                        max: (
+                            x: 295.94397,
+                            y: 190.59329,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            Transaction([
+                UpdateNode(0, (
+                    parent: None,
+                    state: (
+                        id: "door",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: Some((0, (
+                            x: 0.0,
+                            y: 260.26526,
+                        ), (
+                            x: -39.718876,
+                            y: 26.026525,
+                        ))),
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                InsertEdge(0),
+            ]),
+            InsertEdge(1),
+            Transaction([
+                UpdateNode(0, (
+                    parent: None,
+                    state: (
+                        id: "door",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: Some((0, (
+                            x: 0.0,
+                            y: 429.25015,
+                        ), (
+                            x: -48.408802,
+                            y: 42.925014,
+                        ))),
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                RemoveEdge(0, (0, 5, Initial(Initial))),
+            ]),
+            UpdateNode(0, (
+                parent: None,
+                state: (
+                    id: "door",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        max: (
+                            x: inf,
+                            y: inf,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            Transaction([
+                UpdateNode(0, (
+                    parent: None,
+                    state: (
+                        id: "door",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                InsertEdge(0),
+            ]),
+            UpdateEdge(0, Initial(Initial)),
+            UpdateEdge(0, Initial(HistoryShallow)),
+            Transaction([
+                UpdateNode(0, (
+                    parent: None,
+                    state: (
+                        id: "door",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: Some((0, (
+                            x: 0.0,
+                            y: 429.25015,
+                        ), (
+                            x: -48.408802,
+                            y: 42.925014,
+                        ))),
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                RemoveEdge(0, (0, 5, Initial(HistoryDeep))),
+            ]),
+            Transaction([
+                UpdateNode(0, (
+                    parent: None,
+                    state: (
+                        id: "door",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                InsertEdge(0),
+            ]),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 40.724472,
+                            y: 49.79837,
+                        ),
+                        max: (
+                            x: 211.24516,
+                            y: 104.964905,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.944,
+                            y: 126.59329,
+                        ),
+                        max: (
+                            x: 295.94397,
+                            y: 190.59329,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 75.48418,
+                            y: 218.78326,
+                        ),
+                        max: (
+                            x: 331.48416,
+                            y: 282.78326,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 125.15103,
+                            y: 213.46689,
+                        ),
+                        max: (
+                            x: 472.81268,
+                            y: 514.67236,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 432.8062,
+                            y: 469.5982,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: Some("locked-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 75.48418,
+                            y: 218.78326,
+                        ),
+                        max: (
+                            x: 331.48416,
+                            y: 282.78326,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.944,
+                            y: 126.59329,
+                        ),
+                        max: (
+                            x: 295.94397,
+                            y: 190.59329,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: Some("closed-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 40.724472,
+                            y: 49.79837,
+                        ),
+                        max: (
+                            x: 211.24516,
+                            y: 104.964905,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: Some("locked-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 76.780045,
+                            y: 291.90933,
+                        ),
+                        max: (
+                            x: 332.78003,
+                            y: 355.90933,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: Some("closed-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 157.09879,
+                            y: 134.16971,
+                        ),
+                        max: (
+                            x: 327.61948,
+                            y: 189.33624,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertEdge(2),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 565.04346,
+                            y: 301.00153,
+                        ),
+                        max: (
+                            x: 821.04346,
+                            y: 365.00153,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(2, Transition((
+                id: "intact > destroyed",
+                guard: None,
+                c1: (
+                    x: 35.823776,
+                    y: -71.3044,
+                ),
+                c2: (
+                    x: -35.823776,
+                    y: 71.3044,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: None,
+                c1: (
+                    x: 35.823776,
+                    y: -71.3044,
+                ),
+                c2: (
+                    x: -35.823776,
+                    y: 71.3044,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: None,
+                c1: (
+                    x: 35.823776,
+                    y: -71.3044,
+                ),
+                c2: (
+                    x: 81.10622,
+                    y: -80.29732,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: None,
+                c1: (
+                    x: 116.644516,
+                    y: -38.391174,
+                ),
+                c2: (
+                    x: 81.10622,
+                    y: -80.29732,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 612.92267,
+                            y: 358.37674,
+                        ),
+                        max: (
+                            x: 868.92267,
+                            y: 422.37674,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: None,
+                c1: (
+                    x: 116.644516,
+                    y: -38.391174,
+                ),
+                c2: (
+                    x: -69.11003,
+                    y: 35.326736,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: Some("locked-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 38.441086,
+                            y: 46.628662,
+                        ),
+                        max: (
+                            x: 294.44107,
+                            y: 110.62866,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertEdge(3),
+            UpdateEdge(3, Transition((
+                id: "locked > closed",
+                guard: None,
+                c1: (
+                    x: -97.39725,
+                    y: -42.41504,
+                ),
+                c2: (
+                    x: 97.39725,
+                    y: 42.41504,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: None,
+                c1: (
+                    x: -97.39725,
+                    y: -42.41504,
+                ),
+                c2: (
+                    x: 97.39725,
+                    y: 42.41504,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: -97.39725,
+                    y: -42.41504,
+                ),
+                c2: (
+                    x: 97.39725,
+                    y: 42.41504,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            RemoveEdge(1, (3, 2, Transition((
+                id: "closed > destroyed",
+                guard: None,
+                c1: (
+                    x: 114.32364,
+                    y: -18.868134,
+                ),
+                c2: (
+                    x: -114.32364,
+                    y: 18.868134,
+                ),
+                port1: 0,
+                port2: 0,
+            )))),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 625.2818,
+                            y: 305.01892,
+                        ),
+                        max: (
+                            x: 881.2818,
+                            y: 369.01892,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 493.3959,
+                            y: 576.76105,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: Some("closed-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 99.646576,
+                            y: 131.45874,
+                        ),
+                        max: (
+                            x: 270.16727,
+                            y: 186.62527,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: 77.38414,
+                    y: -7.385742,
+                ),
+                c2: (
+                    x: 272.17865,
+                    y: 77.444336,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: 32.012497,
+                    y: -32.86319,
+                ),
+                c2: (
+                    x: 272.17865,
+                    y: 77.444336,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: Some("closed-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 319.1938,
+                            y: 106.55539,
+                        ),
+                        max: (
+                            x: 489.71448,
+                            y: 161.72192,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: 32.012497,
+                    y: -32.86319,
+                ),
+                c2: (
+                    x: -39.328247,
+                    y: 55.670166,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 667.24426,
+                            y: 500.08423,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: Some("closed-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 357.75464,
+                            y: 52.253723,
+                        ),
+                        max: (
+                            x: 528.2753,
+                            y: 107.42026,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: 37.986343,
+                    y: -22.33841,
+                ),
+                c2: (
+                    x: -33.3544,
+                    y: 66.19495,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: 27.190048,
+                    y: -0.9734192,
+                ),
+                c2: (
+                    x: -44.150696,
+                    y: 87.55994,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(3, Transition((
+                id: "unlock",
+                guard: Some("unlock-guard"),
+                c1: (
+                    x: 41.17546,
+                    y: -39.136734,
+                ),
+                c2: (
+                    x: -44.150696,
+                    y: 87.55994,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 667.24426,
+                            y: 500.08423,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(3, (
+                parent: Some(1),
+                state: (
+                    id: "closed",
+                    enter: Some("closed-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 391.2577,
+                            y: 134.33636,
+                        ),
+                        max: (
+                            x: 561.7784,
+                            y: 189.5029,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 74.57919,
+                            y: 208.41077,
+                        ),
+                        max: (
+                            x: 330.57916,
+                            y: 272.41077,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertEdge(1),
+            UpdateEdge(1, Transition((
+                id: "closed > open",
+                guard: None,
+                c1: (
+                    x: -208.60071,
+                    y: -63.17485,
+                ),
+                c2: (
+                    x: 208.60071,
+                    y: 63.17485,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(1, Transition((
+                id: "open",
+                guard: None,
+                c1: (
+                    x: -208.60071,
+                    y: -63.17485,
+                ),
+                c2: (
+                    x: 208.60071,
+                    y: 63.17485,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 667.24426,
+                            y: 500.08423,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(1, Transition((
+                id: "open",
+                guard: None,
+                c1: (
+                    x: -208.60071,
+                    y: -63.17485,
+                ),
+                c2: (
+                    x: 208.60071,
+                    y: 63.17485,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(1, Transition((
+                id: "open",
+                guard: None,
+                c1: (
+                    x: 90.82437,
+                    y: 26.52826,
+                ),
+                c2: (
+                    x: 208.60071,
+                    y: 63.17485,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 140.29123,
+                            y: 216.27054,
+                        ),
+                        max: (
+                            x: 396.2912,
+                            y: 280.27054,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertEdge(4),
+            UpdateEdge(4, Transition((
+                id: "open > closed",
+                guard: None,
+                c1: (
+                    x: 16.261871,
+                    y: 43.214874,
+                ),
+                c2: (
+                    x: -16.261871,
+                    y: -43.214874,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(4, Transition((
+                id: "close",
+                guard: None,
+                c1: (
+                    x: 16.261871,
+                    y: 43.214874,
+                ),
+                c2: (
+                    x: -16.261871,
+                    y: -43.214874,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(4, Transition((
+                id: "close",
+                guard: None,
+                c1: (
+                    x: 75.79834,
+                    y: 64.39139,
+                ),
+                c2: (
+                    x: 43.274597,
+                    y: -22.03836,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 98.44827,
+                            y: 186.35059,
+                        ),
+                        max: (
+                            x: 354.44824,
+                            y: 250.35059,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(4, Transition((
+                id: "close",
+                guard: None,
+                c1: (
+                    x: 75.79834,
+                    y: 64.39139,
+                ),
+                c2: (
+                    x: 51.625244,
+                    y: -22.54602,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(4, Transition((
+                id: "close",
+                guard: None,
+                c1: (
+                    x: 96.89816,
+                    y: 96.8067,
+                ),
+                c2: (
+                    x: 72.72507,
+                    y: 9.869293,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(4, Transition((
+                id: "close",
+                guard: None,
+                c1: (
+                    x: 96.89816,
+                    y: 96.8067,
+                ),
+                c2: (
+                    x: -65.08902,
+                    y: 19.69513,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 667.24426,
+                            y: 500.08423,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 560.41,
+                            y: 25.98471,
+                        ),
+                        max: (
+                            x: 816.41,
+                            y: 89.98471,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 247.52792,
+                            y: 50.910095,
+                        ),
+                        max: (
+                            x: 503.52792,
+                            y: 114.910095,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 85.14456,
+                            y: 168.39273,
+                        ),
+                        max: (
+                            x: 689.1808,
+                            y: 434.2131,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 292.5405,
+                            y: 502.6673,
+                        ),
+                        max: (
+                            x: 548.5405,
+                            y: 566.6673,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: Some("bash-guard"),
+                c1: (
+                    x: 116.644516,
+                    y: -38.391174,
+                ),
+                c2: (
+                    x: -69.11003,
+                    y: 35.326736,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 258.8085,
+                            y: 420.44626,
+                        ),
+                        max: (
+                            x: 514.80853,
+                            y: 484.44626,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 227.86829,
+                            y: 412.6286,
+                        ),
+                        max: (
+                            x: 483.86832,
+                            y: 476.6286,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 227.86829,
+                            y: 412.6286,
+                        ),
+                        max: (
+                            x: 409.53186,
+                            y: 438.6286,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 227.86829,
+                            y: 412.6286,
+                        ),
+                        max: (
+                            x: 434.85837,
+                            y: 469.2457,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: Some("bash-guard"),
+                c1: (
+                    x: 123.02141,
+                    y: 290.60367,
+                ),
+                c2: (
+                    x: -69.11003,
+                    y: 35.326736,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "bash",
+                guard: Some("bash-guard"),
+                c1: (
+                    x: 117.42656,
+                    y: -26.924713,
+                ),
+                c2: (
+                    x: -69.11003,
+                    y: 35.326736,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            InsertEdge(5),
+            UpdateEdge(5, Transition((
+                id: "closed > locked",
+                guard: None,
+                c1: (
+                    x: -259.52582,
+                    y: 21.646088,
+                ),
+                c2: (
+                    x: 259.52582,
+                    y: -21.646088,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "closed > locked",
+                guard: None,
+                c1: (
+                    x: -264.99585,
+                    y: 353.71436,
+                ),
+                c2: (
+                    x: 254.05579,
+                    y: 310.42218,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: None,
+                c1: (
+                    x: -264.99585,
+                    y: 353.71436,
+                ),
+                c2: (
+                    x: 254.05579,
+                    y: 310.42218,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                c1: (
+                    x: -264.99585,
+                    y: 353.71436,
+                ),
+                c2: (
+                    x: 254.05579,
+                    y: 310.42218,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                c1: (
+                    x: -264.99585,
+                    y: 353.71436,
+                ),
+                c2: (
+                    x: 126.9857,
+                    y: 314.9242,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                c1: (
+                    x: -74.59305,
+                    y: 247.22748,
+                ),
+                c2: (
+                    x: 126.9857,
+                    y: 314.9242,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+        ],
+        redos: [],
+    ),
+)

@@ -72,9 +72,9 @@ pub type Symbol = Option<String>;
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct State {
-    id: String,
-    enter: Option<String>,
-    exit: Option<String>,
+    pub id: String,
+    pub enter: Option<String>,
+    pub exit: Option<String>,
     /// Rect relative to parent.
     rect: Rect,
     initial: Option<InitialData>,
@@ -116,8 +116,8 @@ impl From<&str> for State {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Transition {
     #[serde(default)]
-    id: String,
-    guard: Option<String>,
+    pub id: String,
+    pub guard: Option<String>,
     c1: Vec2, // tuples?
     c2: Vec2,
     // Source port index.

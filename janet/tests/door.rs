@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fs::read_to_string};
 
+use edit::Source as _;
+use edit_egui as edit;
 use janet::*;
 use janetrs::{client::JanetClient, *};
 use transit_graph::{Graph, Idx, Initial, Statechart};
@@ -103,13 +105,16 @@ fn make_door(client: &JanetClient) -> (Graph<State, Transition>, HashMap<Idx, St
 
 #[test]
 fn door() {
+    // Load the edit graph.
+    let edit = edit::Edit::<Source>::load("tests/door.ron").unwrap();
+
+    // Initialize and Load the janet source.
     let client = JanetClient::init_with_default_env().unwrap();
+    let source = edit.source.as_ref().unwrap();
+    client.run(read_to_string(&source.path).unwrap()).unwrap();
 
-    client
-        .run(read_to_string("tests/door.janet").unwrap())
-        .unwrap();
-
-    let (graph, states) = make_door(&client);
+    // Map the edit graph to Graph<JanetContext>.
+    let graph = source.resolve(&edit, &client);
 
     let door = table! {
         ":hit-points" => table! {
@@ -127,26 +132,29 @@ fn door() {
         },
     );
 
-    assert_eq!(states.get(&door.active).unwrap(), "locked");
+    // Read the id from the edit graph.
+    let id = |i: Idx| &edit.graph.state(i).unwrap().id;
+
+    assert_eq!(id(door.active), "locked");
     assert_eq!(door.transition(Event::id("open")), false); // fails since it's locked
     assert_eq!(
         door.transition(Event::id("unlock").with(Janet::from("the right key"))),
         true
     ); // unlock the door
-    assert_eq!(states.get(&door.active).unwrap(), "closed"); // it's now closed (unlocked)
+    assert_eq!(id(door.active), "closed"); // it's now closed (unlocked)
     assert_eq!(door.transition(Event::id("open")), true); // open the door
-    assert_eq!(states.get(&door.active).unwrap(), "open"); // it's now opened
+    assert_eq!(id(door.active), "open"); // it's now opened
 
     assert_eq!(
         door.transition(Event::id("bash").with(Janet::from(50.0))),
         false
     ); // bash
-    assert_eq!(states.get(&door.active).unwrap(), "open"); // still intact (and open)
+    assert_eq!(id(door.active), "open"); // still intact (and open)
     assert_eq!(
         door.transition(Event::id("bash").with(Janet::from(50.0))),
         true
     ); // bash again
-    assert_eq!(states.get(&door.active).unwrap(), "destroyed"); // destroyed
+    assert_eq!(id(door.active), "destroyed"); // destroyed
 }
 
 #[test]
@@ -156,10 +164,6 @@ fn export() {
     let _ = client
         .run(read_to_string("tests/door.janet").unwrap())
         .unwrap();
-    //.try_unwrap::<JanetFiber>()
-    //.unwrap();
-
-    //let _root = JanetFiber::root().expect("root fiber");
 
     let (g, _) = make_door(&client);
     g.export_to_file("tests/door.ron").unwrap();

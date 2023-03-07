@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::{error, info};
+use transit_graph::Graph;
 
 pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
 
@@ -33,9 +34,8 @@ pub struct Source {
 
 impl edit::Source for Source {
     type Context = JanetContext;
-
+    type RunContext = JanetClient;
     type Symbols<'a> = std::collections::hash_map::Iter<'a, String, (PathBuf, usize, usize)>;
-
     type Error = Error;
 
     fn from_path(path: &Path) -> Result<Self, Self::Error>
@@ -90,6 +90,28 @@ impl edit::Source for Source {
     fn extensions(&self) -> &[&str] {
         &["janet"]
     }
+
+    fn resolve(&self, edit: &edit::Edit<Self>, client: &JanetClient) -> Graph<State, Transition> {
+        let f = |symbol: &Option<String>| {
+            symbol
+                .as_deref()
+                .map(|symbol| resolve(symbol, client))
+                .unwrap_or_else(|| Janet::nil())
+        };
+
+        edit.graph.map(
+            |_i, state| State {
+                enter: f(&state.enter),
+                exit: f(&state.exit),
+                ..Default::default()
+            },
+            |_i, transition| Transition {
+                id: transition.id.clone(),
+                guard: f(&transition.guard),
+                local: Janet::nil(),
+            },
+        )
+    }
 }
 
 pub struct JanetContext {
@@ -97,6 +119,7 @@ pub struct JanetContext {
     pub context: Janet,
 }
 
+// TODO: store symbol names?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct State {
@@ -141,6 +164,7 @@ impl Event {
     }
 }
 
+// TODO: store symbol names?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct Transition {

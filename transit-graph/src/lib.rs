@@ -154,6 +154,17 @@ impl<T> Edge<T> {
     pub fn is_internal(&self) -> bool {
         matches!(self, Edge::Internal(_))
     }
+
+    pub fn map<'a, F, V>(&'a self, i: Tdx, mut f: F) -> Edge<V>
+    where
+        F: FnMut(Tdx, &'a T) -> V,
+    {
+        match self {
+            Edge::Transition(t) => Edge::Transition(f(i, t)),
+            Edge::Internal(t) => Edge::Internal(f(i, t)),
+            Edge::Initial(initial) => Edge::Initial(*initial),
+        }
+    }
 }
 
 /// A reference to a transition, index, and edge information.
@@ -181,7 +192,6 @@ impl<T> From<T> for Edge<T> {
 
 pub trait Transition<C: Context> {
     fn guard(&mut self, ctx: &mut C, event: &C::Event) -> bool;
-    //fn action(&mut self); ???
 }
 
 impl<S, T> Graph<S, T> {
@@ -192,6 +202,25 @@ impl<S, T> Graph<S, T> {
         let mut graph = StableDiGraph::default();
         let root = graph.add_node(Node::default());
         Self { graph, root }
+    }
+
+    /// This clones the graph structure, while mapping states and transitions to new
+    /// types. Internally uses [StableDiGraph::map].
+    pub fn map<'a, F, G, U, V>(&'a self, mut f: F, mut g: G) -> Graph<U, V>
+    where
+        F: FnMut(Idx, &'a S) -> U,
+        G: FnMut(Tdx, &'a T) -> V,
+    {
+        Graph {
+            graph: self.graph.map(
+                |i, node| Node {
+                    state: f(i, &node.state),
+                    parent: node.parent,
+                },
+                |i, edge| edge.map(i, &mut g),
+            ),
+            root: self.root,
+        }
     }
 
     pub fn root(&self) -> &S {

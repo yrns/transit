@@ -1,3 +1,5 @@
+# a door
+
 (defn intact-enter [self door event]
   (print "You are in front of a large wooden door."))
 
@@ -22,16 +24,8 @@
       (print "The door appears to be damaged."))
     destroyed))
 
-# (defn bash-internal [self door event])
-
 (defn lock-guard [self door event]
   (= (get door :key) event))
 
 (defn unlock-guard [self door event]
   (= (get door :key) event))
-
-# pass by default
-# (defn open-guard [])
-# (defn close-guard [])
-    
-
