@@ -127,9 +127,6 @@ fn door() {
         },
     );
 
-    // TODO: remove
-    door.run();
-
     assert_eq!(states.get(&door.active).unwrap(), "locked");
     assert_eq!(door.transition(Event::id("open")), false); // fails since it's locked
     assert_eq!(

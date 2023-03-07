@@ -6,21 +6,8 @@ use rustyline::error::ReadlineError;
 use transit_graph::Statechart;
 
 fn main() {
-    let door = Door {
-        hit_points: HitPoints {
-            current: 100.,
-            max: 100.,
-        },
-        key: "the right key".to_string(),
-        attempts: 0,
-    };
-
     let graph = make_graph();
-
-    let mut door = Statechart::new(&graph, door);
-
-    // this does nothing
-    door.run();
+    let mut door = Statechart::new(&graph, Door::default());
 
     // TODO: start over make reset work and fix history reset
     println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
@@ -39,6 +26,10 @@ fn main() {
                         'l' => Some(DoorEvent::Lock(Some("the right key".to_string()))),
                         'u' => Some(DoorEvent::Unlock(Some("the right key".to_string()))),
                         'b' => Some(DoorEvent::Bash(Attack { damage: 40. })),
+                        's' => {
+                            door.reset(Door::default());
+                            continue;
+                        }
                         'q' => break,
                         _ => {
                             println!("Try again.");

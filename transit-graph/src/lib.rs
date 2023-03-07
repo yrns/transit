@@ -59,6 +59,13 @@ impl<S, T> Default for Locals<S, T> {
     }
 }
 
+impl<S, T> Locals<S, T> {
+    pub fn clear(&mut self) {
+        self.0.clear();
+        self.1.clear();
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone)]
 pub struct Graph<S, T> {
@@ -464,30 +471,29 @@ where
 
 impl<'a, C: Context> Statechart<'a, C> {
     pub fn new(graph: &'a ContextGraph<C>, context: C) -> Self {
-        // TODO: verify graph? bindings? when do we apply initial?
+        assert!(graph.initial(graph.root).is_some(), "initial for root");
+
         let active = graph.root;
-        Self {
+        let mut s = Self {
             graph,
             context,
             active,
             locals: Default::default(),
             history: Default::default(),
-        }
+        };
+
+        // Transition to the initial state.
+        s.transition_to(s.initial(active), None);
+        s
     }
 
-    // TODO: how do we reset history state?
     // TODO: does history make sense for the root initial?
-    pub fn reset(&mut self) {
-        assert!(
-            self.graph.initial(self.graph.root).is_some(),
-            "initial for root"
-        );
-        self.transition_to(self.initial(self.graph.root), None)
-    }
-
-    // set initial states and return a channel?
-    pub fn run(&mut self) {
-        self.reset()
+    pub fn reset(&mut self, context: C) {
+        self.context = context;
+        self.locals.clear();
+        self.history.clear();
+        self.active = self.graph.root;
+        self.transition_to(self.initial(self.active), None)
     }
 
     /// Find a transition out of the active node based on the event. Start with the active state and

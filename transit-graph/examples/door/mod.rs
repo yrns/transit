@@ -25,6 +25,16 @@ pub struct Door {
     pub attempts: u32,
 }
 
+impl Default for Door {
+    fn default() -> Self {
+        Door {
+            hit_points: Default::default(),
+            key: "the right key".to_string(),
+            attempts: 0,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Attack {
     pub damage: f32,
@@ -44,15 +54,15 @@ impl Context for Door {
     type State = DoorState;
     type Transition = DoorGuard;
 
-    fn dispatch(&mut self, event: &Self::Event) {
-        println!("dispatching {:?} old context: {:?}", event, self);
+    fn dispatch(&mut self, _event: &Self::Event) {
+        //println!("dispatching {:?} old context: {:?}", event, self);
     }
 
-    fn transition(&mut self, source: &Self::State, target: &Self::State) {
-        println!(
-            "transitioned: {} -> {} new context: {:?}",
-            source, target, self
-        );
+    fn transition(&mut self, _source: &Self::State, _target: &Self::State) {
+        // println!(
+        //     "transitioned: {} -> {} new context: {:?}",
+        //     source, target, self
+        // );
     }
 }
 
