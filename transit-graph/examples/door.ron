@@ -2,32 +2,26 @@
     graph: (
         nodes: [
             (
-                initial: Initial(2),
                 parent: None,
                 state: None,
             ),
             (
-                initial: None,
                 parent: Some(0),
                 state: Intact,
             ),
             (
-                initial: None,
                 parent: Some(1),
                 state: Locked,
             ),
             (
-                initial: None,
                 parent: Some(1),
                 state: Closed,
             ),
             (
-                initial: None,
                 parent: Some(1),
                 state: Open,
             ),
             (
-                initial: None,
                 parent: Some(0),
                 state: Destroyed,
             ),
@@ -35,6 +29,7 @@
         node_holes: [],
         edge_property: directed,
         edges: [
+            Some((0, 2, Initial(Initial))),
             Some((1, 5, Transition(Bash(())))),
             Some((1, 1, Internal(BashSelf(())))),
             Some((2, 3, Transition(Unlock((
