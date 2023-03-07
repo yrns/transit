@@ -398,7 +398,7 @@ impl<S, T> Graph<S, T> {
 
         // Check all internal transitions are self-transitions.
         for edge in self.graph.edge_references() {
-            if edge.source() == edge.target() && is_internal(edge.weight()) {
+            if edge.weight().is_internal() && edge.source() != edge.target() {
                 return Err(format!(
                     "internal transition is not a self-transition {:?}",
                     edge.id()
