@@ -29,15 +29,20 @@ where
     type Transition: Transition<Self> + Clone;
     //type Index;
 
+    /// Called for every event received.
     fn dispatch(&mut self, _event: &Self::Event) {}
+
+    /// Called when the active state changes.
     fn transition(&mut self, _source: &Self::State, _target: &Self::State) {}
 }
 
 pub type ContextGraph<C> = Graph<<C as Context>::State, <C as Context>::Transition>;
 
-// TODO: Serialize? Context needs to be separate from the graph so
-// multiple contexts can share one graph. Same for state and
-// transition contexts which are mutable currently.
+/// A running statechart. Contains a shared reference to the graph structure (so many running
+/// statecharts can share a single graph); and local state, transition, and history data.
+// TODO: Serialization with a shared graph? We'd need some kind of thread-local/static registry,
+// which is maybe best done elsewhere.
+//#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Statechart<'a, C: Context> {
     pub context: C,
     pub graph: &'a ContextGraph<C>,
@@ -48,6 +53,7 @@ pub struct Statechart<'a, C: Context> {
 
 pub type History = nohash_hasher::IntMap<usize, Idx>;
 
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Locals<S, T>(
     nohash_hasher::IntMap<usize, S>,
     nohash_hasher::IntMap<usize, T>,
