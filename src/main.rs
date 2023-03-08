@@ -15,8 +15,9 @@ struct App(edit::App<janet::Source>);
 fn main() {
     // Trace only transit crates.
     Subscriber::builder()
-        // .with_file(true)
-        // .with_line_number(true)
+        // TODO: make these work in emacs' compilation buffer
+        .with_file(true)
+        .with_line_number(true)
         .finish()
         .with(Targets::new().with_targets(vec![
             ("transit", LevelFilter::INFO),

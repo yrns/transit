@@ -42,12 +42,13 @@ impl edit::Source for Source {
     where
         Self: Sized,
     {
-        let watcher = Some(edit::Watcher::new(path)?);
+        let watcher = edit::Watcher::new(path)?.into();
+        let symbols = get_symbols(path)?.unwrap_or_default();
 
         Ok(Self {
             path: path.to_path_buf(),
             watcher,
-            symbols: Default::default(),
+            symbols,
         })
     }
 

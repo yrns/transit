@@ -48,8 +48,8 @@
                                 y: 73.854675,
                             ),
                             max: (
-                                x: 676.3917,
-                                y: 339.67505,
+                                x: 684.6439,
+                                y: 335.52423,
                             ),
                         ),
                         initial: None,
@@ -226,12 +226,12 @@
                     id: "lock",
                     guard: Some("lock-guard"),
                     c1: (
-                        x: -68.02899,
-                        y: 183.21426,
+                        x: 145.99161,
+                        y: -126.83921,
                     ),
                     c2: (
-                        x: 133.54976,
-                        y: 250.91098,
+                        x: -117.95903,
+                        y: -47.94664,
                     ),
                     port1: 1,
                     port2: 1,
@@ -2418,6 +2418,98 @@
                 port1: 1,
                 port2: 1,
             ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 72.35544,
+                            y: 73.854675,
+                        ),
+                        max: (
+                            x: 676.3917,
+                            y: 339.67505,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                c1: (
+                    x: -68.02899,
+                    y: 183.21426,
+                ),
+                c2: (
+                    x: 133.54976,
+                    y: 250.91098,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                c1: (
+                    x: -36.742462,
+                    y: -119.006836,
+                ),
+                c2: (
+                    x: 164.83629,
+                    y: -51.31012,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                c1: (
+                    x: -36.742462,
+                    y: -119.006836,
+                ),
+                c2: (
+                    x: -117.95903,
+                    y: -47.94664,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "intact",
+                    enter: Some("intact-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 72.35544,
+                            y: 73.854675,
+                        ),
+                        max: (
+                            x: 692.20715,
+                            y: 390.2846,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
         ],
         redos: [],
     ),

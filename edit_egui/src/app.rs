@@ -41,7 +41,7 @@ where
                     info!("loaded from recent: {}", path.display());
                     self.edit = edit;
                 }
-                Err(e) => error!("error: {:?}", e),
+                Err(e) => error!("error loading recent file: {path:?}: {e:?}"),
             }
         }
     }
