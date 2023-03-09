@@ -39,21 +39,21 @@ where
         self.results = None;
     }
 
-    pub fn show<U, I>(&mut self, set_focus: bool, iter: I, ui: &mut Ui) -> Submit<T>
+    pub fn show<U, I>(&mut self, set_focus: bool, iter: I, parent_id: Id, ui: &mut Ui) -> Submit<T>
     where
         U: Matches<T>,
         I: Iterator<Item = U>,
     {
         if set_focus {
-            self.parent_id = Some(ui.id());
-        } else if self.parent_id != Some(ui.id()) {
+            self.parent_id = Some(parent_id);
+        } else if self.parent_id != Some(parent_id) {
             return Submit::None;
         }
 
         let mut submit = Submit::None;
 
         // Split search box and results?
-        let area = Area::new(ui.id().with("search")).order(Order::Foreground);
+        let area = Area::new(parent_id.with("search")).order(Order::Foreground);
 
         let area = if let Some(p) = self.position {
             area.current_pos(p)

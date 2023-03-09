@@ -65,7 +65,7 @@
                     parent: Some(0),
                     state: (
                         id: "destroyed",
-                        enter: None,
+                        enter: Some("destroyed-enter"),
                         exit: None,
                         rect: (
                             min: (
@@ -2499,6 +2499,31 @@
                         max: (
                             x: 692.20715,
                             y: 390.2846,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "destroyed",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 762.05334,
+                            y: 137.94246,
+                        ),
+                        max: (
+                            x: 969.04346,
+                            y: 194.55956,
                         ),
                     ),
                     initial: None,

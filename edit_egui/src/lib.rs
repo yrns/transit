@@ -618,6 +618,7 @@ where
             focus.is_none() && ui.input(|i| i.key_pressed(Key::S)),
             // Can't select the root state.
             self.graph.states().filter(|(i, _s)| *i != self.graph.root),
+            ui.id(),
             ui,
         ) {
             edit_data
@@ -1344,7 +1345,7 @@ where
         edit_data: &mut EditData,
         ui: &mut Ui,
     ) {
-        let symbol = symbol
+        let gensym = symbol
             .as_ref()
             .map(Cow::from)
             .unwrap_or_else(|| self.generate_symbol(id).into());
@@ -1352,38 +1353,53 @@ where
         let location = self
             .source
             .as_ref()
-            .and_then(|source| source.symbol(&symbol));
+            .and_then(|source| source.symbol(&gensym));
 
         // Hovering displays symbol name and source location.
         let hover_text = match location {
             Some((path, line, col)) => format!(
-                "{} ({} {}:{})",
-                symbol,
+                "{}{} ({} {}:{})",
+                gensym,
+                // If the symbol is not set but the location for the generated symbol exists show "?".
+                if symbol.is_some() { "" } else { "?" },
                 path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
                 line,
                 col
             ),
-            None => format!("{}?", symbol),
+            None => format!("{}?", gensym),
+        };
+
+        let button = Button::new(match id {
+            SymbolId::Enter(_) => "enter",
+            SymbolId::Exit(_) => "exit",
+            SymbolId::Guard(_) => "guard",
+        })
+        .small();
+
+        // If the symbol is set and the location exists, highlight the button.
+        let button = if symbol.is_some() && location.is_some() {
+            let color = ecolor::tint_color_towards(
+                ui.style().visuals.widgets.inactive.fg_stroke.color,
+                Color32::YELLOW,
+            );
+            button.stroke((1.0, color))
+        } else if symbol.is_some() {
+            // Show a warning if the symbol is set but doesn't exist yet.
+            button.stroke((1.0, ui.style().visuals.warn_fg_color)) //Color32::TEMPORARY_COLOR
+        } else {
+            button
         };
 
         // Disabled when no source.
         let response = ui
-            .add_enabled(
-                self.source.is_some(),
-                Button::new(match id {
-                    SymbolId::Enter(_) => "enter",
-                    SymbolId::Exit(_) => "exit",
-                    SymbolId::Guard(_) => "guard",
-                })
-                .small(),
-            )
+            .add_enabled(self.source.is_some(), button)
             .on_hover_text(hover_text)
             .on_disabled_hover_text("source file is unset");
 
         if response.clicked_by(PointerButton::Primary) {
             // enabled -> clicked -> source exists
             let source = self.source.as_ref().expect("source");
-            let symbol = source.normalize_symbol(&symbol);
+            let symbol = source.normalize_symbol(&gensym);
 
             match location {
                 // We could use references here if source existed outside self. If `commands`
@@ -1412,7 +1428,7 @@ where
             symbols.position = Some(response.rect.right_top() + vec2(4.0, 0.0));
 
             // Set query to the current symbol (if any).
-            symbols.query = symbol.to_string();
+            symbols.query = gensym.to_string();
             symbols.results = None;
             true
         } else {
@@ -1426,7 +1442,7 @@ where
             // We just want the keys.
             .map(|source| source.symbols().map(|(s, _)| s))
         {
-            match edit_data.symbols.show(set_focus, symbols, ui) {
+            match edit_data.symbols.show(set_focus, symbols, response.id, ui) {
                 Submit::Query(s) | Submit::Result(s) => {
                     // Clear action/guard if the submit is empty.
                     edit_data

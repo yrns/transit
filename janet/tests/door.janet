@@ -13,7 +13,8 @@
   (print "The door shatters into many pieces."))
 
 (defn locked-enter [self door event]
-  (print "The door is now locked."))
+  (when event 
+    (print "The door is now locked.")))
 
 (defn bash-guard [self door damage]
   (let [hp (get door :hit-points)
@@ -29,3 +30,7 @@
 
 (defn unlock-guard [self door event]
   (= (get door :key) event))
+
+(defn destroyed-exit [self ctx ev]
+  # never
+  )
