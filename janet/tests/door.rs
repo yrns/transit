@@ -166,5 +166,5 @@ fn export() {
         .unwrap();
 
     let (g, _) = make_door(&client);
-    g.export_to_file("tests/door.ron").unwrap();
+    g.export_to_file("tests/export.ron").unwrap();
 }
