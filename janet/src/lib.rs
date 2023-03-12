@@ -13,7 +13,29 @@ use std::{
 use tracing::{error, info};
 use transit_graph::Graph;
 
+/// Maps symbol to source location.
 pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
+
+// TODO: Serialization of the Janet graph with serde is tricky without some kind of state-tracking
+// or processing the graph first. Neither the pretty or marshal modules work in a satisfactory
+// manner. We want to be able to serialize a running statechart, and later deserialize it and
+// continue running...
+
+// TODO: Efficiently handle redefinition of Janet functions (via reloading the source or
+// netrepl). Right now we are only storing the function value (as a `Janet`); we would need to save
+// the symbol name.
+
+// TODO: Functions are stored in states and transitions which are cloned as locals to the
+// statechart. The functions should strictly only be stored with the graph, and only the local
+// values cloned (if changed). Right now we are cloning the locals every time a state or transition
+// is traversed.
+
+// #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+// #[cfg_attr(feature = "serde", serde(transparent))]
+// pub struct Symbol<'data>(
+//     String,
+//     #[cfg_attr(feature = "serde", serde(skip))] Option<JanetFunction<'data>>,
+// );
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -120,15 +142,11 @@ pub struct JanetContext {
     pub context: Janet,
 }
 
-// TODO: store symbol names?
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+//#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct State {
-    #[serde(with = "pretty")]
     pub enter: Janet,
-    #[serde(with = "pretty")]
     pub exit: Janet,
-    #[serde(with = "pretty")]
     pub local: Janet,
 }
 
@@ -165,14 +183,11 @@ impl Event {
     }
 }
 
-// TODO: store symbol names?
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+//#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub id: String,
-    #[serde(with = "pretty")]
     pub guard: Janet,
-    #[serde(with = "pretty")]
     pub local: Janet,
 }
 
