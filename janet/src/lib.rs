@@ -119,7 +119,7 @@ impl edit::Source for Source {
             symbol
                 .as_deref()
                 .map(|symbol| resolve(symbol, client))
-                .unwrap_or_else(|| Janet::nil())
+                .unwrap_or_else(Janet::nil)
         };
 
         edit.graph.map(

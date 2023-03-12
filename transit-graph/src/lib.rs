@@ -537,7 +537,7 @@ impl<'a, C: Context> Statechart<'a, C> {
         let mut path = self.graph.path_walk(self.active);
 
         // Each potential guard can mutate the transition state and context.
-        while let Some(i) = path.next(&self.graph) {
+        while let Some(i) = path.next(self.graph) {
             // TODO since we are only mutating the context/locals we don't need the walker anymore?
             let mut edges = self.graph.graph.neighbors(i).detach();
             while let Some((edge, next)) = edges.next(&self.graph.graph) {
@@ -564,7 +564,8 @@ impl<'a, C: Context> Statechart<'a, C> {
 
     pub fn transition(&mut self, event: C::Event) -> bool {
         self.context.dispatch(&event);
-        let res = if let Some((next, internal)) = self.select(&event) {
+
+        if let Some((next, internal)) = self.select(&event) {
             // With an internal transition the guard is called but we don't actually change
             // states. Should we verify the active state is not a compound state?
             let active = self.active;
@@ -578,8 +579,7 @@ impl<'a, C: Context> Statechart<'a, C> {
             true
         } else {
             false
-        };
-        res
+        }
     }
 
     /// Recursively find an initial state using local history.
