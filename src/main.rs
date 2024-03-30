@@ -1,6 +1,5 @@
 use edit_egui as edit;
 use eframe::egui;
-use tracing::info;
 use tracing_subscriber::{
     filter::{LevelFilter, Targets},
     fmt::Subscriber,
@@ -36,7 +35,9 @@ fn main() {
             // Set dark theme w/ smaller shadows.
             let mut visuals = egui::Visuals::dark();
             visuals.popup_shadow = egui::epaint::Shadow {
-                extrusion: 4.0,
+                offset: egui::Vec2::new(4.0, 4.0),
+                blur: 8.0,
+                spread: 0.0,
                 color: egui::Color32::from_black_alpha(64),
             };
             cc.egui_ctx.set_visuals(visuals);
@@ -55,20 +56,12 @@ fn main() {
 }
 
 impl eframe::App for App {
-    // Prompt for save?
-    fn on_close_event(&mut self) -> bool {
-        info!("closing");
-        true // can close
-    }
-
     /// Save recent path.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, &self.0);
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        if self.0.update(ctx) {
-            frame.close();
-        }
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.0.update(ctx);
     }
 }

@@ -1,18 +1,19 @@
+///! this is a door
 mod door;
 
 use door::*;
-///! this is a door
 use rustyline::error::ReadlineError;
+use rustyline::{DefaultEditor, Result};
 use transit_graph::Statechart;
 
-fn main() {
+fn main() -> Result<()> {
     let graph = make_graph();
     let mut door = Statechart::new(&graph, Door::default());
 
     // TODO: start over make reset work and fix history reset
     println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
 
-    let mut rl = rustyline::Editor::<()>::new();
+    let mut rl = DefaultEditor::new()?;
 
     loop {
         //println!("the door is: {}", door.active());
@@ -58,4 +59,6 @@ fn main() {
             Err(e) => println!("Error: {:?}", e),
         }
     }
+
+    Ok(())
 }

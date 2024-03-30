@@ -18,7 +18,7 @@ pub type Locator = (PathBuf, usize, usize);
 
 pub type WatchError = notify::Error;
 
-pub type Rx = Receiver<Result<Vec<DebouncedEvent>, Vec<WatchError>>>;
+pub type Rx = Receiver<Result<Vec<DebouncedEvent>, WatchError>>;
 
 /// Watches source file for changes.
 pub struct Watcher(Debouncer<INotifyWatcher>, Rx);
@@ -26,7 +26,7 @@ pub struct Watcher(Debouncer<INotifyWatcher>, Rx);
 impl Watcher {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, notify::Error> {
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut debouncer = new_debouncer(Duration::from_secs(2), None, tx)?;
+        let mut debouncer = new_debouncer(Duration::from_secs(2), tx)?;
 
         debouncer
             .watcher()
@@ -47,10 +47,8 @@ impl Watcher {
                     }
                     changed = true;
                 }
-                Err(errors) => {
-                    for err in errors {
-                        error!("watch error: {:?}", err)
-                    }
+                Err(err) => {
+                    error!("watch error: {:?}", err)
                 }
             }
         }

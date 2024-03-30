@@ -93,7 +93,7 @@ where
         }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context) -> bool {
+    pub fn update(&mut self, ctx: &egui::Context) {
         // Need unique ids for each open statechart.
         let mut clear_state = false;
 
@@ -102,12 +102,15 @@ where
             source.update().unwrap_or_else(|e| error!("{e:?}"));
         }
 
-        let mut quit = false;
-
         if ctx.input_mut(|i| i.consume_shortcut(&UNDO)) {
             self.edit.undo();
         } else if ctx.input_mut(|i| i.consume_shortcut(&REDO)) {
             self.edit.redo();
+        }
+
+        // TODO: https://github.com/emilk/egui/blob/master/examples/confirm_exit/src/main.rs
+        if ctx.input(|i| i.viewport().close_requested()) {
+            info!("close requested");
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -152,7 +155,7 @@ where
                     }
                     if ui.button("Quit").clicked() {
                         // TODO: prompt to save?
-                        quit = true;
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
             });
@@ -183,7 +186,5 @@ where
 
             self.edit.process_commands(commands);
         });
-
-        quit
     }
 }

@@ -7,12 +7,21 @@ edition = "2021"
 [features]
 default = []
 
+# https://github.com/mainmatter/cargo-autoinherit ?
 [workspace]
 members = ["transit-graph", "edit_egui", "janet", "eframe-dynamic"]
 
 [dependencies]
 edit_egui = { path = "./edit_egui" }
 janet = { path = "./janet" }
+# TODO only in dev
 eframe = { path = "./eframe-dynamic", package = "eframe-dynamic" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = "0.3"
+
+# https://doc.rust-lang.org/cargo/reference/profiles.html
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

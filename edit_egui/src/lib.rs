@@ -277,7 +277,7 @@ macro_rules! drag_delta {
             Drag::$drag_ty(_id, delta, ..) if *_id == $drag_id => {
                 if $response.dragged() {
                     $update(delta)
-                } else if $response.drag_released() {
+                } else if $response.drag_stopped() {
                     //if $drag.min_drag($ui)
                     if delta.abs().max_elem() >= 1.0 {
                         $end(delta)
@@ -595,11 +595,11 @@ where
         ui.allocate_rect(rect, Sense::hover());
 
         // Toggle debug.
-        let focus = ui.memory(|m| m.focus());
+        let focus = ui.memory(|m| m.focused());
         if focus.is_none() && ui.input(|i| i.key_pressed(Key::D)) {
             let d = !ui.ctx().debug_on_hover();
             ui.ctx().set_debug_on_hover(d);
-            ui.style_mut().debug.show_blocking_widget = true;
+            ui.style_mut().debug.show_widget_hits = true;
             ui.style_mut().debug.show_interactive_widgets = true;
             info!("debug_on_hover: {}", d);
         }
@@ -1107,7 +1107,7 @@ where
         }
 
         // Context menu on right click.
-        let state_response = if !edit_data.drag.in_drag() {
+        if !edit_data.drag.in_drag() {
             // debug ports:
             // let state_response = state_response.on_hover_text_at_pointer(format!(
             //     "incoming ports: {:?} outgoing ports: {:?}",
@@ -1115,7 +1115,7 @@ where
             //     self.ports(idx, Direction::Outgoing)
             // ));
 
-            state_response.context_menu(|ui| {
+            _ = state_response.context_menu(|ui| {
                 if ui.button("Add state").clicked() {
                     // Position is the original click, relative to parent.
                     let p = ui.min_rect().min - rect.min.to_vec2();
@@ -1134,9 +1134,7 @@ where
                     }
                 }
             })
-        } else {
-            state_response
-        };
+        }
 
         // TODO: Make a background for the root so we can show drag_valid.
         if !root {
@@ -1171,12 +1169,12 @@ where
 
             ui.painter().set(
                 bg,
-                RectShape {
+                RectShape::new(
                     rect,
-                    rounding: widget_visuals.rounding,
-                    fill: widget_visuals.bg_fill,
+                    widget_visuals.rounding,
+                    widget_visuals.bg_fill,
                     stroke, //: Stroke::NONE,
-                },
+                ),
             );
         }
     }
@@ -1492,7 +1490,7 @@ where
         }
 
         let Some(p) = ui.ctx().pointer_interact_pos() else {
-            return
+            return;
         };
 
         let parent_offset = rect.min.to_vec2();
@@ -1816,21 +1814,19 @@ where
                             }
 
                             // Context menu on right click.
-                            let response = if !edit_data.drag.in_drag() {
+                            if !edit_data.drag.in_drag() {
                                 // debug ports:
                                 // let response = response.on_hover_text_at_pointer(format!(
                                 //     "port1: {} port2: {}",
                                 //     t.port1, t.port2
                                 // ));
-                                response.context_menu(|ui| {
+                                _ = response.context_menu(|ui| {
                                     if ui.button("Remove transition").clicked() {
                                         edit_data.commands.push(Command::RemoveTransition(tdx));
                                         ui.close_menu();
                                     }
                                 })
-                            } else {
-                                response
-                            };
+                            }
 
                             if response.double_clicked() {
                                 dbg!("double");
