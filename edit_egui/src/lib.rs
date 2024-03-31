@@ -1080,7 +1080,7 @@ where
         }
 
         // Can't select root.
-        if state_response.clicked_by(PointerButton::Primary) {
+        if state_response.clicked() {
             edit_data.commands.push(Command::UpdateSelection(if root {
                 Selection::None
             } else {
@@ -1201,7 +1201,7 @@ where
                 let start = rect.center();
 
                 // Left click cycles initial type. Right click clears. Drag sets new initial.
-                if response.clicked_by(PointerButton::Primary) {
+                if response.clicked() {
                     edit_data.commands.push(Command::StepInitial(idx))
                 } else if response.clicked_by(PointerButton::Secondary) {
                     edit_data.commands.push(Command::UnsetInitial(idx))
@@ -1282,7 +1282,7 @@ where
             let InnerResponse { inner, response } = Editabel::new().show(&state.id, ui);
 
             // Clicking the label selects the state.
-            if response.clicked_by(PointerButton::Primary) {
+            if response.clicked() {
                 edit_data.commands.push(Command::UpdateSelection(if root {
                     Selection::None
                 } else {
@@ -1394,7 +1394,7 @@ where
             .on_hover_text(hover_text)
             .on_disabled_hover_text("source file is unset");
 
-        if response.clicked_by(PointerButton::Primary) {
+        if response.clicked() {
             // enabled -> clicked -> source exists
             let source = self.source.as_ref().expect("source");
             let symbol = source.normalize_symbol(&gensym);
