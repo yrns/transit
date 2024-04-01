@@ -35,7 +35,9 @@ impl Editabel {
         let state: EditabelState = ui.data_mut(|d| d.get_temp(ui.id()).unwrap_or_default());
         match state {
             EditabelState::Closed(width) => {
-                let response = ui.add(Label::new(text).sense(self.sense));
+                // If you want to select the text, double-click to edit and then select. Dragging
+                // the label should drag the state/transition, not select text.
+                let response = ui.add(Label::new(text).selectable(false).sense(self.sense));
 
                 let t = ui.ctx().animate_bool(ui.id(), false);
                 ui.add_space(t * width);
