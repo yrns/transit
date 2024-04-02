@@ -1911,15 +1911,15 @@ where
                 let right = response.response.rect.right_center() + rect_offset;
 
                 // Flipping don't work.
-                //if start.x < end.x {
-                ui.painter().add(cubic([start, c1, left - CP_OFFSET, left]));
-                ui.painter().add(cubic([right, right + CP_OFFSET, c2, end]));
-                // } else {
-                //     // If the transition is moving right to left swap left and right.
-                //     ui.painter()
-                //         .add(cubic([start, c1, right - CP_OFFSET, right]));
-                //     ui.painter().add(cubic([left, left + CP_OFFSET, c2, end]));
-                // }
+                if start.x < end.x {
+                    ui.painter().add(cubic([start, c1, left - CP_OFFSET, left]));
+                    ui.painter().add(cubic([right, right + CP_OFFSET, c2, end]));
+                } else {
+                    // If the transition is moving right to left swap left and right.
+                    ui.painter()
+                        .add(cubic([start, c1, right + CP_OFFSET, right]));
+                    ui.painter().add(cubic([left, left - CP_OFFSET, c2, end]));
+                }
             }
             Connection::Initial(i, (c1, c2)) => {
                 // Include drag.
