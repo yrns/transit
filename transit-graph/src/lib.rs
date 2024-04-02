@@ -75,6 +75,7 @@ impl<S, T> Locals<S, T> {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone)]
 pub struct Graph<S, T> {
+    // TODO: pub(crate)
     pub graph: StableDiGraph<Node<S>, Edge<T>, u32>,
     pub root: Idx,
 }
@@ -105,6 +106,7 @@ pub trait State<C: Context> {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default, Clone)]
 pub struct Node<T> {
+    // pub(crate)?
     pub parent: Option<Idx>,
     pub state: T,
 }
@@ -176,6 +178,9 @@ impl<T> Edge<T> {
 /// A reference to a transition, index, and edge information.
 pub type TransitionRef<'a, T> = (Tdx, Idx, Idx, &'a T, bool);
 
+// Indices, and mutable references to edge information.
+//pub type TransitionMut<'a, T> = (Tdx, Idx, Idx, &'a mut T, &'a mut bool);
+
 // Unused?
 pub fn edge_transition_filter<C, E>(
     edge: EdgeReference<Edge<C::Transition>, u32>,
@@ -238,6 +243,11 @@ impl<S, T> Graph<S, T> {
         self.graph.node_weight(i).map(|s| &s.state)
     }
 
+    /// Returns a mutable state reference for index.
+    pub fn state_mut(&mut self, i: Idx) -> Option<&mut S> {
+        self.graph.node_weight_mut(i).map(|s| &mut s.state)
+    }
+
     /// Returns an iterator over all states.
     pub fn states(&self) -> impl Iterator<Item = (Idx, &S)> {
         self.graph.node_references().map(|(i, n)| (i, &n.state))
@@ -250,6 +260,11 @@ impl<S, T> Graph<S, T> {
     /// Returns a transition reference for index.
     pub fn transition(&self, i: Tdx) -> Option<&T> {
         self.graph.edge_weight(i).and_then(Edge::transition)
+    }
+
+    /// Returns a mutable transition reference for index.
+    pub fn transition_mut(&mut self, i: Tdx) -> Option<&mut T> {
+        self.graph.edge_weight_mut(i).and_then(Edge::transition_mut)
     }
 
     pub fn contains_state(&self, i: Idx) -> bool {
@@ -319,6 +334,7 @@ impl<S, T> Graph<S, T> {
             })
     }
 
+    // TODO: fix naming?
     pub fn transitions_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.graph
             .edge_weights_mut()

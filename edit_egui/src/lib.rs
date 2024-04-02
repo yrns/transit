@@ -44,6 +44,9 @@ pub struct Edit<S> {
     /// Undo history.
     #[serde(default)]
     pub undo: Undo,
+    /// Versioning.
+    #[serde(default)]
+    pub version: usize,
 }
 
 impl<S> Default for Edit<S> {
@@ -53,6 +56,7 @@ impl<S> Default for Edit<S> {
             graph: Graph::default(),
             selection: Selection::None,
             undo: Undo::default(),
+            version: 0,
         }
     }
 }
@@ -118,9 +122,14 @@ pub struct Transition {
     #[serde(default)]
     pub id: String,
     pub guard: Option<String>,
+    /// Center widget left top position in root space.
+    #[serde(default)]
+    pos: Pos2,
+    /// Control point offset from the state of origin (source).
     c1: Vec2, // tuples?
+    /// Control point offset from the destination state (target).
     c2: Vec2,
-    // Source port index.
+    /// Source port index.
     port1: usize,
     /// Destination port index.
     port2: usize,
@@ -297,6 +306,23 @@ pub type MaxPorts = (Option<usize>, Option<usize>);
 pub struct Rects(nohash_hasher::IntMap<usize, (Rect, MaxPorts)>);
 
 impl Rects {
+    fn from_graph(graph: &Graph<State, Transition>) -> Self {
+        let mut rects = Self::default();
+        fn insert(i: Idx, graph: &Graph<State, Transition>, parent_rect: &Rect, rects: &mut Rects) {
+            // Translate to world/root space.
+            let rect = graph.graph[i]
+                .state
+                .rect
+                .translate(parent_rect.min.to_vec2());
+            rects.insert_rect(i, rect, || Default::default());
+            for child in graph.children(i) {
+                insert(child, graph, &rect, rects);
+            }
+        }
+        insert(graph.root, graph, &Rect::ZERO, &mut rects);
+        rects
+    }
+
     pub fn get(&self, idx: Idx) -> Option<(Rect, MaxPorts)> {
         self.0.get(&idx.index()).copied()
     }
@@ -381,16 +407,22 @@ fn paint_resize_corner_with_style(ui: &mut Ui, rect: &Rect, stroke: Stroke, corn
     }
 }
 
-#[inline]
-pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
-    let d = (end - start) * 0.5;
-    (vec2(d.x, -d.y), vec2(-d.x, d.y))
-}
+/// Default control point offset from source.
+const CP_OFFSET: Vec2 = vec2(64.0, 0.0);
 
 #[inline]
+pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
+    // let d = (end - start) * 0.5;
+    //(vec2(d.x, -d.y), vec2(-d.x, d.y))
+    (start.to_vec2() + CP_OFFSET, end.to_vec2() - CP_OFFSET)
+}
+
+/// This is for state intial connections. It points down rather than right.
+#[inline]
 pub fn approx_cp_down(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
-    let d = end - start;
-    (vec2(0.0, d.y), vec2(-d.x * 0.25, d.y * 0.1))
+    // let d = end - start;
+    // (vec2(0.0, d.y), vec2(-d.x * 0.25, d.y * 0.1))
+    (start.to_vec2() + CP_OFFSET.yx(), end.to_vec2() - CP_OFFSET)
 }
 
 #[inline]
@@ -433,6 +465,30 @@ where
             _ => false,
         } {
             edit.selection = Selection::None
+        }
+
+        if edit.version == 0 {
+            // reset transition positions and control points
+            let rects = Rects::from_graph(&edit.graph);
+
+            // transitions_mut doesn't work so we have to collect
+            let pts = edit
+                .graph
+                .transitions()
+                .map(|(tdx, source, target, _t, _int)| {
+                    let [a, b] = [source, target].map(|i| rects.get_rect(i).unwrap().center());
+                    (tdx, midpoint(a, b))
+                })
+                .collect::<Vec<_>>();
+
+            for (tdx, pt) in pts {
+                let t = edit.graph.transition_mut(tdx).unwrap();
+                t.pos = pt;
+                t.c1 = CP_OFFSET;
+                t.c2 = -CP_OFFSET;
+            }
+
+            edit.version = 1;
         }
 
         // Start watching source path.
@@ -798,18 +854,20 @@ where
             Transition {
                 id,
                 guard: None,
-                port1: ports.0,
-                port2: ports.1,
+                pos: start + ((cp.0 + cp.1) * 0.5),
                 c1: cp.0,
                 c2: cp.1,
+                port1: ports.0,
+                port2: ports.1,
             },
             (start, end),
         )
     }
 
+    /// Shows all transitions.
     pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) -> Option<Transition> {
-        // Show all transitions.
         let mut drag_transition = None;
+
         for (tdx, source, target, t, internal) in self.graph.transitions() {
             match edit_data.drag {
                 Drag::TransitionSource(b, a, _tdx) if _tdx == tdx => match a {
@@ -1177,6 +1235,8 @@ where
                 ),
             );
         }
+
+        //state_response.on_hover_text(format!("{:?}", ui.input(|i| i.pointer.latest_pos())));
     }
 
     // Collapsable? How do we redirect incoming transitions to child states?
@@ -1636,7 +1696,7 @@ where
 
     // Dragging the label offsets both control points equally, which leads to situations where the
     // position of the label doesn't follow the pointer. Using something like
-    // [[https://docs.rs/lyon_geom/1.0.4/lyon_geom/cubic_bezier/struct.CubicBezierSegment.html#method.drag]]
+    // https://docs.rs/lyon_geom/1.0.4/lyon_geom/cubic_bezier/struct.CubicBezierSegment.html#method.drag
     // might solve this.
     pub fn show_connection(
         &self,
@@ -1670,38 +1730,6 @@ where
         let control_size = if selected { 8.0 } else { 6.0 };
         let control_size_sq = Vec2::splat(control_size);
 
-        // Set curve points based on the transition drag state.
-        let (start, c1, c2, end) = match conn {
-            Connection::Transition(tdx, t, _) => {
-                // Include the drag (from last frame). This is the second match on drag - move this
-                // to show_connections?
-                match edit_data.drag {
-                    Drag::TransitionId(i, delta) if i == tdx => {
-                        (start, t.c1 + delta, t.c2 + delta, end)
-                    }
-                    Drag::TransitionControl((i, cp), delta) if i == tdx => match cp {
-                        ControlPoint::C1 => (start, t.c1 + delta, t.c2, end),
-                        ControlPoint::C2 => (start, t.c1, t.c2 + delta, end),
-                    },
-                    _ => (start, t.c1, t.c2, end),
-                }
-            }
-            Connection::DragTransition(c1, c2) => (start, c1, c2, end),
-            Connection::Initial(idx, (c1, c2)) => match edit_data.drag {
-                Drag::InitialControl((_idx, cp), delta) if idx == _idx => match cp {
-                    ControlPoint::C1 => (start, c1 + delta, c2, end),
-                    ControlPoint::C2 => (start, c1, c2 + delta, end),
-                },
-                _ => (start, c1, c2, end),
-            },
-
-            Connection::DragInitial(_, cp) => (start, cp.0, cp.1, end),
-        };
-
-        // Control points are relative to the start and end, respectively.
-        let c1 = start + c1;
-        let c2 = end + c2;
-
         let color = if selected {
             ui.style().visuals.selection.stroke.color
         } else {
@@ -1709,18 +1737,30 @@ where
         };
 
         // Make drag/selected more visible?
-        let stroke = Stroke::new(2.0, color);
-        let bezier = CubicBezierShape::from_points_stroke(
-            [start, c1, c2, end],
-            false,
-            Color32::TRANSPARENT,
-            stroke,
-        );
+        // TODO highlight incoming and outgoing transitions on hover/selected?
+        // TODO it would be nice if we could make this a gradient so as to make the direction more clear
+        let stroke = Stroke::new(1.2, color);
 
-        ui.painter().add(bezier);
+        let cubic = |points| {
+            CubicBezierShape::from_points_stroke(points, false, Color32::TRANSPARENT, stroke)
+        };
 
         match conn {
             Connection::Transition(tdx, t, internal) => {
+                // Include drag in control points and position.
+                let (c1, t_pos, c2) = match edit_data.drag {
+                    Drag::TransitionId(i, delta) if i == tdx => (t.c1, t.pos + delta, t.c2),
+                    Drag::TransitionControl((i, cp), delta) if i == tdx => match cp {
+                        ControlPoint::C1 => (t.c1 + delta, t.pos, t.c2),
+                        ControlPoint::C2 => (t.c1, t.pos, t.c2 + delta),
+                    },
+                    _ => (t.c1, t.pos, t.c2),
+                };
+
+                // Control points are relative to the start and end, respectively.
+                let c1 = start + c1;
+                let c2 = end + c2;
+
                 // Pass these in?
                 let endpoints = self.graph.endpoints(tdx).unwrap();
 
@@ -1783,16 +1823,31 @@ where
                     }
                 }
 
-                let rect = Rect::from_center_size(
-                    bezier.sample(0.5),
+                // This doesn't work because the label doesn't always end up with the midpoint.
+                // quad_beziers_from_points(&[start, c1, t_pos, c2, end]).for_each(|points| {
+                //     let bezier = QuadraticBezierShape::from_points_stroke(
+                //         points,
+                //         false,
+                //         Color32::TRANSPARENT,
+                //         stroke,
+                //     );
+                //     ui.painter().add(bezier);
+                // });
+
+                // `pos` is left/top (rect min), relative to root, so we have to include the ui min rect
+                let h = ui.style().spacing.interact_size.y;
+                let rect = Rect::from_min_size(
+                    ui.min_rect().min + t_pos.to_vec2(), // - vec2(0.0, h / 2.0),
                     // What width?
-                    Vec2::new(128.0, ui.style().spacing.interact_size.y),
+                    Vec2::new(128.0, h),
                 );
 
                 // Show id, guard, internal...
-                ui.allocate_ui_at_rect(rect, |ui| {
+                let response = ui.allocate_ui_at_rect(rect, |ui| {
                     let _response = ui
                         .horizontal(|ui| {
+                            // ui.label("🗝");
+
                             // HACK: If the id is empty we need something to click on to change it...
                             let tid = if t.id.is_empty() { "untitled" } else { &t.id };
                             let InnerResponse { inner, response } =
@@ -1842,8 +1897,7 @@ where
                                     (response, ui, drag, TransitionId, tdx),
                                     |delta: &Vec2| {
                                         let mut t = t.clone();
-                                        t.c1 += *delta;
-                                        t.c2 += *delta;
+                                        t.pos = t.pos + *delta;
                                         edit_data.commands.push(Command::UpdateTransition(tdx, t))
                                     }
                                 );
@@ -1851,8 +1905,38 @@ where
                         })
                         .response;
                 });
+
+                // Draw curve(s) last because we need the min response rect.
+                let rect_offset = vec2(4.0, 0.0);
+                let left = rect.left_center() - rect_offset;
+                let right = response.response.rect.right_center() + rect_offset;
+
+                // Flipping don't work.
+                //if start.x < end.x {
+                ui.painter().add(cubic([start, c1, left - CP_OFFSET, left]));
+                ui.painter().add(cubic([right, right + CP_OFFSET, c2, end]));
+                // } else {
+                //     // If the transition is moving right to left swap left and right.
+                //     ui.painter()
+                //         .add(cubic([start, c1, right - CP_OFFSET, right]));
+                //     ui.painter().add(cubic([left, left + CP_OFFSET, c2, end]));
+                // }
             }
-            Connection::Initial(i, _) => {
+            Connection::Initial(i, (c1, c2)) => {
+                // Include drag.
+                let (c1, c2) = match edit_data.drag {
+                    Drag::InitialControl((idx, cp), delta) if idx == i => match cp {
+                        ControlPoint::C1 => (c1 + delta, c2),
+                        ControlPoint::C2 => (c1, c2 + delta),
+                    },
+                    _ => (c1, c2),
+                };
+
+                let c1 = start + c1;
+                let c2 = end + c2;
+
+                ui.painter().add(cubic([start, c1, c2, end]));
+
                 let mut mesh = arrow(control_size, color);
                 mesh.translate(end.to_vec2());
                 ui.painter().add(mesh);
@@ -1903,7 +1987,9 @@ where
                     ui.painter().add(mesh);
                 }
             }
-            _ => {}
+            Connection::DragTransition(c1, c2) | Connection::DragInitial(_, (c1, c2)) => {
+                ui.painter().add(cubic([start, start + c1, end + c2, end]));
+            }
         }
     }
 
@@ -2038,4 +2124,23 @@ impl Transition {
         self.guard = guard;
         self
     }
+}
+
+fn midpoint(a: Pos2, b: Pos2) -> Pos2 {
+    (a + b.to_vec2()) * 0.5
+}
+
+pub fn quad_beziers_from_points(points: &[Pos2]) -> impl Iterator<Item = [Pos2; 3]> + '_ {
+    points.windows(3).enumerate().map(|(i, p)| {
+        let [mut p0, p1, mut p2] = *p else {
+            panic!("window is always 3");
+        };
+        if i != 0 {
+            p0 = midpoint(p0, p1);
+        }
+        if i + 2 < points.len() - 1 {
+            p2 = midpoint(p1, p2);
+        }
+        [p0, p1, p2]
+    })
 }
