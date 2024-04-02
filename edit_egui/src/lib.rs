@@ -412,17 +412,16 @@ const CP_OFFSET: Vec2 = vec2(64.0, 0.0);
 
 #[inline]
 pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
-    // let d = (end - start) * 0.5;
-    //(vec2(d.x, -d.y), vec2(-d.x, d.y))
     (start.to_vec2() + CP_OFFSET, end.to_vec2() - CP_OFFSET)
 }
 
-/// This is for state intial connections. It points down rather than right.
+/// This is for state initial connections. Initial states are always down and right since the start
+/// is near the upper left.
 #[inline]
 pub fn approx_cp_down(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
-    // let d = end - start;
-    // (vec2(0.0, d.y), vec2(-d.x * 0.25, d.y * 0.1))
-    (start.to_vec2() + CP_OFFSET.yx(), end.to_vec2() - CP_OFFSET)
+    let d = end - start;
+    // Try to keep the control point inside the source/parent rect.
+    (CP_OFFSET.yx(), vec2(-CP_OFFSET.x.min(d.x), CP_OFFSET.y))
 }
 
 #[inline]
