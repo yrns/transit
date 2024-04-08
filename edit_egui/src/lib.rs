@@ -13,7 +13,7 @@ pub use app::*;
 use editabel::Editabel;
 pub use editor::*;
 // TODO: only depend on egui here
-use eframe::egui::epaint::{CubicBezierShape, RectShape, Vertex};
+use eframe::egui::epaint::{text::LayoutJob, CubicBezierShape, RectShape, Vertex};
 use eframe::egui::*;
 use search::{SearchBox, Submit};
 pub use source::*;
@@ -1619,18 +1619,41 @@ where
             .as_ref()
             .and_then(|source| source.symbol(&gensym));
 
-        // Hovering displays symbol name and source location.
-        let hover_text = match location {
-            Some((path, line, col)) => format!(
-                "{}{} ({} {}:{})",
-                gensym,
-                // If the symbol is not set but the location for the generated symbol exists show "?".
-                if symbol.is_some() { "" } else { "?" },
-                path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
-                line,
-                col
-            ),
-            None => format!("{}?", gensym),
+        // Hovering displays symbol name and source location. This API is insane just to bold one word...
+        let hover_text = {
+            let style = Style::default();
+            let mut job = LayoutJob::default();
+            match location {
+                Some((path, line, col)) => {
+                    RichText::new(gensym.as_str())
+                        // TODO this is not bold
+                        .color(style.visuals.strong_text_color())
+                        .append_to(&mut job, &style, FontSelection::Default, Align::Center);
+
+                    RichText::new(format!(
+                        "{} ({}:{}:{})",
+                        // If the symbol is not set but the location for the generated symbol exists show "?".
+                        if symbol.is_some() { "" } else { "?" },
+                        path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
+                        line,
+                        col
+                    ))
+                    .append_to(
+                        &mut job,
+                        &style,
+                        FontSelection::Default,
+                        Align::Center,
+                    );
+                }
+                None => RichText::new(format!("{}?", gensym)).append_to(
+                    &mut job,
+                    &style,
+                    FontSelection::Default,
+                    Align::Center,
+                ),
+            }
+
+            job
         };
 
         let button = Button::new(match id {
