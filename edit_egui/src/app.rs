@@ -16,6 +16,8 @@ pub struct App<S> {
     pub edit: Edit<S>,
     #[serde(skip)] // TODO configurable?
     pub editor: EmacsClient,
+    #[serde(skip)]
+    pub base_dirs: Option<directories::BaseDirs>,
 }
 
 /// There is no default for Source.
@@ -25,6 +27,7 @@ impl<S> Default for App<S> {
             recent: None,
             edit: Edit::default(),
             editor: EmacsClient::default(),
+            base_dirs: directories::BaseDirs::new(),
         }
     }
 }
@@ -181,7 +184,11 @@ where
             self.edit.resolve_drag(&mut edit_data, drag_transition, ui);
             self.edit.process_commands(edit_data.commands.drain(..));
 
-            self.edit.show(&mut edit_data, ui);
+            self.edit.show(
+                &mut edit_data,
+                self.base_dirs.as_ref().map(|b| b.home_dir()),
+                ui,
+            );
 
             // Process editor commands.
             edit_data.commands.retain(|command| match command {

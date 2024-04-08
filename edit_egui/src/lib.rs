@@ -657,7 +657,7 @@ where
         }
     }
 
-    pub fn show(&self, mut edit_data: &mut EditData, ui: &mut Ui) {
+    pub fn show(&self, mut edit_data: &mut EditData, home_dir: Option<&Path>, ui: &mut Ui) {
         // Toggle debug.
         let focus = ui.memory(|m| m.focused());
         if focus.is_none() && ui.input(|i| i.key_pressed(Key::D)) {
@@ -698,6 +698,7 @@ where
             ui.min_rect().min.to_vec2(),
             0,
             &mut edit_data,
+            home_dir,
             ui,
         );
         // });
@@ -721,6 +722,7 @@ where
                         parent_rect.min.to_vec2(),
                         *depth,
                         &mut edit_data,
+                        home_dir,
                         ui,
                     );
                 }
@@ -1144,6 +1146,7 @@ where
         offset: Vec2,
         depth: usize,
         edit_data: &mut EditData,
+        home_dir: Option<&Path>,
         ui: &mut Ui,
     ) -> Option<Idx> {
         //let offset = ui.min_rect().min.to_vec2();
@@ -1229,7 +1232,16 @@ where
                 // The dragged child will be shown last from the root, so we skip it here. The
                 // dragged child is never the drop target.
                 .filter(|child| Some(*child) != dragged_idx)
-                .map(|child| self.show_state(child, rect.min.to_vec2(), depth + 1, edit_data, ui))
+                .map(|child| {
+                    self.show_state(
+                        child,
+                        rect.min.to_vec2(),
+                        depth + 1,
+                        edit_data,
+                        home_dir,
+                        ui,
+                    )
+                })
                 .reduce(|a, b| b.or(a))
                 .flatten()
                 .or_else(|| ui.rect_contains_pointer(rect).then_some(idx));
@@ -1243,7 +1255,7 @@ where
             let header_rect = rect.shrink2(header_inset);
             let header_response = ui
                 .allocate_ui_at_rect(header_rect, |ui| {
-                    self.show_header(idx, root, state, edit_data, ui);
+                    self.show_header(idx, root, state, edit_data, home_dir, ui);
                 })
                 .response;
             let header_rect = header_response.rect.expand2(header_inset);
@@ -1457,6 +1469,7 @@ where
         root: bool,
         state: &State,
         edit_data: &mut EditData,
+        home_dir: Option<&Path>,
         ui: &mut Ui,
     ) -> InnerResponse<()> {
         ui.horizontal(|ui| {
@@ -1592,8 +1605,16 @@ where
                         edit_data.commands.push(Command::SelectSourcePath(p));
                     }
                 }
-                if let Some(source) = &self.source {
-                    response.on_hover_text_at_pointer(source.path().display().to_string());
+                if let Some(path) = &self.source.as_ref().map(|s| s.path()) {
+                    // I like tildes.
+                    #[cfg(target_os = "linux")]
+                    let path = if let Some(path) = home_dir.and_then(|d| path.strip_prefix(d).ok())
+                    {
+                        PathBuf::from("~/").join(path)
+                    } else {
+                        path.to_path_buf()
+                    };
+                    response.on_hover_text_at_pointer(path.display().to_string());
                 }
             }
         })
@@ -1634,6 +1655,7 @@ where
                         "{} ({}:{}:{})",
                         // If the symbol is not set but the location for the generated symbol exists show "?".
                         if symbol.is_some() { "" } else { "?" },
+                        // Do we even need the path since it's always the same?
                         path.file_name().and_then(|f| f.to_str()).unwrap_or("-"),
                         line,
                         col
