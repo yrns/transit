@@ -24,14 +24,17 @@
     },
     "rustify": {
       "locked": {
-        "lastModified": 1711820660,
-        "narHash": "sha256-4n1T72WgdnUDVelF15B008dFDx42P3Uy7T0ym3WLRdk=",
-        "path": "/home/al/src/rustify",
-        "type": "path"
+        "lastModified": 1711820653,
+        "narHash": "sha256-K5/3daQVDpGW8dDjMouDDN2yj9gMK9tT14suT2JVSOI=",
+        "owner": "yrns",
+        "repo": "rustify",
+        "rev": "04c8b8af92adab0c35ab92b9bda4b880be39cf2f",
+        "type": "github"
       },
       "original": {
-        "path": "/home/al/src/rustify",
-        "type": "path"
+        "owner": "yrns",
+        "repo": "rustify",
+        "type": "github"
       }
     },
     "systems": {

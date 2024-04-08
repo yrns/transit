@@ -119,12 +119,12 @@
                         exit: None,
                         rect: (
                             min: (
-                                x: 32.331177,
-                                y: 154.66019,
+                                x: 55.47403,
+                                y: 152.08876,
                             ),
                             max: (
-                                x: 288.33115,
-                                y: 218.66019,
+                                x: 255.7597,
+                                y: 202.9459,
                             ),
                         ),
                         initial: None,
@@ -144,12 +144,12 @@
                         exit: None,
                         rect: (
                             min: (
-                                x: 38.441086,
-                                y: 46.628662,
+                                x: 43.58394,
+                                y: 65.48581,
                             ),
                             max: (
-                                x: 294.44107,
-                                y: 110.62866,
+                                x: 247.29822,
+                                y: 111.48581,
                             ),
                         ),
                         initial: None,
@@ -174,8 +174,8 @@
                         y: 305.22253,
                     ),
                     c1: (
-                        x: 64.0,
-                        y: 0.0,
+                        x: 80.285706,
+                        y: 105.42859,
                     ),
                     c2: (
                         x: -64.0,
@@ -242,16 +242,16 @@
                     id: "lock",
                     guard: Some("lock-guard"),
                     pos: (
-                        x: 469.69214,
-                        y: 93.0639,
+                        x: 407.97784,
+                        y: 204.49248,
                     ),
                     c1: (
-                        x: 64.0,
-                        y: 0.0,
+                        x: 75.14282,
+                        y: -64.28572,
                     ),
                     c2: (
-                        x: -64.0,
-                        y: -0.0,
+                        x: -76.0,
+                        y: 55.714294,
                     ),
                     port1: 1,
                     port2: 1,
@@ -3199,6 +3199,221 @@
                     zoom: 1.0,
                 ),
             )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: Some("locked-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 38.441086,
+                            y: 46.628662,
+                        ),
+                        max: (
+                            x: 294.44107,
+                            y: 110.62866,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 32.331177,
+                            y: 154.66019,
+                        ),
+                        max: (
+                            x: 288.33115,
+                            y: 218.66019,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(4, (
+                parent: Some(1),
+                state: (
+                    id: "open",
+                    enter: Some("open-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 32.331177,
+                            y: 154.66019,
+                        ),
+                        max: (
+                            x: 232.61685,
+                            y: 205.51733,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: Some("locked-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.298233,
+                            y: 58.628662,
+                        ),
+                        max: (
+                            x: 295.29822,
+                            y: 122.62866,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(5, (
+                parent: Some(1),
+                state: (
+                    id: "locked",
+                    enter: Some("locked-enter"),
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 39.298233,
+                            y: 58.628662,
+                        ),
+                        max: (
+                            x: 243.01251,
+                            y: 104.62866,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                pos: (
+                    x: 469.69214,
+                    y: 93.0639,
+                ),
+                c1: (
+                    x: 64.0,
+                    y: 0.0,
+                ),
+                c2: (
+                    x: -64.0,
+                    y: -0.0,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                pos: (
+                    x: 407.97784,
+                    y: 204.49248,
+                ),
+                c1: (
+                    x: 64.0,
+                    y: 0.0,
+                ),
+                c2: (
+                    x: -64.0,
+                    y: -0.0,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                pos: (
+                    x: 407.97784,
+                    y: 204.49248,
+                ),
+                c1: (
+                    x: 64.0,
+                    y: 0.0,
+                ),
+                c2: (
+                    x: -78.57143,
+                    y: 60.857147,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(5, Transition((
+                id: "lock",
+                guard: Some("lock-guard"),
+                pos: (
+                    x: 407.97784,
+                    y: 204.49248,
+                ),
+                c1: (
+                    x: 64.0,
+                    y: 0.0,
+                ),
+                c2: (
+                    x: -76.0,
+                    y: 55.714294,
+                ),
+                port1: 1,
+                port2: 1,
+            ))),
+            UpdateEdge(1, Transition((
+                id: "open",
+                guard: None,
+                pos: (
+                    x: 394.6372,
+                    y: 305.22253,
+                ),
+                c1: (
+                    x: 64.0,
+                    y: 0.0,
+                ),
+                c2: (
+                    x: -64.0,
+                    y: -0.0,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
         ],
         redos: [],
     ),

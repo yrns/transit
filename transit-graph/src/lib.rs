@@ -151,6 +151,13 @@ impl<T> Edge<T> {
         }
     }
 
+    pub fn external(&self) -> Option<&T> {
+        match self {
+            Edge::Transition(t) => Some(t),
+            _ => None,
+        }
+    }
+
     pub fn transition_mut(&mut self) -> Option<&mut T> {
         match self {
             Edge::Transition(t) | Edge::Internal(t) => Some(t),
@@ -161,6 +168,10 @@ impl<T> Edge<T> {
     // Should this panic if !is_transition? Validation uses this as a filter.
     pub fn is_internal(&self) -> bool {
         matches!(self, Edge::Internal(_))
+    }
+
+    pub fn is_external(&self) -> bool {
+        matches!(self, Edge::Transition(_))
     }
 
     pub fn map<'a, F, V>(&'a self, i: Tdx, mut f: F) -> Edge<V>
@@ -262,6 +273,11 @@ impl<S, T> Graph<S, T> {
         self.graph.edge_weight(i).and_then(Edge::transition)
     }
 
+    /// Returns an external transition reference for index.
+    pub fn external(&self, i: Tdx) -> Option<&T> {
+        self.graph.edge_weight(i).and_then(Edge::external)
+    }
+
     /// Returns a mutable transition reference for index.
     pub fn transition_mut(&mut self, i: Tdx) -> Option<&mut T> {
         self.graph.edge_weight_mut(i).and_then(Edge::transition_mut)
@@ -320,6 +336,7 @@ impl<S, T> Graph<S, T> {
         self.state_transitions(i, Direction::Incoming)
     }
 
+    // FIX this ain't right
     pub fn transition_indices(&self) -> impl Iterator<Item = Tdx> + '_ {
         self.graph.edge_indices()
     }
@@ -357,6 +374,22 @@ impl<S, T> Graph<S, T> {
     // Return true if a is in the path of b.
     pub fn in_path(&self, a: Idx, b: Idx) -> bool {
         self.path_iter(b).any(|i| i == a)
+    }
+
+    /// Returns true if the source and target of `transition` are in the path of `state`.
+    // TODO: cache this?
+    pub fn enclosed(&self, state: Idx, transition: Tdx) -> bool {
+        //self.transition(transition).is_some() &&
+        self.endpoints(transition)
+            .map(|(a, b)| self.in_path(state, a) && self.in_path(state, b))
+            .unwrap_or(false)
+    }
+
+    /// Returns all edges that are enclosed by `state`.
+    pub fn enclosed_edges(&self, state: Idx) -> impl Iterator<Item = Tdx> + '_ {
+        self.graph
+            .edge_indices()
+            .filter(move |i| self.enclosed(state, *i))
     }
 
     fn initial_edge(&self, i: Idx) -> Option<(Initial, EdgeReference<'_, Edge<T>>)> {

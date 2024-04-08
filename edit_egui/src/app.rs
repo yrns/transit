@@ -165,10 +165,26 @@ where
             if clear_state {
                 ctx.data_mut(|d| d.remove::<EditData>(ui.id()));
             }
-            let mut commands = self.edit.show(ui);
+
+            // Keep edit data in temp storage.
+            let edit_data = ui.data_mut(|d| d.get_temp(ui.id()));
+            let edit_data = edit_data.unwrap_or_else(|| {
+                let data = Arc::new(Mutex::new(EditData::new()));
+                ui.data_mut(|d| d.insert_temp(ui.id(), data.clone()));
+                data
+            });
+            let mut edit_data = edit_data.lock().unwrap();
+
+            // Resolve any current drag and update immediately so we're drawing the most up to date
+            // state. Otherwise we get one frame of flickering when things are moved.
+            let drag_transition = edit_data.drag_transition.take();
+            self.edit.resolve_drag(&mut edit_data, drag_transition, ui);
+            self.edit.process_commands(edit_data.commands.drain(..));
+
+            self.edit.show(&mut edit_data, ui);
 
             // Process editor commands.
-            commands.retain(|command| match command {
+            edit_data.commands.retain(|command| match command {
                 Command::GotoSymbol(symbol, path, loc) => {
                     if let Err(e) = self.editor.goto(symbol, path, *loc) {
                         error!("goto failed: {e:?}");
@@ -184,7 +200,7 @@ where
                 _ => true,
             });
 
-            self.edit.process_commands(commands);
+            self.edit.process_commands(edit_data.commands.drain(..));
         });
     }
 }
