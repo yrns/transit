@@ -229,29 +229,6 @@ impl Drag {
             | Drag::TransitionTarget(_, Some(t), ..)
                 if *t == idx)
     }
-
-    /// Is the drag greater than some minimum?
-    // FIX: remove me
-    pub fn min_drag(&self, ui: &Ui) -> bool {
-        match self {
-            Drag::None => false, // ?
-            // Compare original press to the current pointer. This only works if the drag is in
-            // progress, not after the pointer is released.
-            Drag::AddTransition(..)
-            | Drag::Initial(..)
-            | Drag::State { .. }
-            | Drag::TransitionSource(..)
-            | Drag::TransitionTarget(..) => {
-                let p = ui.input(|i| i.pointer.press_origin().zip(i.pointer.interact_pos()));
-                p.map(|(p0, p1)| (p1 - p0).abs().max_elem() >= 1.0)
-                    .unwrap_or_default()
-            }
-            Drag::Resize(_, d)
-            | Drag::InitialControl(_, d, ..)
-            | Drag::TransitionControl(_, d, ..)
-            | Drag::TransitionId(_, d) => d.abs().max_elem() >= 1.0,
-        }
-    }
 }
 
 // Deriving the variant and id from init failed...
@@ -301,8 +278,8 @@ macro_rules! drag_delta {
                 if $response.dragged() {
                     $update(delta)
                 } else if $response.drag_stopped() {
-                    //if $drag.min_drag($ui)
-                    if delta.abs().max_elem() >= 1.0 {
+                    // egui handles dragging vs clicking now, but we still check the delta
+                    if dbg!(delta.abs().max_elem()) >= 1.0 {
                         $end(delta)
                     }
                     *$drag = Drag::None;
@@ -766,7 +743,6 @@ where
         if ui.input(|i| i.pointer.any_released()) {
             // Only clear drags that target states. The rest are resolved later.
             match std::mem::take(&mut edit_data.drag) {
-                //_ if !drag.min_drag(ui) => (),
                 drag @ Drag::State { .. } => {
                     error!("drag nowhere: {drag:?}");
                     // if let Some(p) = ui.ctx().pointer_interact_pos() {
