@@ -164,7 +164,9 @@ where
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        // The root state already has a frame and we want to draw up to the edges (no margins).
+        let cp = egui::CentralPanel::default().frame(Frame::none());
+        cp.show(ctx, |ui| {
             if clear_state {
                 ctx.data_mut(|d| d.remove::<EditData>(ui.id()));
             }

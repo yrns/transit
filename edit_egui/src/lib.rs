@@ -4,6 +4,7 @@ mod editor;
 mod search;
 mod source;
 mod undo;
+mod widget;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -12,9 +13,12 @@ use std::sync::{Arc, Mutex};
 pub use app::*;
 use editabel::Editabel;
 pub use editor::*;
-// TODO: only depend on egui here
-use eframe::egui::epaint::{text::LayoutJob, CubicBezierShape, RectShape, Vertex};
-use eframe::egui::*;
+// TODO: only depend on egui here (need to get rid of eframe-dynamic)
+use eframe::egui;
+use egui::{
+    epaint::{text::LayoutJob, CubicBezierShape, Vertex},
+    *,
+};
 use search::{SearchBox, Submit};
 pub use source::*;
 use tracing::{error, info, warn};
@@ -1148,7 +1152,7 @@ where
         edit_data: &mut EditData,
         home_dir: Option<&Path>,
         ui: &mut Ui,
-    ) -> Option<Idx> {
+    ) {
         //let offset = ui.min_rect().min.to_vec2();
         let state = self.graph.state(idx).unwrap();
         let root = idx == self.graph.root;
@@ -1201,50 +1205,40 @@ where
 
         // This means offscreen states won't get updated, but that shouldn't matter?
         if !ui.is_rect_visible(rect) {
-            return None;
+            return;
         }
 
-        // Reserve background shape. We don't need this if we use a Frame.
-        let bg = ui.painter().add(Shape::Noop);
+        // FIX use drop target
+        let is_target = edit_data.drag.is_target(idx);
 
-        // Background interaction, dragging states and context menu.
-        //let state_response = ui.interact(rect, id, sense);
+        let parent_clip_rect = ui.clip_rect();
 
-        let mut child_states_and_header = |ui: &mut Ui| {
-            // This almost works.
-            //ui.dnd_drag_source(ui.id(), (), |ui| {
+        let child_states_and_header = |ui: &mut Ui| {
+            // Do we need to shrink based on the frame stoke still? TODO
+            ui.set_clip_rect(ui.max_rect().intersect(parent_clip_rect));
 
             // Set drag target first and let child states override. TODO remove me
             self.set_drag_target(idx, depth, &mut edit_data.drag, ui);
 
-            // The inner_ui only serves to convey the clip_rect to children.
-            // let mut inner_ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
-            //let inner_ui = ui;
-
             // We can't use dragged_id because we don't know the child's id yet.
             let dragged_idx = ui.dragged_idx();
 
-            // Show child states. The drop target will be the lowest (last drawn) descendant that
-            // contains the pointer.
-            let drop_target = self
+            // Show child states.
+            for child in self
                 .graph
                 .children(idx)
-                // The dragged child will be shown last from the root, so we skip it here. The
-                // dragged child is never the drop target.
+                // The dragged child will be shown last from the root, so we skip it here.
                 .filter(|child| Some(*child) != dragged_idx)
-                .map(|child| {
-                    self.show_state(
-                        child,
-                        rect.min.to_vec2(),
-                        depth + 1,
-                        edit_data,
-                        home_dir,
-                        ui,
-                    )
-                })
-                .reduce(|a, b| b.or(a))
-                .flatten()
-                .or_else(|| ui.rect_contains_pointer(rect).then_some(idx));
+            {
+                self.show_state(
+                    child,
+                    rect.min.to_vec2(),
+                    depth + 1,
+                    edit_data,
+                    home_dir,
+                    ui,
+                )
+            }
 
             // Show the header and resize after child states so they interact first. So does this
             // mean the allocated rects for child states don't take up space? Something is taking up
@@ -1262,7 +1256,7 @@ where
 
             // Resize. Cannot resize the root state. Only show the resize if the pointer is in the rect,
             // or we are currently resizing it (since the pointer can be outside while dragging - it's a
-            // frame behind?).
+            // frame behind?). TODO: this should be hovered, not contained
             if !root && (edit_data.drag.resizing(idx) || ui.rect_contains_pointer(rect)) {
                 let response = self.show_resize(ui.id(), rect, ui);
 
@@ -1280,54 +1274,36 @@ where
                 );
             }
 
-            // This fills the space so we can interact with the background. Not needed?
-            //ui.allocate_space(ui.available_size());
+            // This fills the space so we can interact with the background.
+            _ = ui.allocate_space(ui.available_size_before_wrap());
 
-            // Can't drag the root state. ui.interact_bg?
-            let response = ui.interact(
-                rect,
-                ui.id(),
-                if !root {
-                    Sense::click_and_drag()
-                } else {
-                    Sense::click()
-                },
-            );
-
-            InnerResponse::new(drop_target, response)
+            // Can't drag the root state.
+            ui.interact_bg(if !root {
+                Sense::click_and_drag()
+            } else {
+                Sense::click()
+            })
         };
 
         // TODO: state_ui?
-        let InnerResponse {
-            inner: drop_target,
-            response: state_response,
-        } = {
-            ui.allocate_ui_at_rect(rect, |ui| {
-                // Set clip rect (it's in screen-space already). Shrink the clip_rect so things don't
-                // draw over the stroke. The default theme stroke(s) is generally 1.0? FIX: use
-                // Frame
-                ui.set_clip_rect(rect.intersect(ui.clip_rect()).shrink(if root {
-                    0.0
-                } else {
-                    1.0
-                }));
+        let state_response = {
+            // There is no "allocate_ui_at_rect_with_id"... We don't even need the
+            // `allocate_ui_at_rect` since we're positioning the contents manually and it calls
+            // `child_ui_with_id_source` itself.
+            let mut ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
 
-                // There is no "allocate_ui_at_rect_with_id"...
-                let mut ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
-                child_states_and_header(&mut ui)
-            })
-            .inner
+            widget::state::state_frame(
+                root,
+                depth,
+                matches!(self.selection, Selection::State(i) if i == idx),
+                is_target,
+            )
+            .show(&mut ui, child_states_and_header)
         };
-
-        //if idx.index() == 2 {
-        //state_response.hovered() {
-        //contains_pointer() {
-        //println!("{:?} {:?} {:?}", ui.dragged_idx(), idx, rect);
-        //}
 
         // ui.ctx()
         //     .debug_painter()
-        //     .debug_rect(min_rect, Color32::DEBUG_COLOR, "show_header");
+        //     .debug_rect(ui.min_rect(), Color32::DEBUG_COLOR, "min_rect");
 
         // Can't select root.
         if state_response.clicked() {
@@ -1346,7 +1322,6 @@ where
         // New drags. We should not get a drag here if a drag is started in a child state, but we
         // check `in_drag` anyway.
         if state_response.drag_started_by(PointerButton::Primary) && !edit_data.drag.in_drag() {
-            //dbg!(ui.id());
             if let Some(p) = interact_pos {
                 if ui.input(|i| i.modifiers.shift) {
                     // New transition, drag to target.
@@ -1413,53 +1388,8 @@ where
                         ui.close_menu();
                     }
                 }
-            })
+            });
         }
-
-        // TODO: Make a background for the root so we can show drag_valid.
-        if !root {
-            let style = ui.style();
-            let selected = matches!(self.selection, Selection::State(i) if i == idx);
-
-            // There is some weirdness with the response and the layer change while dragging, so
-            // just force it to active if not selected: FIX this
-            let mut widget_visuals = if false {
-                // if !selected && edit_data.drag.dragging(idx) {
-                style.visuals.widgets.active
-            } else {
-                style.interact_selectable(&state_response, selected)
-            };
-
-            // Alternate background colors based on depth.
-            if !selected && depth % 2 == 1 {
-                widget_visuals.bg_fill = widget_visuals.bg_fill.gamma_multiply(0.65);
-                widget_visuals.bg_fill[3] = 255; // Reset alpha.
-            }
-
-            let stroke = if edit_data.drag.is_target(idx) {
-                // The default stroke for selection is thin, so make it more prominent here to show
-                // the drag target.
-                let mut stroke = ui.style().visuals.selection.stroke;
-                stroke.width = 4.0;
-                stroke
-            } else {
-                // Use the fg_stroke since the default dark theme has no bg_stroke for inactive,
-                // which makes all the contained states indiscernible.
-                widget_visuals.fg_stroke
-            };
-
-            ui.painter().set(
-                bg,
-                RectShape::new(
-                    rect,
-                    widget_visuals.rounding,
-                    widget_visuals.bg_fill,
-                    stroke, //: Stroke::NONE,
-                ),
-            );
-        }
-
-        drop_target
     }
 
     // Collapsable? How do we redirect incoming transitions to child states?
@@ -1629,7 +1559,7 @@ where
         symbol: &Symbol,
         edit_data: &mut EditData,
         ui: &mut Ui,
-    ) {
+    ) -> Response {
         let gensym = symbol
             .as_ref()
             .map(Cow::from)
@@ -1761,6 +1691,8 @@ where
                 _ => (),
             }
         }
+
+        response
     }
 
     pub fn path_string(&self, i: Idx) -> String {
