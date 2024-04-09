@@ -177,6 +177,7 @@ pub type DragTarget = Option<(Idx, usize)>;
 #[derive(Clone, Debug, Default)]
 pub enum Drag {
     #[default]
+    // TODO: remove?
     None,
     State {
         idx: Idx,
@@ -813,8 +814,15 @@ where
                         .unwrap_or_else(|| (Initial::Initial, target));
                     commands.push(Command::SetInitial(i, initial, (port, c1, c2)))
                 }
-                // put it back for now TEMP
-                drag @ _ => edit_data.drag = drag,
+
+                // TEMP put these back to be handled later
+                drag @ Drag::Resize(_, _)
+                | drag @ Drag::InitialControl(_, _)
+                | drag @ Drag::TransitionControl(_, _)
+                | drag @ Drag::TransitionId(_, _) => edit_data.drag = drag,
+
+                Drag::None => (),
+                drag @ _ => error!("invalid drag resolution: {:?}", drag),
             }
 
             if let Some(drag) = DragAndDrop::payload::<Drag>(ui.ctx()) {
