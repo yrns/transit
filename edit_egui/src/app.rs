@@ -171,7 +171,7 @@ where
                 ctx.data_mut(|d| d.remove::<EditData>(ui.id()));
             }
 
-            // Keep edit data in temp storage.
+            // Keep edit data in temp storage. Why? Just keep it in App...
             let edit_data = ui.data_mut(|d| d.get_temp(ui.id()));
             let edit_data = edit_data.unwrap_or_else(|| {
                 let data = Arc::new(Mutex::new(EditData::new()));
@@ -180,11 +180,18 @@ where
             });
             let mut edit_data = edit_data.lock().unwrap();
 
-            // Resolve any current drag and update immediately so we're drawing the most up to date
-            // state. Otherwise we get one frame of flickering when things are moved.
-            let drag_transition = edit_data.drag_transition.take();
-            self.edit.resolve_drag(&mut edit_data, drag_transition, ui);
-            self.edit.process_commands(edit_data.commands.drain(..));
+            if let Some(p) = ui.ctx().pointer_interact_pos() {
+                // Set drag target if dragging.
+                self.edit.set_drag_target(&mut edit_data, p);
+
+                // Resolve any current drag and update immediately so we're drawing the most up to date
+                // state. Otherwise we get one frame of flickering when things are moved.
+                if ui.input(|i| i.pointer.any_released()) {
+                    let drag_transition = edit_data.drag_transition.take();
+                    self.edit.resolve_drag(&mut edit_data, drag_transition, p);
+                    self.edit.process_commands(edit_data.commands.drain(..));
+                }
+            }
 
             self.edit.show(
                 &mut edit_data,

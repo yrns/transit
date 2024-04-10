@@ -366,12 +366,12 @@ impl<S, T> Graph<S, T> {
         self.endpoints(i).map(|(a, b)| a == b).unwrap_or_default()
     }
 
-    // Return true if b is a child of a.
+    /// Return true if b is a child of a.
     pub fn is_child(&self, a: Idx, b: Idx) -> bool {
         a != b && self.in_path(a, b)
     }
 
-    // Return true if a is in the path of b.
+    /// Return true if a is in the path of b.
     pub fn in_path(&self, a: Idx, b: Idx) -> bool {
         self.path_iter(b).any(|i| i == a)
     }

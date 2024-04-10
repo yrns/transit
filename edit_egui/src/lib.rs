@@ -171,26 +171,24 @@ pub enum ControlPoint {
     C2,
 }
 
-// Drag target index and depth (for states) or incoming port (for transitions).
-pub type DragTarget = Option<(Idx, usize)>;
-
+/// Current state, transition, or initial drag.
 #[derive(Clone, Debug, Default)]
 pub enum Drag {
     #[default]
-    // TODO: remove?
     None,
     State {
-        idx: Idx,
+        source: Idx,
         /// Offset from the pointer to rect.min.
         offset: Vec2,
-        //target: DragTarget,
+        target: Option<Idx>,
         // Original depth.
         depth: usize,
         /// We can't access the pointer `press_origin` after the drag is stopped, so we store it here.
         press_origin: Pos2,
     },
     Resize(Idx, Vec2),
-    Initial(Idx, DragTarget, (Vec2, Vec2)),
+    // Only Initial has a port?
+    Initial(Idx, Option<(Idx, usize)>, (Vec2, Vec2)),
     InitialControl((Idx, ControlPoint), Vec2),
     AddTransition(Idx, Option<Idx>),
     // For the next two variants the first field is the opposite endpoint!
@@ -201,6 +199,7 @@ pub enum Drag {
 }
 
 impl Drag {
+    // TODO: remove?
     pub fn sense(&self) -> Sense {
         match self {
             Drag::None => Sense::click_and_drag(),
@@ -208,26 +207,41 @@ impl Drag {
         }
     }
 
-    pub fn in_drag(&self) -> bool {
+    fn in_drag(&self) -> bool {
         !matches!(self, Drag::None)
     }
 
-    // pub fn dragging(&self, idx: Idx) -> bool {
-    //     matches!(self, Drag::State(i, ..) if *i == idx)
-    // }
+    /// Returns the index of the dragged state (if any).
+    fn dragged_idx(&self) -> Option<Idx> {
+        match self {
+            Drag::State { source, .. } => Some(*source),
+            _ => None,
+        }
+    }
+
+    pub fn is_dragging(&self, idx: Idx) -> bool {
+        self.dragged_idx() == Some(idx)
+    }
 
     pub fn resizing(&self, idx: Idx) -> bool {
         matches!(self, Drag::Resize(i, ..) if *i == idx)
     }
 
-    pub fn is_target(&self, idx: Idx) -> bool {
-        matches!(self,
-            //Drag::State { target: Some((t, ..)), .. }
+    fn target(&self) -> Option<Idx> {
+        match self {
+            Drag::State {
+                target: Some(t), ..
+            }
             | Drag::Initial(_, Some((t, ..)), ..)
             | Drag::AddTransition(_, Some(t), ..)
             | Drag::TransitionSource(_, Some(t), ..)
-            | Drag::TransitionTarget(_, Some(t), ..)
-                if *t == idx)
+            | Drag::TransitionTarget(_, Some(t), ..) => Some(*t),
+            _ => None,
+        }
+    }
+
+    pub fn is_target(&self, idx: Idx) -> bool {
+        self.target() == Some(idx)
     }
 }
 
@@ -279,7 +293,7 @@ macro_rules! drag_delta {
                     $update(delta)
                 } else if $response.drag_stopped() {
                     // egui handles dragging vs clicking now, but we still check the delta
-                    if dbg!(delta.abs().max_elem()) >= 1.0 {
+                    if delta.abs().max_elem() >= 1.0 {
                         $end(delta)
                     }
                     *$drag = Drag::None;
@@ -666,16 +680,8 @@ where
             edit_data.search.query.clear();
         }
 
-        // Can we remove use of the rect in screen space?
-        // let rect = ui.max_rect();
-        // ui.allocate_rect(rect, Sense::hover());
-
         // Show root and recursively show children.
-
-        //let frame = Frame::default().inner_margin(4.0);
-        //let (_r, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
-        // FIX: remove this
-        let _drop_target = self.show_state(
+        self.show_state(
             self.graph.root,
             ui.min_rect().min.to_vec2(),
             0,
@@ -683,33 +689,27 @@ where
             home_dir,
             ui,
         );
-        // });
-        // if let Some(dp) = dropped_payload {
-        //     dbg!(dp);
-        // }
 
         // Show the dragged state last, unclipped, if any.
         // TODO: initial still draws under this... draw with show_transitions?
-        if let Some(drag) = DragAndDrop::payload::<Drag>(ui.ctx()) {
-            match drag.as_ref() {
-                Drag::State { idx, depth, .. } => {
-                    let (parent_rect, ..) = self
-                        .graph
-                        .parent(*idx)
-                        .and_then(|p| edit_data.rects.get(p))
-                        .expect("dragged state parent rect exists");
+        match &edit_data.drag {
+            &Drag::State { source, depth, .. } => {
+                let (parent_rect, ..) = self
+                    .graph
+                    .parent(source)
+                    .and_then(|p| edit_data.rects.get(p))
+                    .expect("dragged state parent rect exists");
 
-                    _ = self.show_state(
-                        *idx,
-                        parent_rect.min.to_vec2(),
-                        *depth,
-                        &mut edit_data,
-                        home_dir,
-                        ui,
-                    );
-                }
-                _ => (),
+                _ = self.show_state(
+                    source,
+                    parent_rect.min.to_vec2(),
+                    depth, // TODO match target rather than source?
+                    &mut edit_data,
+                    home_dir,
+                    ui,
+                );
             }
+            _ => (),
         }
 
         edit_data.drag_transition = self.show_transitions(&mut edit_data, ui);
@@ -727,146 +727,123 @@ where
         edit_data: &mut EditData,
         // TEMP
         drag_transition: Option<Transition>,
-        ui: &mut Ui,
+        p: Pos2,
     ) {
-        let Some(p) = ui.ctx().pointer_interact_pos() else {
-            return;
-        };
-
-        let Some(target) = self.drag_target(edit_data, self.graph.root, ui.dragged_idx(), p) else {
-            return;
-        };
-
         let commands = &mut edit_data.commands;
 
-        // Resolve drag. ui.input().pointer.primary_released() doesn't work?
-        if ui.input(|i| i.pointer.any_released()) {
-            // Only clear drags that target states. The rest are resolved later.
-            match std::mem::take(&mut edit_data.drag) {
-                drag @ Drag::State { .. } => {
-                    error!("drag nowhere: {drag:?}");
-                    // if let Some(p) = ui.ctx().pointer_interact_pos() {
-                    //     // Place the state relative to the parent with the offset.
-                    //     let p = p - parent_root_offset - offset;
-                    //     commands.push(Command::MoveState(src, target, p))
-                    // }
+        // Only clear drags that target states. The rest are resolved later.
+        match std::mem::take(&mut edit_data.drag) {
+            Drag::AddTransition(a, Some(b)) => match drag_transition {
+                Some(t) => commands.push(Command::AddTransition(a, b, t)),
+                None => {
+                    warn!("no drag_transition!");
                 }
-                Drag::AddTransition(a, Some(b)) => match drag_transition {
-                    Some(t) => commands.push(Command::AddTransition(a, b, t)),
-                    None => {
-                        warn!("no drag_transition!");
-                    }
-                },
-                Drag::TransitionSource(b, Some(a), tdx)
-                | Drag::TransitionTarget(a, Some(b), tdx) => {
-                    if let Some((a0, b0)) = self.graph.endpoints(tdx) {
-                        // Check if changed. We were doing this inside drag_transition to avoid
-                        // looking up endpoints twice...
-                        if a != a0 || b != b0 {
-                            match drag_transition {
-                                Some(t) => {
-                                    commands.push(Command::UpdateTransition(tdx, t));
+            },
+            Drag::TransitionSource(b, Some(a), tdx) | Drag::TransitionTarget(a, Some(b), tdx) => {
+                if let Some((a0, b0)) = self.graph.endpoints(tdx) {
+                    // Check if changed. We were doing this inside drag_transition to avoid
+                    // looking up endpoints twice...
+                    if a != a0 || b != b0 {
+                        match drag_transition {
+                            Some(t) => {
+                                commands.push(Command::UpdateTransition(tdx, t));
 
-                                    commands.push(Command::MoveTransition(
-                                        tdx,
-                                        (a != a0).then_some(a),
-                                        (b != b0).then_some(b),
-                                    ))
-                                }
-                                None => {
-                                    warn!("no drag_transition!");
-                                }
+                                commands.push(Command::MoveTransition(
+                                    tdx,
+                                    (a != a0).then_some(a),
+                                    (b != b0).then_some(b),
+                                ))
+                            }
+                            None => {
+                                warn!("no drag_transition!");
                             }
                         }
-                    } else {
-                        warn!("no endpoints!");
                     }
-                }
-                Drag::Initial(i, Some((target, port)), (c1, c2)) => {
-                    let initial = self
-                        .graph
-                        .initial(i)
-                        .map(|(initial, _)| (initial, target))
-                        .unwrap_or_else(|| (Initial::Initial, target));
-                    commands.push(Command::SetInitial(i, initial, (port, c1, c2)))
-                }
-
-                // TEMP put these back to be handled later
-                drag @ Drag::Resize(_, _)
-                | drag @ Drag::InitialControl(_, _)
-                | drag @ Drag::TransitionControl(_, _)
-                | drag @ Drag::TransitionId(_, _) => edit_data.drag = drag,
-
-                Drag::None => (),
-                drag @ _ => error!("invalid drag resolution: {:?}", drag),
-            }
-
-            if let Some(drag) = DragAndDrop::payload::<Drag>(ui.ctx()) {
-                match drag.as_ref() {
-                    // A state can't be dragged to itself, hence the index check. TODO: we already
-                    // checked this?
-                    Drag::State {
-                        idx: i,
-                        offset,
-                        press_origin,
-                        ..
-                    } if *i != target => {
-                        if let Some(p) = ui.ctx().pointer_interact_pos() {
-                            // Since the transition id is free-floating and no longer relative to
-                            // the source and target, we need to move all the enclosed
-                            // transitions. TODO: handle inside MoveState? or make a transaction
-                            let drag_offset = *press_origin - p;
-                            for (i, e) in self
-                                .graph
-                                .enclosed_edges(*i)
-                                .filter_map(|i| self.graph.transition(i).map(|e| (i, e)))
-                            {
-                                edit_data.commands.push(Command::UpdateTransition(
-                                    i,
-                                    e.clone().translate(-drag_offset),
-                                ));
-                            }
-
-                            // Get the target rect in screen-space.
-                            if let Some(target_rect) = edit_data.rects.get_rect(target) {
-                                edit_data.commands.push(Command::MoveState(
-                                    *i,
-                                    target,
-                                    // Find new position relative to target (parent) including
-                                    // pointer offset.
-                                    p - target_rect.min.to_vec2() - *offset,
-                                ));
-                            }
-
-                            DragAndDrop::clear_payload(ui.ctx());
-                        }
-                    }
-                    _ => (),
+                } else {
+                    warn!("no endpoints!");
                 }
             }
+            Drag::Initial(i, Some((target, port)), (c1, c2)) => {
+                let initial = self
+                    .graph
+                    .initial(i)
+                    .map(|(initial, _)| (initial, target))
+                    .unwrap_or_else(|| (Initial::Initial, target));
+                commands.push(Command::SetInitial(i, initial, (port, c1, c2)))
+            }
+
+            // TEMP put these back to be handled later
+            drag @ Drag::Resize(_, _)
+            | drag @ Drag::InitialControl(_, _)
+            | drag @ Drag::TransitionControl(_, _)
+            | drag @ Drag::TransitionId(_, _) => edit_data.drag = drag,
+
+            // A state can't be dragged to itself, hence the index check. TODO: we already
+            // checked this?
+            Drag::State {
+                source,
+                target: Some(target),
+                offset,
+                press_origin,
+                ..
+            } if source != target => {
+                // Since the transition id is free-floating and no longer relative to
+                // the source and target, we need to move all the enclosed
+                // transitions. TODO: handle inside MoveState? or make a transaction
+                let drag_offset = press_origin - p;
+                for (i, e) in self
+                    .graph
+                    .enclosed_edges(source)
+                    .filter_map(|i| self.graph.transition(i).map(|e| (i, e)))
+                {
+                    edit_data.commands.push(Command::UpdateTransition(
+                        i,
+                        e.clone().translate(-drag_offset),
+                    ));
+                }
+
+                // Get the target rect in screen-space.
+                if let Some(target_rect) = edit_data.rects.get_rect(target) {
+                    edit_data.commands.push(Command::MoveState(
+                        source,
+                        target,
+                        // Find new position relative to target (parent) including
+                        // pointer offset.
+                        p - target_rect.min.to_vec2() - offset,
+                    ));
+                }
+            }
+
+            // No target is not invalid.
+            //drag @ _ => error!("invalid drag resolution: {:?}", drag),
+            _ => (),
         }
     }
 
-    // Use the previous frame's rect data (clipped, in screen-space) to find the front-most
-    // descendant (hovered). Discluding the dragged state.
+    // Use the previous frame's rect data (clipped, in screen-space) to rescursively find the
+    // front-most descendant (hovered). Discluding the dragged state.
     fn drag_target(
         &self,
-        edit_data: &EditData,
-        idx: Idx,
-        dragged_idx: Option<Idx>,
+        rects: &Rects,
+        parent: Idx,
+        dragged: Option<Idx>,
         p: Pos2,
     ) -> Option<Idx> {
-        if let Some(r) = edit_data.rects.get_rect(idx) {
-            if r.contains(p) {
-                return self
-                    .graph
-                    .children_rev(idx)
-                    .filter_map(|(child, _state)| (Some(child) != dragged_idx).then_some(child))
-                    .find_map(|child| self.drag_target(edit_data, child, dragged_idx, p))
-                    .or(Some(idx));
-            }
-        }
-        None
+        let target = rects
+            .get_rect(parent)
+            .filter(|r| r.contains(p))
+            .map(|_| parent);
+
+        target
+            .and(
+                self.graph
+                    .children_rev(parent)
+                    // If we filter the child we can't target its children, but we don't care about
+                    // this for dragged states.
+                    .filter_map(|(child, _state)| (Some(child) != dragged).then_some(child))
+                    .find_map(|child| self.drag_target(rects, child, dragged, p)),
+            )
+            .or(target)
     }
 
     /// Create a new transition from a to b, derived from an original transition t0, along with
@@ -983,7 +960,7 @@ where
         let mut drag_transition = None;
 
         // Offset enclosed transitions if dragging a state.
-        let dragged_state = ui.dragged_idx_offset();
+        let dragged_state = None; // FIX: ui.dragged_idx_offset();
 
         for (tdx, source, target, t, internal) in self.graph.transitions() {
             match edit_data.drag {
@@ -1144,33 +1121,29 @@ where
 
         let mut rect = state.rect.translate(offset);
 
-        if let Some(d) = DragAndDrop::payload::<Drag>(ui.ctx()) {
-            match d.as_ref() {
-                Drag::State {
-                    idx: i,
-                    press_origin,
-                    ..
-                } if *i == idx => {
-                    // Missing from x11 or the default cursor theme?
-                    //ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+        match &edit_data.drag {
+            &Drag::State {
+                source,
+                press_origin,
+                ..
+            } if source == idx => {
+                // Missing from x11 or the default cursor theme?
+                //ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
 
-                    if let Some(p) = interact_pos {
-                        rect = rect.translate(-(*press_origin - p))
-                    } else {
-                        warn!("no interact_pos with drag");
-                    }
+                if let Some(p) = interact_pos {
+                    rect = rect.translate(-(press_origin - p))
+                } else {
+                    warn!("no interact_pos with drag");
                 }
-                _ => (),
             }
+            _ => (),
         }
 
         match edit_data.drag {
-            // Use all available space for the root. TODO: move this out?
-            _ if root => rect = state.rect.intersect(ui.max_rect()),
-
+            // Use all available space for the root.
+            _ if root => rect = ui.max_rect(),
             Drag::Resize(i, delta) if i == idx => {
-                // Include the offset and the resize delta.
-                rect = Rect::from_min_size(state.rect.min + offset, state.rect.size() + delta);
+                rect = Rect::from_min_size(rect.min, state.rect.size() + delta)
             }
             _ => (),
         };
@@ -1192,8 +1165,7 @@ where
             return;
         }
 
-        // FIX use drop target
-        let is_target = edit_data.drag.is_target(idx);
+        let is_target = edit_data.drag.target() == Some(idx);
 
         let parent_clip_rect = ui.clip_rect();
 
@@ -1201,11 +1173,8 @@ where
             // Do we need to shrink based on the frame stoke still? TODO
             ui.set_clip_rect(ui.max_rect().intersect(parent_clip_rect));
 
-            // Set drag target first and let child states override. TODO remove me
-            self.set_drag_target(idx, depth, &mut edit_data.drag, ui);
-
             // We can't use dragged_id because we don't know the child's id yet.
-            let dragged_idx = ui.dragged_idx();
+            let dragged_idx = edit_data.drag.dragged_idx();
 
             // Show child states.
             for child in self
@@ -1307,42 +1276,26 @@ where
         // check `in_drag` anyway.
         if state_response.drag_started_by(PointerButton::Primary) && !edit_data.drag.in_drag() {
             if let Some(p) = interact_pos {
-                if ui.input(|i| i.modifiers.shift) {
+                edit_data.drag = if ui.input(|i| i.modifiers.shift) {
                     // New transition, drag to target.
                     //let port1 = self.free_port(idx, transit::Direction::Outgoing);
-                    edit_data.drag =
-                        // free_port always returns a port locator?
-                        Drag::AddTransition(idx, None);
+
+                    // free_port always returns a port locator?
+                    Drag::AddTransition(idx, None)
                 } else {
                     // Save the pointer offset from the state origin. Zero is never correct for the
                     // parent offest, so maybe it should be an Option like target?
-
-                    // response.dnd_set_drag_payload does not use drag_started_by nor checks
-                    // modifiers
-                    DragAndDrop::set_payload(
-                        ui.ctx(),
-                        Drag::State {
-                            idx,
-                            offset: p - rect.min,
-                            depth,
-                            press_origin: p,
-                        },
-                    );
-                    //edit_data.drag = Drag::State(idx, p - rect.min, None, Vec2::ZERO);
+                    Drag::State {
+                        source: idx,
+                        target: None,
+                        offset: p - rect.min,
+                        depth,
+                        press_origin: p,
+                    }
                 }
             }
             // ResponseExt? we can't check the response since it may be dragged with
         }
-
-        // The payload is automatically cleared at the end of the frame if the
-        // pointer is released. We want to continue drawing this frame as if the
-        // state is still being dragged. Otherwise we will get flickering
-        // transitions, drawn without the offset (until they are updated next
-        // frame).
-
-        // We don't update anything each frame with the drag delta since we want
-        // to undo the whole drag. Perhaps we should revisit this by only
-        // recording history by diffing the state at drag start and stop.
 
         // Context menu on right click.
         if !edit_data.drag.in_drag() {
@@ -1706,88 +1659,36 @@ where
         }
     }
 
-    /// Each state sets the drag target for its children. The topmost child that contains the
-    /// pointer becomes the target. This is similiar to egui's builtin handling of overlapping
-    /// interactions. We can't set the target inside each child recursively because they aren't
-    /// aware of siblings or their ordering. In order to reduce the amount of work done here that is
-    /// thrown away we could recurse from the root once before drawing anything.
-    pub fn set_drag_target(&self, idx: Idx, depth: usize, drag: &mut Drag, ui: &Ui) {
-        // FIX: return drag target?
-
-        // let Some(p) = ui.ctx().pointer_interact_pos() else {
-        //     return;
+    /// Sets drag target for current drag.
+    fn set_drag_target(&self, edit_data: &mut EditData, p: Pos2) {
+        // For transition endpoints only. What happened to this?
+        // let dir = match &edit_data.drag {
+        //     Drag::TransitionSource(..) => Direction::Outgoing,
+        //     //Drag::TransitionTarget(..) => transit::Direction::Incoming,
+        //     _ => Direction::Incoming,
         // };
 
-        // These are the same...
-        //dbg!(&rect, ui.max_rect());
-        let rect = ui.max_rect();
-        let parent_offset = rect.min.to_vec2();
-
-        // For transition endpoints only.
-        let dir = match drag {
-            Drag::TransitionSource(..) => Direction::Outgoing,
-            //Drag::TransitionTarget(..) => transit::Direction::Incoming,
-            _ => Direction::Incoming,
-        };
-
-        match drag {
-            // We can't drag into ourselves.
-            // Drag::State(i, ..) if *i == idx => (),
-            // Drag::State(dragged_idx, _drag_offset, target, offset) => {
-            //     // Root clears the target by setting itself initially (any state can be dragged to
-            //     // root).
-            //     if depth == 0 {
-            //         *target = Some((idx, depth));
-            //         *offset = parent_offset;
-            //     }
-
-            //     if let Some((t, new_offset)) = self.graph.children_rev(idx).find_map(|(i, s)| {
-            //         let child_rect = s.state.rect.translate(parent_offset).intersect(rect);
-
-            //         // The drag target cannot be in the path of the dragged state (cycles). This
-            //         // never happens in practice since the dragged states are moving with the
-            //         // pointer.
-            //         (!self.graph.in_path(*dragged_idx, i) && child_rect.contains(p)).then(|| {
-            //             // ui.ctx().debug_painter().debug_rect(child_rect, Color32::GREEN, format!("{:?}", p - child_rect.min));
-            //             (i, child_rect.min.to_vec2())
-            //         })
-            //     }) {
-            //         *target = Some((t, depth + 1));
-            //         *offset = new_offset;
-            //     }
-            // }
+        match &mut edit_data.drag {
+            Drag::State { source, target, .. } => {
+                // We can't drag into ourselves.
+                *target = self.drag_target(&edit_data.rects, self.graph.root, Some(*source), p)
+            }
             Drag::TransitionSource(_, target, ..)
             | Drag::TransitionTarget(_, target, ..)
             | Drag::AddTransition(_, target, ..) => {
-                if depth == 0 {
+                *target = self
+                    .drag_target(&edit_data.rects, self.graph.root, None, p)
                     // No transition can target the root.
-                    *target = None;
-                }
-
-                if let Some((i, _)) = self
-                    .graph
-                    .children_rev(idx)
-                    // TODO Ui::rect_contains_pointer takes into account layer and clipping, make
-                    // sure we keep this
-                    .find(|(_i, s)| ui.rect_contains_pointer(s.state.rect.translate(parent_offset)))
-                {
-                    *target = Some(i)
-                }
+                    .filter(|t| *t != self.graph.root)
             }
             Drag::Initial(initial_idx, target, _) => {
-                // Initial must be a child state.
-                if depth == 0 || *initial_idx == idx {
-                    *target = None;
-                }
-                // Make a flag in show_state to avoid checking this for every state?
-                if self.graph.in_path(*initial_idx, idx) {
-                    if let Some((i, _)) = self.graph.children_rev(idx).find(|(_i, s)| {
-                        // TODO see above
-                        ui.rect_contains_pointer(s.state.rect.translate(parent_offset))
-                    }) {
-                        // Find a free port.
-                        *target = Some((i, self.free_port(i, dir)))
-                    }
+                let new_target = self
+                    .drag_target(&edit_data.rects, self.graph.root, None, p)
+                    // Initial must be a child state.
+                    .filter(|t| self.graph.is_child(*initial_idx, *t));
+                if target.map(|(t, _)| t) != new_target {
+                    // Find free port.
+                    *target = new_target.map(|t| (t, self.free_port(t, Direction::Incoming)));
                 }
             }
             _ => (),
@@ -2316,21 +2217,13 @@ pub fn quad_beziers_from_points(points: &[Pos2]) -> impl Iterator<Item = [Pos2; 
 }
 
 trait UiExt {
-    fn dragged_idx(&self) -> Option<Idx>;
     fn dragged_idx_offset(&self) -> Option<(Idx, Vec2)>;
     fn drag_offset(&self) -> Option<Vec2>;
 }
 
 impl UiExt for Ui {
-    /// Returns dragged state's index.
-    fn dragged_idx(&self) -> Option<Idx> {
-        DragAndDrop::payload::<Drag>(self.ctx()).and_then(|d| match d.as_ref() {
-            Drag::State { idx, .. } => Some(*idx),
-            _ => None,
-        })
-    }
-
     /// Returns dragged state's (index, drag offset).
+    // FIX: remove me
     fn dragged_idx_offset(&self) -> Option<(Idx, Vec2)> {
         let ctx = self.ctx();
         let p = ctx.pointer_interact_pos();
@@ -2338,8 +2231,10 @@ impl UiExt for Ui {
             .zip(p)
             .and_then(|(d, p)| match d.as_ref() {
                 Drag::State {
-                    idx, press_origin, ..
-                } => Some((*idx, *press_origin - p)),
+                    source,
+                    press_origin,
+                    ..
+                } => Some((*source, *press_origin - p)),
                 _ => None,
             })
     }
