@@ -959,8 +959,21 @@ where
     pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) -> Option<Transition> {
         let mut drag_transition = None;
 
-        // Offset enclosed transitions if dragging a state.
-        let dragged_state = None; // FIX: ui.dragged_idx_offset();
+        // Offset enclosed transitions if dragging a state. Do this once here rather than once for
+        // each transition.
+        let dragged_state = match &edit_data.drag {
+            Drag::State {
+                source,
+                press_origin,
+                ..
+            } => ui
+                .ctx()
+                .pointer_interact_pos()
+                .map(|p| (*source, *press_origin - p)),
+            _ => None,
+        };
+
+        // FIX: this crazy - we're matching drag multiple times per transition
 
         for (tdx, source, target, t, internal) in self.graph.transitions() {
             match edit_data.drag {
@@ -2217,28 +2230,10 @@ pub fn quad_beziers_from_points(points: &[Pos2]) -> impl Iterator<Item = [Pos2; 
 }
 
 trait UiExt {
-    fn dragged_idx_offset(&self) -> Option<(Idx, Vec2)>;
     fn drag_offset(&self) -> Option<Vec2>;
 }
 
 impl UiExt for Ui {
-    /// Returns dragged state's (index, drag offset).
-    // FIX: remove me
-    fn dragged_idx_offset(&self) -> Option<(Idx, Vec2)> {
-        let ctx = self.ctx();
-        let p = ctx.pointer_interact_pos();
-        DragAndDrop::payload::<Drag>(ctx)
-            .zip(p)
-            .and_then(|(d, p)| match d.as_ref() {
-                Drag::State {
-                    source,
-                    press_origin,
-                    ..
-                } => Some((*source, *press_origin - p)),
-                _ => None,
-            })
-    }
-
     /// This is pretty useless because the press origin goes away once the pointer is released, so
     /// we can't use it to get the offset on release. We have to store it somewhere ourselves.
     fn drag_offset(&self) -> Option<Vec2> {
