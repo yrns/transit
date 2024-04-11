@@ -5,14 +5,22 @@ pub struct Frame {
     depth: usize,
     selected: bool,
     is_target: bool,
+    is_dragging: bool,
 }
 
-pub fn state_frame(is_root: bool, depth: usize, selected: bool, is_target: bool) -> Frame {
+pub fn state_frame(
+    is_root: bool,
+    depth: usize,
+    selected: bool,
+    is_target: bool,
+    is_dragging: bool,
+) -> Frame {
     Frame {
         is_root,
         depth,
         selected,
         is_target,
+        is_dragging,
     }
 }
 
@@ -23,7 +31,8 @@ impl Frame {
         let frame = if self.is_root {
             egui::Frame::none() //.fill(ui.style().visuals.window_fill()) // too flat
         } else {
-            egui::Frame::window(&ui.style()).inner_margin(Margin::ZERO)
+            // TODO: we are clipping the stroke, make the margin depend on the stroke?
+            egui::Frame::window(&ui.style()).inner_margin(Margin::same(2.0))
         };
 
         // Can't change the margins after this. Frame is Copy and gets copied here.
@@ -53,35 +62,32 @@ impl Frame {
             };
         }
 
-        // TODO: once selected, there is no other state
-
-        if self.is_target {
+        frame.stroke = if self.is_target {
             // The default stroke for selection is thin, so make it more prominent here to show
             // the drag target. The fill color is brighter.
-            frame.stroke = Stroke::new(3.0, style.visuals.selection.stroke.color);
-        } else if !self.is_root {
-            // Use the fg_stroke (or window_stroke()) since the default dark theme has no bg_stroke
-            // for inactive, which makes all the contained states indiscernible. Non-interactive
-            // never happens.
-            frame.stroke = if self.selected {
-                Stroke::new(2.0, style.visuals.selection.bg_fill)
-            } else if
-            //response.dragged()
-            // dragged does not work since the widget id changes after one frame... check idx FIX
-            response.is_pointer_button_down_on()
-                || response.has_focus()
+            Stroke::new(2.5, style.visuals.selection.stroke.color)
+        } else if self.selected {
+            // TODO: Make selected only modify color and the rest width?
+            Stroke::new(2.0, style.visuals.selection.bg_fill)
+        } else if self.is_dragging
+                || response.is_pointer_button_down_on()
+                || response.has_focus() // not used?
                 || response.clicked()
-            {
-                style.visuals.widgets.active.bg_stroke
-            } else if response.hovered() || response.highlighted() {
-                //Stroke::new(1.25, style.visuals.window_stroke().color)
-                style.visuals.widgets.hovered.bg_stroke
-            // } else if !odd {
-            //     style.visuals.widgets.inactive.bg_stroke
-            } else {
-                style.visuals.window_stroke()
-            };
+        {
+            style.visuals.widgets.active.bg_stroke
+        } else if self.is_root {
+            Stroke::NONE
+        } else if response.hovered() || response.highlighted() {
+            //Stroke::new(1.25, style.visuals.window_stroke().color)
+            style.visuals.widgets.hovered.bg_stroke
         }
+        // Note the default dark theme has no bg_stroke for inactive, which makes all the
+        // contained states indiscernible. Non-interactive never happens.
+        // } else if !odd {
+        //     style.visuals.widgets.inactive.bg_stroke
+        else {
+            style.visuals.window_stroke()
+        };
 
         _ = prep.end(ui);
         response

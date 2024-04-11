@@ -1179,6 +1179,7 @@ where
         }
 
         let is_target = edit_data.drag.target() == Some(idx);
+        let is_dragging = edit_data.drag.is_dragging(idx);
 
         let parent_clip_rect = ui.clip_rect();
 
@@ -1263,6 +1264,7 @@ where
                 depth,
                 matches!(self.selection, Selection::State(i) if i == idx),
                 is_target,
+                is_dragging,
             )
             .show(&mut ui, child_states_and_header)
         };
