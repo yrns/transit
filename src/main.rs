@@ -1,3 +1,5 @@
+mod font;
+
 use edit_egui as edit;
 use eframe::egui;
 use tracing_subscriber::{
@@ -41,6 +43,8 @@ fn main() {
                 color: egui::Color32::from_black_alpha(64),
             };
             cc.egui_ctx.set_visuals(visuals);
+
+            font::load_system_font(&cc.egui_ctx);
 
             let mut app: edit::App<janet::Source> = cc
                 .storage

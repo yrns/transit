@@ -18,6 +18,7 @@ janet = { path = "./janet" }
 eframe = { path = "./eframe-dynamic", package = "eframe-dynamic" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = "0.3"
+font-kit = "0.13.0"
 
 # https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]
