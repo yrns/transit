@@ -244,19 +244,19 @@ where
         match &mut edit_data.drag {
             Drag::State { source, target, .. } => {
                 // We can't drag into ourselves.
-                *target = self.drag_target(&edit_data.rects, self.graph.root, Some(*source), p)
+                *target = self.drag_target(&edit_data.rects, self.root(), Some(*source), p)
             }
             Drag::TransitionSource(_, target, ..)
             | Drag::TransitionTarget(_, target, ..)
             | Drag::AddTransition(_, target, ..) => {
                 *target = self
-                    .drag_target(&edit_data.rects, self.graph.root, None, p)
+                    .drag_target(&edit_data.rects, self.root(), None, p)
                     // No transition can target the root.
-                    .filter(|t| *t != self.graph.root)
+                    .filter(|t| *t != self.root())
             }
             Drag::Initial(initial_idx, target, _) => {
                 let new_target = self
-                    .drag_target(&edit_data.rects, self.graph.root, None, p)
+                    .drag_target(&edit_data.rects, self.root(), None, p)
                     // Initial must be a child state.
                     .filter(|t| self.graph.is_child(*initial_idx, *t));
                 if target.map(|(t, _)| t) != new_target {

@@ -44,6 +44,9 @@ pub struct Edit<S> {
     pub source: Option<S>,
     /// Graph structure.
     pub graph: Graph<State, Transition>,
+    /// Pseudo root.
+    #[serde(default)]
+    narrow: Option<Idx>,
     /// Current selection.
     #[serde(default)]
     pub selection: Selection,
@@ -60,6 +63,7 @@ impl<S> Default for Edit<S> {
         Self {
             source: None,
             graph: Graph::default(),
+            narrow: None,
             selection: Selection::None,
             undo: Undo::default(),
             version: 0,
@@ -142,7 +146,7 @@ pub struct Transition {
 }
 
 #[derive(Debug)]
-pub enum Command {
+enum Command {
     AddState(Idx, Pos2),
     RemoveState(Idx, bool),
     UpdateState(Idx, State),
@@ -156,15 +160,16 @@ pub enum Command {
     SetInitial(Idx, (Initial, Idx), InitialData),
     UnsetInitial(Idx),
     StepInitial(Idx),
-    SetEnter,
-    SetExit,
-    SetGuard,
+    // SetEnter, ???
+    // SetExit,
+    // SetGuard,
     SetInternal(Tdx, bool),
     UpdateSelection(Selection),
     SelectSourcePath(PathBuf),
     GotoSymbol(String, PathBuf, (usize, usize)),
     UpdateSymbol(SymbolId, Option<String>),
     InsertSymbol(String, PathBuf, String),
+    SetNarrow(Option<Idx>),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -430,7 +435,12 @@ where
         &self.graph.root().id
     }
 
-    pub fn process_commands(&mut self, commands: impl IntoIterator<Item = Command>) {
+    /// Returns the narrowed state, or root if None.
+    fn root(&self) -> Idx {
+        self.narrow.unwrap_or(self.graph.root)
+    }
+
+    fn process_commands(&mut self, commands: impl IntoIterator<Item = Command>) {
         for c in commands {
             let op = match c {
                 Command::AddState(parent, p) => self
@@ -537,8 +547,13 @@ where
                             .unwrap_or_default()
                     }
                 },
+                Command::SetNarrow(n) => {
+                    self.narrow = n;
+                    Op::Noop
+                }
+                // Some commands (symbols) are handled by the app, so they never show up here.
                 _ => {
-                    error!("unhandled command: {:?}", c);
+                    error!(?c, "unhandled command:");
                     Op::Noop
                 }
             };
@@ -565,7 +580,7 @@ where
         if let Submit::Result(idx) = edit_data.search.show(
             focus.is_none() && ui.input(|i| i.key_pressed(Key::S)),
             // Can't select the root state.
-            self.graph.states().filter(|(i, _s)| *i != self.graph.root),
+            self.graph.states().filter(|(i, _s)| *i != self.root()),
             ui.id(),
             ui,
         ) {
@@ -579,7 +594,7 @@ where
 
         // Show root and recursively show children.
         self.show_state(
-            self.graph.root,
+            self.root(),
             ui.min_rect().min.to_vec2(),
             0,
             &mut edit_data,
@@ -902,7 +917,7 @@ where
     ) {
         //let offset = ui.min_rect().min.to_vec2();
         let state = self.graph.state(idx).unwrap();
-        let root = idx == self.graph.root;
+        let root = idx == self.root();
         let interact_pos = ui.ctx().pointer_interact_pos();
 
         let mut rect = state.rect.translate(offset);
@@ -1103,13 +1118,27 @@ where
                     ui.close_menu();
                 }
                 // Can't remove the root state.
-                if idx != self.graph.root {
+                if idx != self.root() {
                     if ui.button("Remove state").clicked() {
                         edit_data.commands.push(Command::RemoveState(idx, false));
                         ui.close_menu();
                     }
                     if ui.button("Remove state (recursive)").clicked() {
                         edit_data.commands.push(Command::RemoveState(idx, true));
+                        ui.close_menu();
+                    }
+                }
+
+                if self.narrow != Some(idx) {
+                    if ui.button("Narrow here").clicked() {
+                        edit_data.commands.push(Command::SetNarrow(Some(idx)));
+                        ui.close_menu();
+                    }
+                }
+
+                if self.narrow.is_some() {
+                    if ui.button("Widen").clicked() {
+                        edit_data.commands.push(Command::SetNarrow(None));
                         ui.close_menu();
                     }
                 }
