@@ -953,7 +953,8 @@ where
                     }
                 }
 
-                if self.narrow != Some(idx) {
+                // No reason to narrow to root.
+                if self.narrow != Some(idx) && idx != self.graph.root {
                     if ui.button("Narrow here").clicked() {
                         edit_data.commands.push(Command::SetNarrow(Some(idx)));
                         ui.close_menu();
