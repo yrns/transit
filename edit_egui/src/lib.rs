@@ -3,6 +3,7 @@ mod command;
 mod drag;
 mod editabel;
 mod editor;
+// mod graph; TODO? or edit?
 mod search;
 mod source;
 mod undo;
@@ -191,7 +192,7 @@ impl Rects {
     fn from_graph(graph: &Graph<State, Transition>) -> Self {
         let mut rects = Self::default();
         fn insert(i: Idx, graph: &Graph<State, Transition>, parent_rect: &Rect, rects: &mut Rects) {
-            // Translate to world/root space.
+            // Translate to root-space.
             let rect = graph.graph[i]
                 .state
                 .rect
@@ -205,8 +206,20 @@ impl Rects {
         rects
     }
 
-    pub fn get(&self, idx: Idx) -> Option<(Rect, MaxPorts)> {
-        self.0.get(&idx.index()).copied()
+    pub fn get(&self, idx: Idx) -> Option<&(Rect, MaxPorts)> {
+        self.0.get(&idx.index())
+    }
+
+    fn port_pos(&self, i: Idx, port: usize, direction: Direction) -> Option<Pos2> {
+        self.get(i).map(|r| port_pos(r, port, direction))
+    }
+
+    fn port_in(&self, i: Idx, port: usize) -> Option<Pos2> {
+        self.port_pos(i, port, Direction::Incoming)
+    }
+
+    fn port_out(&self, i: Idx, port: usize) -> Option<Pos2> {
+        self.port_pos(i, port, Direction::Outgoing)
     }
 
     pub fn get_rect(&self, idx: Idx) -> Option<Rect> {
@@ -221,7 +234,8 @@ impl Rects {
     }
 
     // TODO: unused?
-    pub fn insert_max_port(&mut self, idx: Idx, direction: Direction, max_port: Option<usize>) {
+    #[allow(unused)]
+    fn insert_max_port(&mut self, idx: Idx, direction: Direction, max_port: Option<usize>) {
         assert!(self
             .0
             .get_mut(&idx.index())
@@ -456,10 +470,10 @@ where
         // TODO: initial still draws under this... draw with show_transitions?
         match &edit_data.drag {
             &Drag::State { source, depth, .. } => {
-                let (parent_rect, ..) = self
+                let parent_rect = self
                     .graph
                     .parent(source)
-                    .and_then(|p| edit_data.rects.get(p))
+                    .and_then(|p| edit_data.rects.get_rect(p))
                     .expect("dragged state parent rect exists");
 
                 _ = self.show_state(
@@ -528,9 +542,8 @@ where
         t.port2 = ports.1;
 
         let (start, end) = rects
-            .get(a)
-            .map(|r| port_out(r, ports.0))
-            .zip(rects.get(b).map(|r| port_pos(r, ports.1, target_dir(a, b))))
+            .port_out(a, ports.0)
+            .zip(rects.port_pos(b, ports.1, target_dir(a, b)))
             .unwrap();
 
         // Reset control points?
@@ -567,9 +580,8 @@ where
         };
 
         let (start, end) = rects
-            .get(a)
-            .map(|r| port_out(r, ports.0))
-            .zip(rects.get(b).map(|r| port_pos(r, ports.1, target_dir(a, b))))
+            .port_out(a, ports.0)
+            .zip(rects.port_pos(b, ports.1, target_dir(a, b)))
             .unwrap();
 
         // Reset control points?
@@ -631,13 +643,13 @@ where
                         if let Some(start) = ui
                             .ctx()
                             .pointer_interact_pos()
-                            .or_else(|| edit_data.rects.get(source).map(|r| port_out(r, t.port1)))
+                            .or_else(|| edit_data.rects.port_out(source, t.port1))
                         {
-                            if let Some(end) = edit_data
-                                .rects
-                                .get(target)
-                                .map(|r| port_pos(r, t.port2, target_dir(source, target)))
-                            {
+                            if let Some(end) = edit_data.rects.port_pos(
+                                target,
+                                t.port2,
+                                target_dir(source, target),
+                            ) {
                                 self.show_connection(
                                     start,
                                     end,
@@ -662,14 +674,13 @@ where
                         drag_transition = Some(t);
                     }
                     None => {
-                        if let Some(start) =
-                            edit_data.rects.get(source).map(|r| port_out(r, t.port1))
-                        {
+                        if let Some(start) = edit_data.rects.port_out(source, t.port1) {
                             if let Some(end) = ui.ctx().pointer_interact_pos().or_else(|| {
-                                edit_data
-                                    .rects
-                                    .get(target)
-                                    .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                                edit_data.rects.port_pos(
+                                    target,
+                                    t.port2,
+                                    target_dir(source, target),
+                                )
                             }) {
                                 self.show_connection(
                                     start,
@@ -683,11 +694,11 @@ where
                     }
                 },
                 _ => {
-                    if let Some(start) = edit_data.rects.get(source).map(|r| port_out(r, t.port1)) {
-                        if let Some(end) = edit_data
-                            .rects
-                            .get(target)
-                            .map(|r| port_pos(r, t.port2, target_dir(source, target)))
+                    if let Some(start) = edit_data.rects.port_out(source, t.port1) {
+                        if let Some(end) =
+                            edit_data
+                                .rects
+                                .port_pos(target, t.port2, target_dir(source, target))
                         {
                             self.show_connection(
                                 start,
@@ -727,7 +738,7 @@ where
                 None => {
                     // Put the port in AddTransition?
                     let port1 = self.free_port(source, Direction::Outgoing);
-                    if let Some(start) = edit_data.rects.get(source).map(|r| port_out(r, port1)) {
+                    if let Some(start) = edit_data.rects.port_out(source, port1) {
                         if let Some(end) = ui.ctx().pointer_interact_pos() {
                             let cp = approx_cp(start, end);
                             self.show_connection(
@@ -1033,8 +1044,7 @@ where
                     Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
                         // Reuse existing port if dragging to existing target?
                         if let Some(end) = target
-                            .and_then(|(t, p)| edit_data.rects.get(t).zip(Some(p)))
-                            .map(|(r, p)| port_in(r, p))
+                            .and_then(|(t, p)| edit_data.rects.port_in(t, p))
                             .or_else(|| ui.ctx().pointer_interact_pos())
                         {
                             // bias the initial down
@@ -1053,7 +1063,7 @@ where
                         if let Some((i, (port, c1, c2))) =
                             initial.map(|(_, i)| i).zip(state.initial)
                         {
-                            if let Some(end) = edit_data.rects.get(i).map(|r| port_in(r, port)) {
+                            if let Some(end) = edit_data.rects.port_in(i, port) {
                                 self.show_connection(
                                     start,
                                     end,
@@ -1751,7 +1761,7 @@ const PORT_SPACING: f32 = 10.0;
 
 // Scale based on number of ports and available vertical space. When the state is fully collapsed we
 // don't want to show the endpoints?
-pub fn port_pos(rect: (Rect, MaxPorts), port: usize, direction: Direction) -> Pos2 {
+fn port_pos(rect: &(Rect, MaxPorts), port: usize, direction: Direction) -> Pos2 {
     let (rect, max_ports) = rect;
     let (origin, max_port) = match direction {
         Direction::Incoming => (rect.min, max_ports.0),
@@ -1767,14 +1777,6 @@ pub fn port_pos(rect: (Rect, MaxPorts), port: usize, direction: Direction) -> Po
     let spacing =
         ((rect.height() - PORT_SPACING * 2.0).max(0.0) / (max_port + 1) as f32).min(PORT_SPACING);
     origin + vec2(0.0, PORT_SPACING + spacing * port as f32)
-}
-
-pub fn port_in(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
-    port_pos(rect, port, Direction::Incoming)
-}
-
-pub fn port_out(rect: (Rect, MaxPorts), port: usize) -> Pos2 {
-    port_pos(rect, port, Direction::Outgoing)
 }
 
 impl State {
