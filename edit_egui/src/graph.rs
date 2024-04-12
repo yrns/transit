@@ -275,7 +275,8 @@ pub fn midpoint(a: Pos2, b: Pos2) -> Pos2 {
     (a + b.to_vec2()) * 0.5
 }
 
-pub fn quad_beziers_from_points(points: &[Pos2]) -> impl Iterator<Item = [Pos2; 3]> + '_ {
+#[allow(unused)]
+fn quad_beziers_from_points(points: &[Pos2]) -> impl Iterator<Item = [Pos2; 3]> + '_ {
     points.windows(3).enumerate().map(|(i, p)| {
         let [mut p0, p1, mut p2] = *p else {
             panic!("window is always 3");
