@@ -261,7 +261,7 @@ where
                     .filter(|t| self.graph.is_child(*initial_idx, *t));
                 if target.map(|(t, _)| t) != new_target {
                     // Find free port.
-                    *target = new_target.map(|t| (t, self.free_port(t, Direction::Incoming)));
+                    *target = new_target.map(|t| (t, self.graph.free_port(t, Direction::Incoming)));
                 }
             }
             _ => (),

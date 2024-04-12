@@ -3,7 +3,7 @@ mod command;
 mod drag;
 mod editabel;
 mod editor;
-// mod graph; TODO? or edit?
+mod graph;
 mod search;
 mod source;
 mod undo;
@@ -24,6 +24,7 @@ use egui::{
     epaint::{text::LayoutJob, CubicBezierShape, Vertex},
     *,
 };
+use graph::*;
 use search::{SearchBox, Submit};
 pub use source::*;
 use tracing::{error, info, warn};
@@ -46,7 +47,7 @@ pub struct Edit<S> {
     /// Source file.
     pub source: Option<S>,
     /// Graph structure.
-    pub graph: Graph<State, Transition>,
+    pub graph: EditGraph,
     /// Pseudo root.
     #[serde(default)]
     narrow: Option<Idx>,
@@ -65,7 +66,7 @@ impl<S> Default for Edit<S> {
     fn default() -> Self {
         Self {
             source: None,
-            graph: Graph::default(),
+            graph: Default::default(),
             narrow: None,
             selection: Selection::None,
             undo: Undo::default(),
@@ -73,9 +74,6 @@ impl<S> Default for Edit<S> {
         }
     }
 }
-
-// Initial (destination) port and control points. Similiar to transition.
-pub type InitialData = (usize, Vec2, Vec2);
 
 #[derive(Copy, Clone, Debug)]
 pub enum SymbolId {
@@ -85,68 +83,6 @@ pub enum SymbolId {
 }
 
 pub type Symbol = Option<String>;
-
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Clone, Debug)]
-pub struct State {
-    pub id: String,
-    pub enter: Option<String>,
-    pub exit: Option<String>,
-    /// Rect relative to parent.
-    rect: Rect,
-    initial: Option<InitialData>,
-    #[allow(unused)]
-    collapsed: bool,
-    #[allow(unused)]
-    pan: Vec2,
-    #[allow(unused)]
-    zoom: f32,
-}
-
-// This is only used for the root state?
-impl Default for State {
-    fn default() -> Self {
-        State {
-            id: "untitled".into(),
-            enter: None,
-            exit: None,
-            rect: Rect::from_min_size(pos2(0.0, 0.0), Vec2::INFINITY),
-            initial: None,
-            collapsed: false,
-            pan: Vec2::ZERO,
-            zoom: 1.0,
-        }
-    }
-}
-
-impl From<&str> for State {
-    fn from(id: &str) -> Self {
-        Self {
-            id: id.to_owned(),
-            ..Default::default()
-        }
-    }
-}
-
-// Why default?
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Transition {
-    #[serde(default)]
-    pub id: String,
-    pub guard: Option<String>,
-    /// Center widget left top position in root space.
-    #[serde(default)]
-    pos: Pos2,
-    /// Control point offset from the state of origin (source).
-    c1: Vec2, // tuples?
-    /// Control point offset from the destination state (target).
-    c2: Vec2,
-    /// Source port index.
-    port1: usize,
-    /// Destination port index.
-    port2: usize,
-}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ControlPoint {
@@ -182,8 +118,6 @@ macro_rules! drag_delta {
     };
 }
 
-pub type MaxPorts = (Option<usize>, Option<usize>);
-
 // Store rect in root-space, and incoming/outgoing max ports. Rename?
 #[derive(Default)]
 pub struct Rects(nohash_hasher::IntMap<usize, (Rect, MaxPorts)>);
@@ -197,7 +131,7 @@ impl Rects {
                 .state
                 .rect
                 .translate(parent_rect.min.to_vec2());
-            rects.insert_rect(i, rect, || Default::default());
+            rects.insert_rect(i, rect, |_| Default::default());
             for child in graph.children(i) {
                 insert(child, graph, &rect, rects);
             }
@@ -226,11 +160,34 @@ impl Rects {
         self.get(idx).map(|a| a.0)
     }
 
-    pub fn insert_rect<F: FnOnce() -> MaxPorts>(&mut self, idx: Idx, rect: Rect, f: F) {
+    fn insert_rect<F: FnOnce(Idx) -> MaxPorts>(&mut self, idx: Idx, rect: Rect, f: F) {
         self.0
             .entry(idx.index())
             .and_modify(|a| a.0 = rect)
-            .or_insert_with(|| (rect, f()));
+            .or_insert_with(|| (rect, f(idx)));
+    }
+
+    /// Recursively finds a screen-space rect and ports, inserting intermediate results as it goes.
+    /// This mimics what show_state does, but for off-screen or clipped states.
+    fn get_cached_rect(&mut self, root: Idx, graph: &EditGraph, i: Idx) -> (Rect, MaxPorts) {
+        // we can't recurse with the entry api
+        if let Some(cached) = self.get(i) {
+            cached.clone()
+        } else {
+            // the root is always cached from show_states
+            assert_ne!(i, root, "no cached screen-space rect for root");
+            let parent = self.get_cached_rect(root, graph, graph.parent(i).expect("parent exists"));
+            // find state rect in screen-space, translate by the parent min
+            let rect = graph
+                .state(i)
+                .expect("state exists")
+                .rect
+                // TODO state frame margins
+                .translate(parent.0.min.to_vec2());
+            let max_ports = graph.max_ports(i);
+            self.0.insert(i.index(), (rect, max_ports));
+            (rect, max_ports)
+        }
     }
 
     // TODO: unused?
@@ -456,6 +413,9 @@ where
             edit_data.search.query.clear();
         }
 
+        // FIX we actually don't need to do this, we can go back to only clearing on change
+        edit_data.rects.0.clear();
+
         // Show root and recursively show children.
         self.show_state(
             self.root(),
@@ -521,19 +481,19 @@ where
         // New ports. Self-transitions take up two outgoing ports - which is a weird special case,
         // but it's visually distinctive and looks better than looping completely around the state.
         let ports = if a != a0 {
-            let port1 = self.free_port(a, Direction::Outgoing);
+            let port1 = self.graph.free_port(a, Direction::Outgoing);
             if is_self {
                 // Reassign b to outgoing too.
                 (
                     port1,
-                    self.free_port_from(a, Direction::Outgoing, port1 + 1),
+                    self.graph.free_port_from(a, Direction::Outgoing, port1 + 1),
                 )
             } else {
                 (port1, t0.port2)
             }
         } else if b != b0 {
             // We are only ever changing a or b, never both?
-            (t0.port1, self.free_port(b, target_dir(a, b)))
+            (t0.port1, self.graph.free_port(b, target_dir(a, b)))
         } else {
             (t0.port1, t0.port2)
         };
@@ -571,11 +531,11 @@ where
 
         let is_self = a == b;
         let ports = if is_self {
-            self.free_port2(a, Direction::Outgoing)
+            self.graph.free_port2(a, Direction::Outgoing)
         } else {
             (
-                self.free_port(a, Direction::Outgoing),
-                self.free_port(b, Direction::Incoming),
+                self.graph.free_port(a, Direction::Outgoing),
+                self.graph.free_port(b, Direction::Incoming),
             )
         };
 
@@ -694,29 +654,40 @@ where
                     }
                 },
                 _ => {
-                    if let Some(start) = edit_data.rects.port_out(source, t.port1) {
-                        if let Some(end) =
-                            edit_data
-                                .rects
-                                .port_pos(target, t.port2, target_dir(source, target))
-                        {
-                            self.show_connection(
-                                start,
-                                end,
-                                Connection::Transition(
-                                    tdx,
-                                    t,
-                                    internal,
-                                    dragged_state
-                                        .filter(|(i, _)| self.graph.enclosed(*i, tdx))
-                                        .map(|(_, offset)| offset)
-                                        .unwrap_or_default(),
-                                ),
-                                edit_data,
-                                ui,
-                            );
-                        }
-                    }
+                    // Find (and cache) transition endpoints even if the source and/or target
+                    // weren't shown.
+                    let start = port_pos(
+                        &edit_data
+                            .rects
+                            .get_cached_rect(self.root(), &self.graph, source),
+                        t.port1,
+                        Direction::Outgoing,
+                    );
+                    let end = port_pos(
+                        &edit_data
+                            .rects
+                            .get_cached_rect(self.root(), &self.graph, target),
+                        t.port2,
+                        target_dir(source, target),
+                    );
+
+                    // TODO clip to the enclosing state
+
+                    self.show_connection(
+                        start,
+                        end,
+                        Connection::Transition(
+                            tdx,
+                            t,
+                            internal,
+                            dragged_state
+                                .filter(|(i, _)| self.graph.enclosed(*i, tdx))
+                                .map(|(_, offset)| offset)
+                                .unwrap_or_default(),
+                        ),
+                        edit_data,
+                        ui,
+                    );
                 }
             };
         }
@@ -737,7 +708,7 @@ where
                 }
                 None => {
                     // Put the port in AddTransition?
-                    let port1 = self.free_port(source, Direction::Outgoing);
+                    let port1 = self.graph.free_port(source, Direction::Outgoing);
                     if let Some(start) = edit_data.rects.port_out(source, port1) {
                         if let Some(end) = ui.ctx().pointer_interact_pos() {
                             let cp = approx_cp(start, end);
@@ -810,22 +781,19 @@ where
             _ => (),
         };
 
-        // Write rect. Transitions use these to find ports, so clip them to the parent. We don't
-        // clip the rect outright because we don't want anything wrapping or otherwise changing,
-        // just clipping.
-        edit_data
-            .rects
-            .insert_rect(idx, rect.intersect(ui.clip_rect()), || {
-                (
-                    self.max_port(idx, Direction::Incoming),
-                    self.max_port(idx, Direction::Outgoing),
-                )
-            });
-
         // This means offscreen states won't get updated, but that shouldn't matter?
         if !ui.is_rect_visible(rect) {
             return;
         }
+
+        // Write rect. Transitions use these to find ports, so clip them to the parent. We don't
+        // clip the rect outright because we don't want anything wrapping or otherwise changing,
+        // just clipping.
+        edit_data.rects.insert_rect(
+            idx,
+            rect, /*.intersect(ui.clip_rect())*/
+            |idx| self.graph.max_ports(idx),
+        );
 
         let is_target = edit_data.drag.is_target(idx);
         let is_dragging = edit_data.drag.is_dragging(idx);
@@ -1177,7 +1145,7 @@ where
         let gensym = symbol
             .as_ref()
             .map(Cow::from)
-            .unwrap_or_else(|| self.generate_symbol(id).into());
+            .unwrap_or_else(|| self.graph.generate_symbol(id).into());
 
         let location = self
             .source
@@ -1307,100 +1275,6 @@ where
         }
 
         response
-    }
-
-    pub fn path_string(&self, i: Idx) -> String {
-        self.graph
-            .path(i)
-            .into_iter()
-            // Always skip the root id? We already know it's a door.
-            .skip(1)
-            .filter_map(|i| self.graph.state(i).map(|s| &s.id))
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("-")
-    }
-
-    pub fn generate_symbol(&self, id: SymbolId) -> String {
-        match id {
-            SymbolId::Enter(i) => self.path_string(i) + "-enter",
-            SymbolId::Exit(i) => self.path_string(i) + "-exit",
-            SymbolId::Guard(t) => {
-                self.graph
-                    .transition(t)
-                    .zip(self.graph.endpoints(t))
-                    .map(|(t, (a, _b))| self.path_string(a) + "-" + &t.id)
-                    .unwrap_or_else(|| "???".into())
-                    + "-guard"
-            }
-        }
-    }
-
-    /// Returns a list of ports in use for the specified state and direction.
-    pub fn ports(&self, idx: Idx, direction: Direction) -> Vec<usize> {
-        let ports = self.graph.state_transitions(idx, direction);
-
-        let mut ports: Vec<usize> = match direction {
-            // Include the incoming port for self-transitions. Is there not a way to do this w/
-            // flat_map instead of fold?
-            Direction::Outgoing => ports.fold(Vec::new(), |mut acc, (_, _, target, t, _)| {
-                if target == idx {
-                    acc.extend([t.port1, t.port2])
-                } else {
-                    acc.push(t.port1)
-                }
-                acc
-            }),
-
-            Direction::Incoming => {
-                // Filter out self-transitions, and include initial incoming connections. Maybe we
-                // should store initial as an edge in the graph?
-                ports
-                    .filter_map(|(_, source, _, t, _)| (source != idx).then_some(t.port2))
-                    .chain(
-                        self.graph
-                            .path_iter(idx)
-                            .filter(|i| self.graph.initial(*i).map(|(_, j)| j) == Some(idx))
-                            .filter_map(|i| {
-                                self.graph.state(i).and_then(|s| s.initial).map(|i| i.0)
-                            }),
-                    )
-                    .collect()
-            }
-        };
-
-        ports.sort();
-        ports
-    }
-
-    pub fn max_port(&self, idx: Idx, direction: Direction) -> Option<usize> {
-        self.ports(idx, direction).into_iter().last()
-    }
-
-    /// Find a free port starting from the specified port. This is used to find a second free port
-    /// when adding a new self-transition.
-    pub fn free_port_from(&self, idx: Idx, direction: Direction, from: usize) -> usize {
-        let ports = self.ports(idx, direction);
-
-        let mut free = from;
-        for port in ports {
-            if free < port {
-                return free;
-            } else {
-                free = port + 1
-            }
-        }
-        free
-    }
-
-    pub fn free_port2(&self, idx: Idx, direction: Direction) -> (usize, usize) {
-        let p1 = self.free_port_from(idx, direction, 0);
-        let p2 = self.free_port_from(idx, direction, p1 + 1);
-        (p1, p2)
-    }
-
-    pub fn free_port(&self, idx: Idx, direction: Direction) -> usize {
-        self.free_port_from(idx, direction, 0)
     }
 
     // TODO clicking the curve for selection? https://github.com/emilk/egui/discussions/1959
@@ -1744,109 +1618,6 @@ pub fn arrow(size: f32, color: Color32) -> Mesh {
         ..Default::default()
     });
     mesh
-}
-
-// For self-transitions: target takes up an outgoing port.
-#[inline]
-fn target_dir(a: Idx, b: Idx) -> Direction {
-    if a == b {
-        Direction::Outgoing
-    } else {
-        Direction::Incoming
-    }
-}
-
-// This is also the fixed inset.
-const PORT_SPACING: f32 = 10.0;
-
-// Scale based on number of ports and available vertical space. When the state is fully collapsed we
-// don't want to show the endpoints?
-fn port_pos(rect: &(Rect, MaxPorts), port: usize, direction: Direction) -> Pos2 {
-    let (rect, max_ports) = rect;
-    let (origin, max_port) = match direction {
-        Direction::Incoming => (rect.min, max_ports.0),
-        Direction::Outgoing => (rect.right_top(), max_ports.1),
-    };
-
-    // The port can be higher than the max...
-    let max_port = max_port.unwrap_or_default().max(port);
-
-    // Take available space (minus inset on top/bottom) and divide by number of ports in use. This
-    // can be negative - this is where we need the original unclipped rect? TODO: show connections
-    // to states that are clipped or otherwise hidden - connect to parent w/ hidden indicator?
-    let spacing =
-        ((rect.height() - PORT_SPACING * 2.0).max(0.0) / (max_port + 1) as f32).min(PORT_SPACING);
-    origin + vec2(0.0, PORT_SPACING + spacing * port as f32)
-}
-
-impl State {
-    const DEFAULT_SIZE: Vec2 = vec2(256.0, 64.0);
-
-    pub fn with_id(mut self, id: impl Into<String>) -> Self {
-        self.id = id.into();
-        self
-    }
-
-    pub fn with_initial(mut self, initial: Option<(usize, Vec2, Vec2)>) -> Self {
-        self.initial = initial;
-        self
-    }
-
-    pub fn with_enter(mut self, enter: Symbol) -> Self {
-        self.enter = enter;
-        self
-    }
-    pub fn with_exit(mut self, exit: Symbol) -> Self {
-        self.exit = exit;
-        self
-    }
-}
-
-impl Transition {
-    pub fn with_id(mut self, id: impl Into<String>) -> Self {
-        self.id = id.into();
-        self
-    }
-
-    pub fn with_port1(mut self, port1: usize) -> Self {
-        self.port1 = port1;
-        self
-    }
-
-    pub fn with_port2(mut self, port2: usize) -> Self {
-        self.port2 = port2;
-        self
-    }
-
-    pub fn with_guard(mut self, guard: Symbol) -> Self {
-        self.guard = guard;
-        self
-    }
-
-    /// Offset position.
-    pub fn translate(mut self, offset: Vec2) -> Self {
-        self.pos += offset;
-        self
-    }
-}
-
-fn midpoint(a: Pos2, b: Pos2) -> Pos2 {
-    (a + b.to_vec2()) * 0.5
-}
-
-pub fn quad_beziers_from_points(points: &[Pos2]) -> impl Iterator<Item = [Pos2; 3]> + '_ {
-    points.windows(3).enumerate().map(|(i, p)| {
-        let [mut p0, p1, mut p2] = *p else {
-            panic!("window is always 3");
-        };
-        if i != 0 {
-            p0 = midpoint(p0, p1);
-        }
-        if i + 2 < points.len() - 1 {
-            p2 = midpoint(p1, p2);
-        }
-        [p0, p1, p2]
-    })
 }
 
 trait UiExt {

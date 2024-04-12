@@ -101,15 +101,13 @@ where
                     ops.extend(self.graph.set_initial(i, None));
                     ops.into()
                 }
-                Command::StepInitial(i) => self
-                    .graph
-                    .set_initial(
-                        i,
-                        self.graph
-                            .initial(i)
-                            .map(|(initial, i)| (initial.step(), i)),
-                    )
-                    .into(),
+                Command::StepInitial(i) => {
+                    let initial = self
+                        .graph
+                        .initial(i)
+                        .map(|(initial, i)| (initial.step(), i));
+                    self.graph.set_initial(i, initial).into()
+                }
                 Command::SetInternal(i, internal) => self.graph.set_internal(i, internal),
                 Command::SelectSourcePath(p) => {
                     // TODO undo?
