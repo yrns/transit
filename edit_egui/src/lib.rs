@@ -176,7 +176,9 @@ impl Rects {
         } else {
             // the root is always cached from show_states
             assert_ne!(i, root, "no cached screen-space rect for root");
+
             let parent = self.get_cached_rect(root, graph, graph.parent(i).expect("parent exists"));
+
             // find state rect in screen-space, translate by the parent min
             let rect = graph
                 .state(i)
@@ -580,7 +582,15 @@ where
 
         // FIX: this crazy - we're matching drag multiple times per transition
 
+        // TODO: ideally we'd start from the root state and show all enclosed transitions, then recurse
+        // through visible states - also keep a set of transitions per state
         for (tdx, source, target, t, internal) in self.graph.transitions() {
+            // If we are narrowed, skip unenclosed transitions. This is a little weird to not show
+            // anything for incoming and outgoing transitions. Maybe there should be an indicator of
+            // hidden transitions. TODO?
+            if self.narrow.is_some() && !self.graph.enclosed(self.root(), tdx) {
+                continue;
+            }
             match edit_data.drag {
                 Drag::TransitionSource(b, a, _tdx) if _tdx == tdx => match a {
                     Some(a) => {
