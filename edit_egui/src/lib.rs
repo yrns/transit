@@ -413,9 +413,6 @@ where
             edit_data.search.query.clear();
         }
 
-        // FIX we actually don't need to do this, we can go back to only clearing on change
-        edit_data.rects.0.clear();
-
         // Show root and recursively show children.
         self.show_state(
             self.root(),
@@ -450,11 +447,9 @@ where
 
         edit_data.drag_transition = self.show_transitions(&mut edit_data, ui);
 
-        // Invalidate max ports if anything has changed. TODO: optimize this -> why even clear? do
-        // we reuse ids? remove deletions only?
+        // Invalidate rects if anything has changed. TODO: optimize this
         if !edit_data.commands.is_empty() {
-            // TODO just clear ports?
-            //edit_data.rects.0.clear();
+            edit_data.rects.0.clear();
         }
     }
 
