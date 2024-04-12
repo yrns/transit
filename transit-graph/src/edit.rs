@@ -172,6 +172,9 @@ where
             }
         }
 
+        // TODO: not brute force
+        self.init_ca();
+
         ops
     }
 
@@ -221,21 +224,29 @@ where
     #[must_use = "op"]
     pub fn set_internal(&mut self, i: Tdx, internal: bool) -> Op<S, T> {
         let e = &mut self.graph[i];
+        assert!(e.is_transition());
         let op = Op::UpdateEdge(i, e.clone());
         *e = e.clone().set_internal(internal);
+        // Set common ancestor? Leave it as None for now.
         op
     }
 
     // TODO: check root? validation?
     #[must_use = "op"]
     pub fn add_transition(&mut self, a: Idx, b: Idx, t: impl Into<Edge<T>>) -> Tdx {
-        let t = t.into();
+        let mut t = t.into();
 
         // Only self-transitions can be internal.
         assert!(!t.is_internal() || a == b);
 
         // Can't transition to or from root.
         assert!(a != self.root && b != self.root);
+
+        // Set common ancestor.
+        match &mut t {
+            Edge::Transition(_, ca) => *ca = self.common_ancestor(a, b),
+            _ => (),
+        }
 
         self.graph.add_edge(a, b, t)
     }
@@ -274,8 +285,8 @@ where
         op
     }
 
-    // There is no API for updating an existing edge so we remove/insert
-    // (see https://github.com/petgraph/petgraph/pull/103).
+    // There is no API for updating an existing edge's endpoints so we remove/insert
+    // see https://github.com/petgraph/petgraph/pull/103
     #[must_use = "op"]
     pub fn move_transition(&mut self, i: Tdx, a: Idx, b: Idx) -> Vec<Op<S, T>> {
         // Can't transition to or from the root.

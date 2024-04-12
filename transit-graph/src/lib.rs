@@ -119,48 +119,54 @@ pub struct Node<T> {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone, Debug)]
 pub enum Edge<T> {
-    Transition(T),
+    /// Stores T and the common ancestor for endpoints. For internal transitions and intial edges,
+    /// the common ancestor is always the source.
+    // TODO: make this not an option by removing/fixing Edge::set_internal? and others
+    // TODO: versioning? save ca?
+    Transition(T, #[serde(skip)] Option<Idx>),
     Internal(T),
     Initial(Initial),
 }
 
 impl<T> Edge<T> {
+    // Not sure why this is move.
     pub fn set_internal(self, internal: bool) -> Self {
         match self {
-            Edge::Transition(t) if internal => Edge::Internal(t),
-            Edge::Internal(t) if !internal => Edge::Transition(t),
+            // TODO this should not be pub without checking the endpoints
+            Edge::Transition(t, _) if internal => Edge::Internal(t),
+            Edge::Internal(t) if !internal => Edge::Transition(t, None),
             _ => panic!("not a transition"),
         }
     }
 
     pub fn set_transition(&mut self, transition: T) {
         match self {
-            Edge::Transition(t) | Edge::Internal(t) => *t = transition,
+            Edge::Transition(t, _) | Edge::Internal(t) => *t = transition,
             _ => panic!("not a transition"),
         }
     }
 
     pub fn is_transition(&self) -> bool {
-        matches!(self, Edge::Transition(_) | Edge::Internal(_))
+        matches!(self, Edge::Transition(..) | Edge::Internal(_))
     }
 
     pub fn transition(&self) -> Option<&T> {
         match self {
-            Edge::Transition(t) | Edge::Internal(t) => Some(t),
+            Edge::Transition(t, _) | Edge::Internal(t) => Some(t),
             _ => None,
         }
     }
 
     pub fn external(&self) -> Option<&T> {
         match self {
-            Edge::Transition(t) => Some(t),
+            Edge::Transition(t, _) => Some(t),
             _ => None,
         }
     }
 
     pub fn transition_mut(&mut self) -> Option<&mut T> {
         match self {
-            Edge::Transition(t) | Edge::Internal(t) => Some(t),
+            Edge::Transition(t, _) | Edge::Internal(t) => Some(t),
             _ => None,
         }
     }
@@ -171,7 +177,7 @@ impl<T> Edge<T> {
     }
 
     pub fn is_external(&self) -> bool {
-        matches!(self, Edge::Transition(_))
+        matches!(self, Edge::Transition(..))
     }
 
     pub fn map<'a, F, V>(&'a self, i: Tdx, mut f: F) -> Edge<V>
@@ -179,7 +185,7 @@ impl<T> Edge<T> {
         F: FnMut(Tdx, &'a T) -> V,
     {
         match self {
-            Edge::Transition(t) => Edge::Transition(f(i, t)),
+            Edge::Transition(t, a) => Edge::Transition(f(i, t), a.clone()),
             Edge::Internal(t) => Edge::Internal(f(i, t)),
             Edge::Initial(initial) => Edge::Initial(*initial),
         }
@@ -200,7 +206,7 @@ where
     C: Context,
 {
     match edge.weight() {
-        Edge::Transition(t) => Some((edge.id(), edge.source(), edge.target(), t, false)),
+        Edge::Transition(t, _) => Some((edge.id(), edge.source(), edge.target(), t, false)),
         Edge::Internal(t) => Some((edge.id(), edge.source(), edge.target(), t, true)),
         _ => None,
     }
@@ -208,7 +214,7 @@ where
 
 impl<T> From<T> for Edge<T> {
     fn from(transition: T) -> Self {
-        Self::Transition(transition)
+        Self::Transition(transition, None)
     }
 }
 
@@ -322,7 +328,7 @@ impl<S, T> Graph<S, T> {
         self.graph
             .edges_directed(i, direction)
             .filter_map(|e| match e.weight() {
-                Edge::Transition(t) => Some((e.id(), e.source(), e.target(), t, false)),
+                Edge::Transition(t, _) => Some((e.id(), e.source(), e.target(), t, false)),
                 Edge::Internal(t) => Some((e.id(), e.source(), e.target(), t, true)),
                 _ => None,
             })
@@ -345,7 +351,7 @@ impl<S, T> Graph<S, T> {
         self.graph
             .edge_references()
             .filter_map(|e| match e.weight() {
-                Edge::Transition(t) => Some((e.id(), e.source(), e.target(), t, false)),
+                Edge::Transition(t, _) => Some((e.id(), e.source(), e.target(), t, false)),
                 Edge::Internal(t) => Some((e.id(), e.source(), e.target(), t, true)),
                 _ => None,
             })
@@ -377,7 +383,7 @@ impl<S, T> Graph<S, T> {
     }
 
     /// Returns true if the source and target of `transition` are in the path of `state`.
-    // TODO: cache this?
+    // TODO: cache this? or at least use common ancestor stored in the edge
     pub fn enclosed(&self, state: Idx, transition: Tdx) -> bool {
         //self.transition(transition).is_some() &&
         self.endpoints(transition)
@@ -441,7 +447,7 @@ impl<S, T> Graph<S, T> {
 
     /// Check for problems with the graph. None of these conditions
     /// should be possible to achieve with the public API.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&mut self) -> Result<(), String> {
         // Root.
         let root = self.graph.node_weight(self.root);
         match root {
@@ -490,8 +496,32 @@ impl<S, T> Graph<S, T> {
             }
         }
 
+        self.init_ca();
+
         // Active exists/valid? Needs to be in Statechart.
         Ok(())
+    }
+
+    // initialize common ancestors for each transition TODO: remove me?
+    fn init_ca(&mut self) {
+        let edges = self
+            .graph
+            .edge_references()
+            .filter_map(|e| match e.weight() {
+                Edge::Transition(_, _) => Some((
+                    e.id(),
+                    self.common_ancestor(e.source(), e.target()).unwrap(),
+                )),
+                Edge::Internal(_) | Edge::Initial(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        for (i, common_ancestor) in edges {
+            match &mut self.graph[i] {
+                Edge::Transition(_, ca) => *ca = Some(common_ancestor),
+                _ => (),
+            }
+        }
     }
 }
 
@@ -567,7 +597,7 @@ impl<'a, C: Context> Statechart<'a, C> {
         };
 
         // Transition to the initial state.
-        s.transition_to(s.initial(active), None);
+        s.transition_to(s.initial(active), None, None);
         s
     }
 
@@ -577,32 +607,36 @@ impl<'a, C: Context> Statechart<'a, C> {
         self.locals.clear();
         self.history.clear();
         self.active = self.graph.root;
-        self.transition_to(self.initial(self.active), None)
+        self.transition_to(self.initial(self.active), None, None)
     }
 
     /// Find a transition out of the active node based on the event. Start with the active state and
     /// work through the parent states.
-    fn select(&mut self, event: &C::Event) -> Option<(Idx, bool)> {
+    fn select(&mut self, event: &C::Event) -> Option<(Idx, bool, Option<Idx>)> {
         let mut path = self.graph.path_walk(self.active);
 
         // Each potential guard can mutate the transition state and context.
         while let Some(i) = path.next(self.graph) {
             // TODO since we are only mutating the context/locals we don't need the walker anymore?
             let mut edges = self.graph.graph.neighbors(i).detach();
-            while let Some((edge, next)) = edges.next(&self.graph.graph) {
-                let index = edge.index();
-                let edge = &self.graph.graph[edge];
-                if let Some(t) = edge.transition() {
-                    // Get a mutable ref to the local transition (after copying it from the graph).
-                    if self
-                        .locals
-                        .1
-                        .entry(index)
-                        .or_insert_with(|| t.clone())
-                        .guard(&mut self.context, event)
-                    {
-                        return Some((next, edge.is_internal()));
-                    }
+            while let Some((i, next)) = edges.next(&self.graph.graph) {
+                let edge = &self.graph.graph[i];
+
+                let (t, ca) = match edge {
+                    Edge::Transition(t, ca) => (t, *ca),
+                    Edge::Internal(t) => (t, None),
+                    Edge::Initial(_) => continue,
+                };
+
+                // Get a mutable ref to the local transition (after copying it from the graph).
+                if self
+                    .locals
+                    .1
+                    .entry(i.index())
+                    .or_insert_with(|| t.clone())
+                    .guard(&mut self.context, event)
+                {
+                    return Some((next, edge.is_internal(), ca));
                 }
             }
         }
@@ -614,12 +648,12 @@ impl<'a, C: Context> Statechart<'a, C> {
     pub fn transition(&mut self, event: C::Event) -> bool {
         self.context.dispatch(&event);
 
-        if let Some((next, internal)) = self.select(&event) {
+        if let Some((next, internal, ca)) = self.select(&event) {
             // With an internal transition the guard is called but we don't actually change
             // states. Should we verify the active state is not a compound state?
             let active = self.active;
             if !internal {
-                self.transition_to(next, Some(&event));
+                self.transition_to(next, Some(&event), ca);
                 self.context.transition(
                     &self.graph.graph[active].state,
                     &self.graph.graph[next].state,
@@ -643,11 +677,18 @@ impl<'a, C: Context> Statechart<'a, C> {
 
     /// Traverse states up to a common ancestor (calling [State::exit] on each) and back down to the
     /// next state (calling [State::enter] on each).
-    pub fn transition_to(&mut self, next: Idx, event: Option<&C::Event>) {
-        // When does this return None given there is always a root?
-        let a = self.graph.common_ancestor(self.active, next);
+    pub fn transition_to(
+        &mut self,
+        next: Idx,
+        event: Option<&C::Event>,
+        common_ancestor: Option<Idx>,
+    ) {
+        // When does this return None given there is always a root? TODO: we already know the common
+        // ancestor for initial edges
+        //let a = self.graph.common_ancestor(self.active, next);
+        let a = common_ancestor.unwrap_or(self.active);
 
-        let not_a = |i: &Idx| a.map_or(true, |a| *i != a);
+        let not_a = |i: &Idx| i != &a;
 
         // Path from the active state to the common ancestor. Don't
         // include the common ancestor since we are not entering or
