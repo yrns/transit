@@ -382,6 +382,14 @@ impl<S, T> Graph<S, T> {
         self.path_iter(b).any(|i| i == a)
     }
 
+    // TODO better name? provide this via other access methods?
+    pub fn transition_common_ancestor(&self, tdx: Tdx) -> Option<Idx> {
+        self.graph.edge_weight(tdx).and_then(|t| match t {
+            Edge::Transition(_, ca) => *ca,
+            Edge::Internal(_) | Edge::Initial(_) => None,
+        })
+    }
+
     /// Returns true if the source and target of `transition` are in the path of `state`.
     // TODO: cache this? or at least use common ancestor stored in the edge
     pub fn enclosed(&self, state: Idx, transition: Tdx) -> bool {
@@ -436,13 +444,36 @@ impl<S, T> Graph<S, T> {
         self.graph[i].parent
     }
 
+    // TODO: do this with iterators: ancestors?
     pub fn common_ancestor(&self, s1: Idx, s2: Idx) -> Option<Idx> {
-        self.path(s1)
-            .iter()
-            .zip(self.path(s2).iter())
-            .find(|(a, b)| a != b)
-            // both states should have the same parent
-            .and_then(|(i, _)| self.parent(*i))
+        // self-transition, we can just return the parent
+        if s1 == s2 {
+            return self.parent(s1);
+        }
+
+        let mut p1 = self.path(s1).into_iter();
+        let mut p2 = self.path(s2).into_iter();
+
+        let mut last = None;
+
+        loop {
+            match (p1.next(), p2.next()) {
+                // We should always at least have the root.
+                (None, None) => unreachable!(),
+                (None, Some(_a)) | (Some(_a), None) => {
+                    // one is a child of the other, return parent of last
+                    return self.parent(last.unwrap());
+                }
+                (Some(a), Some(b)) => {
+                    if a != b {
+                        // return the last common ancestor
+                        return last;
+                    } else {
+                        last = Some(a);
+                    }
+                }
+            }
+        }
     }
 
     /// Check for problems with the graph. None of these conditions
@@ -814,15 +845,15 @@ mod tests {
     //     type Transition = ();
     // }
 
-    pub(crate) fn test_graph() -> Graph<String, ()> {
+    pub(crate) fn test_graph() -> Graph<&'static str, ()> {
         Graph::new()
     }
 
     #[test]
     fn is_child() {
         let mut g = test_graph();
-        let a = g.add_state("a".to_owned(), None);
-        let b = g.add_state("b".to_owned(), Some(a));
+        let a = g.add_state("a", None);
+        let b = g.add_state("b", Some(a));
 
         assert!(g.is_child(a, b));
         assert!(!g.is_child(a, a));
@@ -832,9 +863,29 @@ mod tests {
     #[test]
     fn validate() {
         let mut g = test_graph();
-        let a = g.add_state("a".to_owned(), None);
-        let b = g.add_state("b".to_owned(), Some(a));
+        let a = g.add_state("a", None);
+        let b = g.add_state("b", Some(a));
         g.graph[a].parent = Some(b);
         assert!(g.validate().is_err());
+    }
+
+    #[test]
+    fn common_ancestor() {
+        let mut g = Graph::new();
+        let a = g.add_state("a", None);
+        let b = g.add_state("b", None);
+        let c = g.add_state("c", Some(b));
+        let d = g.add_state("d", Some(c));
+        let _self_to_a = g.add_transition(a, a, ());
+        assert_eq!(
+            g.common_ancestor(a, b).unwrap(),
+            g.root,
+            "common ancestor of a and b is root"
+        );
+        assert_eq!(
+            g.common_ancestor(c, d).unwrap(),
+            b,
+            "common ancestor of c and d is b"
+        );
     }
 }
