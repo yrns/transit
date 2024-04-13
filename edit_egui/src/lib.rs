@@ -1479,6 +1479,7 @@ where
                                 //     t.port1, t.port2
                                 // ));
                                 _ = response.context_menu(|ui| {
+                                    ui.label(format!("{} ({})", t.id, tdx.index()));
                                     if ui.button("Remove transition").clicked() {
                                         edit_data.commands.push(Command::RemoveTransition(tdx));
                                         ui.close_menu();
