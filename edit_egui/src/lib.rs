@@ -447,7 +447,7 @@ where
             _ => (),
         }
 
-        edit_data.drag_transition = self.show_transitions(&mut edit_data, ui);
+        edit_data.drag_transition = self.show_drag_transition(&mut edit_data, ui);
 
         // Invalidate rects if anything has changed. TODO: optimize this
         if !edit_data.commands.is_empty() {
@@ -462,16 +462,10 @@ where
         a: Idx,
         b: Idx,
         rects: &Rects,
-        t0: Tdx,
+        t0: &Transition,
+        (a0, b0): (Idx, Idx),
     ) -> (Transition, (Pos2, Pos2)) {
         let is_self = a == b;
-
-        // We don't use the index so just pass this in?
-        let (t0, (a0, b0)) = self
-            .graph
-            .transition(t0)
-            .zip(self.graph.endpoints(t0))
-            .unwrap();
 
         let mut t = t0.clone();
 
@@ -562,39 +556,32 @@ where
         )
     }
 
-    /// Shows all transitions.
-    pub fn show_transitions(&self, edit_data: &mut EditData, ui: &mut Ui) -> Option<Transition> {
-        let mut drag_transition = None;
-
-        // Offset enclosed transitions if dragging a state. Do this once here rather than once for
-        // each transition.
-        let dragged_state = match &edit_data.drag {
-            Drag::State {
-                source,
-                press_origin,
-                ..
-            } => ui
-                .ctx()
-                .pointer_interact_pos()
-                .map(|p| (*source, *press_origin - p)),
-            _ => None,
-        };
-
+    /// Shows the current drag transition.
+    pub fn show_drag_transition(
+        &self,
+        edit_data: &mut EditData,
+        ui: &mut Ui,
+    ) -> Option<Transition> {
         // FIX: this crazy - we're matching drag multiple times per transition
 
         // TODO: ideally we'd start from the root state and show all enclosed transitions, then recurse
         // through visible states - also keep a set of transitions per state
-        for (tdx, source, target, t, internal) in self.graph.transitions() {
-            // If we are narrowed, skip unenclosed transitions. This is a little weird to not show
-            // anything for incoming and outgoing transitions. Maybe there should be an indicator of
-            // hidden transitions. TODO?
-            if self.narrow.is_some() && !self.graph.enclosed(self.root(), tdx) {
-                continue;
-            }
-            match edit_data.drag {
-                Drag::TransitionSource(b, a, _tdx) if _tdx == tdx => match a {
+        //for (tdx, source, target, t, internal) in self.graph.transitions() {
+
+        // If we are narrowed, skip unenclosed transitions. This is a little weird to not show
+        // anything for incoming and outgoing transitions. Maybe there should be an indicator of
+        // hidden transitions. TODO?
+        // if self.narrow.is_some() && !self.graph.enclosed(self.root(), tdx) {
+        //     continue;
+        // }
+        match edit_data.drag {
+            Drag::TransitionSource(b, a, tdx) => {
+                let (t, (source, target), internal) = self.transition(tdx)?;
+
+                match a {
                     Some(a) => {
-                        let (t, (start, end)) = self.drag_transition(a, b, &edit_data.rects, tdx);
+                        let (t, (start, end)) =
+                            self.drag_transition(a, b, &edit_data.rects, t, (source, target));
                         self.show_connection(
                             start,
                             end,
@@ -602,7 +589,7 @@ where
                             edit_data,
                             ui,
                         );
-                        drag_transition = Some(t);
+                        return Some(t);
                     }
                     None => {
                         if let Some(start) = ui
@@ -625,10 +612,15 @@ where
                             }
                         }
                     }
-                },
-                Drag::TransitionTarget(a, b, _tdx) if _tdx == tdx => match b {
+                }
+            }
+            Drag::TransitionTarget(a, b, tdx) => {
+                let (t, (source, target), internal) = self.transition(tdx)?;
+
+                match b {
                     Some(b) => {
-                        let (t, (start, end)) = self.drag_transition(a, b, &edit_data.rects, tdx);
+                        let (t, (start, end)) =
+                            self.drag_transition(a, b, &edit_data.rects, t, (source, target));
                         self.show_connection(
                             start,
                             end,
@@ -636,7 +628,7 @@ where
                             edit_data,
                             ui,
                         );
-                        drag_transition = Some(t);
+                        return Some(t);
                     }
                     None => {
                         if let Some(start) = edit_data.rects.port_out(source, t.port1) {
@@ -657,62 +649,10 @@ where
                             }
                         }
                     }
-                },
-                _ => {
-                    // Find (and cache) transition endpoints even if the source and/or target
-                    // weren't shown.
-                    let start = port_pos(
-                        &edit_data
-                            .rects
-                            .get_cached_rect(self.root(), &self.graph, source),
-                        t.port1,
-                        Direction::Outgoing,
-                    );
-                    let end = port_pos(
-                        &edit_data
-                            .rects
-                            .get_cached_rect(self.root(), &self.graph, target),
-                        t.port2,
-                        target_dir(source, target),
-                    );
-
-                    // clip to the enclosing state, TODO state frame margins
-                    // FIX: intersect with all parent rects?
-                    let clip_rect = edit_data
-                        .rects
-                        .get_rect(
-                            self.graph
-                                .transition_common_ancestor(tdx)
-                                .unwrap_or_else(|| self.root()),
-                        )
-                        .expect("common ancestor rect exists");
-
-                    // ui.ctx()
-                    //     .debug_painter()
-                    //     .debug_rect(clip_rect, Color32::DEBUG_COLOR, "clip");
-
-                    ui.scope(|ui| {
-                        ui.set_clip_rect(clip_rect);
-
-                        self.show_connection(
-                            start,
-                            end,
-                            Connection::Transition(
-                                tdx,
-                                t,
-                                internal,
-                                dragged_state
-                                    .filter(|(i, _)| self.graph.enclosed(*i, tdx))
-                                    .map(|(_, offset)| offset)
-                                    .unwrap_or_default(),
-                            ),
-                            edit_data,
-                            ui,
-                        );
-                    });
                 }
-            };
-        }
+            }
+            _ => (),
+        };
 
         // New transition in progress.
         if let Drag::AddTransition(source, target) = edit_data.drag {
@@ -726,7 +666,7 @@ where
                         edit_data,
                         ui,
                     );
-                    drag_transition = Some(t);
+                    return Some(t);
                 }
                 None => {
                     // Put the port in AddTransition?
@@ -747,7 +687,83 @@ where
             }
         }
 
-        drag_transition
+        None
+    }
+
+    // Get transition ref, endpoints, and internal flag. TODO this should be elsewhere?
+    fn transition(&self, i: Tdx) -> Option<(&Transition, (Idx, Idx), bool)> {
+        Some((
+            self.graph.transition(i)?,
+            self.graph.endpoints(i)?,
+            self.graph.is_internal(i),
+        ))
+    }
+
+    pub fn show_transition(&self, edit_data: &mut EditData, i: Tdx, ui: &mut Ui) {
+        let Some((t, (source, target), is_internal)) = self.transition(i) else {
+            return;
+        };
+
+        // Offset enclosed transitions if dragging a state. Pass this in?
+        let dragged_state = match &edit_data.drag {
+            Drag::State {
+                source,
+                press_origin,
+                ..
+            } => ui
+                .ctx()
+                .pointer_interact_pos()
+                .map(|p| (*source, *press_origin - p)),
+            _ => None,
+        };
+
+        // Find (and cache) transition endpoints even if the source and/or target
+        // weren't shown.
+        let start = port_pos(
+            &edit_data
+                .rects
+                .get_cached_rect(self.root(), &self.graph, source),
+            t.port1,
+            Direction::Outgoing,
+        );
+        let end = port_pos(
+            &edit_data
+                .rects
+                .get_cached_rect(self.root(), &self.graph, target),
+            t.port2,
+            target_dir(source, target),
+        );
+
+        // clip to the enclosing state, TODO state frame margins
+        // FIX: intersect with all parent rects?
+        // let clip_rect = edit_data
+        //     .rects
+        //     .get_rect(
+        //         self.graph
+        //             .transition_common_ancestor(i)
+        //             .unwrap_or_else(|| self.root()),
+        //     )
+        //     .expect("common ancestor rect exists");
+
+        //ui.scope(|ui| {
+        //ui.set_clip_rect(clip_rect);
+
+        self.show_connection(
+            start,
+            end,
+            Connection::Transition(
+                i,
+                t,
+                is_internal,
+                dragged_state
+                    .filter(|(idx, _)| self.graph.enclosed(*idx, i))
+                    .map(|(_, offset)| offset)
+                    .unwrap_or_default(),
+            ),
+            edit_data,
+            ui,
+        );
+        //});
     }
 
     pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
@@ -878,6 +894,16 @@ where
                     },
                     |delta: &Vec2| edit_data.commands.push(Command::ResizeState(idx, *delta))
                 );
+            }
+
+            // Show all transitions we are the common ancestor for. TODO cache this list
+            for t in self
+                .graph
+                .transition_indices()
+                .filter(|t| self.graph.transition_common_ancestor(*t) == Some(idx))
+            {
+                //warn!(t = t.index(), ca = state.id);
+                self.show_transition(edit_data, t, ui)
             }
 
             // This fills the space so we can interact with the background.
@@ -1443,8 +1469,12 @@ where
 
                 // `pos` is left/top (rect min), relative to root, so we have to include the ui min rect
                 let h = ui.style().spacing.interact_size.y;
+                let root_rect = edit_data
+                    .rects
+                    .get_rect(self.root())
+                    .expect("root rect always exists");
                 let rect = Rect::from_min_size(
-                    ui.min_rect().min + t_pos.to_vec2(), // - vec2(0.0, h / 2.0),
+                    root_rect.min + t_pos.to_vec2(), // - vec2(0.0, h / 2.0),
                     // What width?
                     Vec2::new(128.0, h),
                 );
