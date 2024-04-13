@@ -676,23 +676,40 @@ where
                         target_dir(source, target),
                     );
 
-                    // TODO clip to the enclosing state
+                    // clip to the enclosing state, TODO state frame margins
+                    // FIX: intersect with all parent rects?
+                    let clip_rect = edit_data
+                        .rects
+                        .get_rect(
+                            self.graph
+                                .transition_common_ancestor(tdx)
+                                .unwrap_or_else(|| self.root()),
+                        )
+                        .expect("common ancestor rect exists");
 
-                    self.show_connection(
-                        start,
-                        end,
-                        Connection::Transition(
-                            tdx,
-                            t,
-                            internal,
-                            dragged_state
-                                .filter(|(i, _)| self.graph.enclosed(*i, tdx))
-                                .map(|(_, offset)| offset)
-                                .unwrap_or_default(),
-                        ),
-                        edit_data,
-                        ui,
-                    );
+                    // ui.ctx()
+                    //     .debug_painter()
+                    //     .debug_rect(clip_rect, Color32::DEBUG_COLOR, "clip");
+
+                    ui.scope(|ui| {
+                        ui.set_clip_rect(clip_rect);
+
+                        self.show_connection(
+                            start,
+                            end,
+                            Connection::Transition(
+                                tdx,
+                                t,
+                                internal,
+                                dragged_state
+                                    .filter(|(i, _)| self.graph.enclosed(*i, tdx))
+                                    .map(|(_, offset)| offset)
+                                    .unwrap_or_default(),
+                            ),
+                            edit_data,
+                            ui,
+                        );
+                    });
                 }
             };
         }
@@ -794,11 +811,11 @@ where
         // Write rect. Transitions use these to find ports, so clip them to the parent. We don't
         // clip the rect outright because we don't want anything wrapping or otherwise changing,
         // just clipping.
-        edit_data.rects.insert_rect(
-            idx,
-            rect, /*.intersect(ui.clip_rect())*/
-            |idx| self.graph.max_ports(idx),
-        );
+        edit_data
+            .rects
+            .insert_rect(idx, rect.intersect(ui.clip_rect()), |idx| {
+                self.graph.max_ports(idx)
+            });
 
         let is_target = edit_data.drag.is_target(idx);
         let is_dragging = edit_data.drag.is_dragging(idx);
