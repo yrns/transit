@@ -289,6 +289,10 @@ impl<S, T> Graph<S, T> {
         self.graph.edge_weight_mut(i).and_then(Edge::transition_mut)
     }
 
+    pub fn is_internal(&self, i: Tdx) -> bool {
+        self.graph.edge_weight(i).is_some_and(Edge::is_internal)
+    }
+
     pub fn contains_state(&self, i: Idx) -> bool {
         self.graph.contains_node(i)
     }
@@ -384,10 +388,10 @@ impl<S, T> Graph<S, T> {
 
     // TODO better name? provide this via other access methods?
     pub fn transition_common_ancestor(&self, tdx: Tdx) -> Option<Idx> {
-        self.graph.edge_weight(tdx).and_then(|t| match t {
+        match self.graph.edge_weight(tdx)? {
             Edge::Transition(_, ca) => *ca,
             Edge::Internal(_) | Edge::Initial(_) => None,
-        })
+        }
     }
 
     /// Returns true if the source and target of `transition` are in the path of `state`.
