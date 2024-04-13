@@ -1344,8 +1344,12 @@ where
         // TODO it would be nice if we could make this a gradient so as to make the direction more clear
         let stroke = Stroke::new(1.2, color);
 
-        let cubic = |points| {
-            CubicBezierShape::from_points_stroke(points, false, Color32::TRANSPARENT, stroke)
+        let cubic = |points, ui: &mut Ui| {
+            let curve =
+                CubicBezierShape::from_points_stroke(points, false, Color32::TRANSPARENT, stroke);
+            if ui.is_rect_visible(curve.visual_bounding_rect()) {
+                ui.painter().add(curve);
+            }
         };
 
         match conn {
@@ -1515,15 +1519,19 @@ where
                 let left = rect.left_center() - rect_offset;
                 let right = response.response.rect.right_center() + rect_offset;
 
-                // Flipping don't work.
-                if start.x < end.x {
-                    ui.painter().add(cubic([start, c1, left - CP_OFFSET, left]));
-                    ui.painter().add(cubic([right, right + CP_OFFSET, c2, end]));
+                // If the transition is moving right to left swap left and right.
+                for pts in if start.x < end.x {
+                    [
+                        [start, c1, left - CP_OFFSET, left],
+                        [right, right + CP_OFFSET, c2, end],
+                    ]
                 } else {
-                    // If the transition is moving right to left swap left and right.
-                    ui.painter()
-                        .add(cubic([start, c1, right + CP_OFFSET, right]));
-                    ui.painter().add(cubic([left, left - CP_OFFSET, c2, end]));
+                    [
+                        [start, c1, right + CP_OFFSET, right],
+                        [left, left - CP_OFFSET, c2, end],
+                    ]
+                } {
+                    cubic(pts, &mut ui);
                 }
             }
             Connection::Initial(i, (c1, c2)) => {
@@ -1539,7 +1547,7 @@ where
                 let c1 = start + c1;
                 let c2 = end + c2;
 
-                ui.painter().add(cubic([start, c1, c2, end]));
+                cubic([start, c1, c2, end], &mut ui);
 
                 let mut mesh = arrow(control_size, color);
                 mesh.translate(end.to_vec2());
@@ -1592,7 +1600,7 @@ where
                 }
             }
             Connection::DragTransition(c1, c2) | Connection::DragInitial(_, (c1, c2)) => {
-                ui.painter().add(cubic([start, start + c1, end + c2, end]));
+                cubic([start, start + c1, end + c2, end], &mut ui);
             }
         }
     }
