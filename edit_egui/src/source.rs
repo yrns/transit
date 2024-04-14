@@ -76,11 +76,6 @@ pub trait Source {
     /// Runtime context used in [Source::resolve].
     type RunContext;
 
-    /// Iterator over all symbols.
-    type Symbols<'a>: Iterator<Item = (&'a String, &'a Locator)>
-    where
-        Self: 'a;
-
     /// Error kind.
     type Error: std::error::Error;
 
@@ -99,7 +94,9 @@ pub trait Source {
     fn symbol(&self, symbol: &str) -> Option<&Locator>;
 
     /// Returns an iterator over all symbols.
-    fn symbols(&self) -> Self::Symbols<'_>;
+    // TODO: impl Trait should not be used in a public trait, but the only consumer is the edit
+    // crate... just return a HashMap ref?
+    fn symbols(&self) -> impl Iterator<Item = (&String, &Locator)>;
 
     /// Called every frame; checks source file for changes.
     fn update(&mut self) -> Result<(), Self::Error>;

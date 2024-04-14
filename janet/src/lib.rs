@@ -14,7 +14,7 @@ use tracing::{error, info};
 use transit_graph::Graph;
 
 /// Maps symbol to source location.
-pub type SymbolMap = HashMap<String, (PathBuf, usize, usize)>;
+pub type SymbolMap = HashMap<String, edit::Locator>;
 
 // TODO: Serialization of the Janet graph with serde is tricky without some kind of state-tracking
 // or processing the graph first. Neither the pretty or marshal modules work in a satisfactory
@@ -57,7 +57,6 @@ pub struct Source {
 impl edit::Source for Source {
     type Context = JanetContext;
     type RunContext = JanetClient;
-    type Symbols<'a> = std::collections::hash_map::Iter<'a, String, (PathBuf, usize, usize)>;
     type Error = Error;
 
     fn from_path(path: &Path) -> Result<Self, Self::Error>
@@ -82,7 +81,7 @@ impl edit::Source for Source {
         self.symbols.get(symbol)
     }
 
-    fn symbols(&self) -> Self::Symbols<'_> {
+    fn symbols(&self) -> impl Iterator<Item = (&String, &edit::Locator)> {
         self.symbols.iter()
     }
 
