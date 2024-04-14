@@ -717,36 +717,28 @@ where
             _ => None,
         };
 
+        // If the state/rect is off-screen and a child of the drag state we need to add the drag
+        // offset ourselves. FIX: this does not work
+        let offset = |idx, rect| {
+            dragged_state
+                .and_then(|(drag_idx, offset)| {
+                    (!ui.is_rect_visible(rect) && self.graph.in_path(drag_idx, idx))
+                        .then_some(offset)
+                })
+                .unwrap_or_default()
+        };
+
         // Find (and cache) transition endpoints even if the source and/or target
-        // weren't shown.
-        let start = port_pos(
-            &edit_data
-                .rects
-                .get_cached_rect(self.root(), &self.graph, source),
-            t.port1,
-            Direction::Outgoing,
-        );
-        let end = port_pos(
-            &edit_data
-                .rects
-                .get_cached_rect(self.root(), &self.graph, target),
-            t.port2,
-            target_dir(source, target),
-        );
+        // weren't shown this frame.
+        let rect = edit_data
+            .rects
+            .get_cached_rect(self.root(), &self.graph, source);
+        let start = port_pos(&rect, t.port1, Direction::Outgoing) - offset(source, rect.0);
 
-        // clip to the enclosing state, TODO state frame margins
-        // FIX: intersect with all parent rects?
-        // let clip_rect = edit_data
-        //     .rects
-        //     .get_rect(
-        //         self.graph
-        //             .transition_common_ancestor(i)
-        //             .unwrap_or_else(|| self.root()),
-        //     )
-        //     .expect("common ancestor rect exists");
-
-        //ui.scope(|ui| {
-        //ui.set_clip_rect(clip_rect);
+        let rect = edit_data
+            .rects
+            .get_cached_rect(self.root(), &self.graph, target);
+        let end = port_pos(&rect, t.port2, target_dir(source, target)) - offset(target, rect.0);
 
         self.show_connection(
             start,
@@ -763,7 +755,6 @@ where
             edit_data,
             ui,
         );
-        //});
     }
 
     pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
