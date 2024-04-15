@@ -1,3 +1,5 @@
+use petgraph::visit::EdgeRef;
+
 use crate::*;
 
 // Source, target, edge.
