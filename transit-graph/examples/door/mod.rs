@@ -49,20 +49,51 @@ pub enum DoorEvent {
     Bash(Attack),
 }
 
-impl Context for Door {
-    type Event = DoorEvent;
+pub struct DoorContext;
+
+impl Context<Door, DoorEvent> for DoorContext {
     type State = DoorState;
     type Transition = DoorGuard;
 
-    fn dispatch(&mut self, _event: &Self::Event) {
+    fn dispatch(&mut self, _event: &DoorEvent) {
         //println!("dispatching {:?} old context: {:?}", event, self);
     }
 
-    fn transition(&mut self, _source: &Self::State, _target: &Self::State) {
+    fn transition(&mut self, _source: &DoorState, _target: &DoorState) {
         // println!(
         //     "transitioned: {} -> {} new context: {:?}",
         //     source, target, self
         // );
+    }
+
+    fn enter(
+        &mut self,
+        _inner: &mut Door,
+        _event: Option<&DoorEvent>,
+        state: &DoorState,
+        _index: Idx,
+    ) {
+        state.enter()
+    }
+
+    fn exit(
+        &mut self,
+        _inner: &mut Door,
+        _event: Option<&DoorEvent>,
+        state: &DoorState,
+        _index: Idx,
+    ) {
+        state.exit();
+    }
+
+    fn guard(
+        &mut self,
+        inner: &mut Door,
+        event: &DoorEvent,
+        transition: &DoorGuard,
+        _index: Tdx,
+    ) -> bool {
+        transition.guard(inner, event)
     }
 }
 
@@ -91,8 +122,20 @@ impl std::fmt::Display for DoorState {
     }
 }
 
-impl State<Door> for DoorState {
-    fn enter(&mut self, _ctx: &mut Door, _event: Option<&DoorEvent>) {
+// trait State {
+//     fn enter(&mut self, inner: &mut Door, event: &DoorEvent);
+//     fn exit(&mut self, inner: &mut Door, event: &DoorEvent);
+// }
+
+// Techically this isn't needed since we're matching on the enum.
+trait Transition {
+    fn guard(&self, _inner: &mut Door, _event: &DoorEvent) -> bool {
+        true
+    }
+}
+
+impl DoorState {
+    fn enter(&self) {
         match self {
             DoorState::Intact => println!("You are in front of a large wooden door."),
             // It only makes sense to print this if we're coming from open.
@@ -103,7 +146,7 @@ impl State<Door> for DoorState {
         }
     }
 
-    fn exit(&mut self, _ctx: &mut Door, _event: Option<&DoorEvent>) {
+    fn exit(&self) {
         // nothing
     }
 }
@@ -111,14 +154,14 @@ impl State<Door> for DoorState {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct BashGuard;
 
-impl Transition<Door> for BashGuard {
-    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for BashGuard {
+    fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
             DoorEvent::Bash(attack) => {
                 // Check if this damage would destroy us.
-                let new_hp = ctx.hit_points.current - attack.damage;
+                let new_hp = inner.hit_points.current - attack.damage;
                 if new_hp <= 0. {
-                    ctx.hit_points.current = 0.;
+                    inner.hit_points.current = 0.;
                     true
                 } else {
                     false
@@ -136,17 +179,17 @@ pub struct BashGuardSelf;
 // transition work. In general we don't want to mutate state in
 // guards that don't pass since if no guard passes no state will
 // be mutated at all, and that might be confusing.
-impl Transition<Door> for BashGuardSelf {
-    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for BashGuardSelf {
+    fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
             DoorEvent::Bash(attack) => {
-                let was_full = ctx.hit_points.current == ctx.hit_points.max;
-                let new_hp = ctx.hit_points.current - attack.damage;
+                let was_full = inner.hit_points.current == inner.hit_points.max;
+                let new_hp = inner.hit_points.current - attack.damage;
 
                 if new_hp > 0. {
                     // The damage would leave us intact. Update our
                     // hit points and return true.
-                    ctx.hit_points.current = new_hp;
+                    inner.hit_points.current = new_hp;
                     if was_full {
                         println!("The door appears to be slightly damaged.");
                     } else {
@@ -169,8 +212,8 @@ pub struct LockGuard {
     key: String,
 }
 
-impl Transition<Door> for LockGuard {
-    fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for LockGuard {
+    fn guard(&self, _inner: &mut Door, event: &DoorEvent) -> bool {
         if let DoorEvent::Lock(Some(key)) = event {
             if key == &self.key {
                 println!("You lock the door.");
@@ -190,15 +233,15 @@ pub struct UnlockGuard {
     key: String,
 }
 
-impl Transition<Door> for UnlockGuard {
-    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for UnlockGuard {
+    fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
         if let DoorEvent::Unlock(Some(key)) = event {
             if key == &self.key {
                 println!("You unlock the door.");
                 true
             } else {
                 println!("That isn't the right key. The lock wears slightly.");
-                ctx.attempts += 1;
+                inner.attempts += 1;
                 false
             }
         } else {
@@ -210,8 +253,8 @@ impl Transition<Door> for UnlockGuard {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct OpenGuard;
 
-impl Transition<Door> for OpenGuard {
-    fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for OpenGuard {
+    fn guard(&self, _inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
             DoorEvent::Open => true,
             _ => false,
@@ -222,8 +265,8 @@ impl Transition<Door> for OpenGuard {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CloseGuard;
 
-impl Transition<Door> for CloseGuard {
-    fn guard(&mut self, _ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for CloseGuard {
+    fn guard(&self, _inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
             DoorEvent::Close => true,
             _ => false,
@@ -243,15 +286,15 @@ pub enum DoorGuard {
     Close(CloseGuard),
 }
 
-impl Transition<Door> for DoorGuard {
-    fn guard(&mut self, ctx: &mut Door, event: &DoorEvent) -> bool {
+impl Transition for DoorGuard {
+    fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
         match self {
-            DoorGuard::Bash(g) => g.guard(ctx, event),
-            DoorGuard::BashSelf(g) => g.guard(ctx, event),
-            DoorGuard::Lock(g) => g.guard(ctx, event),
-            DoorGuard::Unlock(g) => g.guard(ctx, event),
-            DoorGuard::Open(g) => g.guard(ctx, event),
-            DoorGuard::Close(g) => g.guard(ctx, event),
+            DoorGuard::Bash(g) => g.guard(inner, event),
+            DoorGuard::BashSelf(g) => g.guard(inner, event),
+            DoorGuard::Lock(g) => g.guard(inner, event),
+            DoorGuard::Unlock(g) => g.guard(inner, event),
+            DoorGuard::Open(g) => g.guard(inner, event),
+            DoorGuard::Close(g) => g.guard(inner, event),
         }
     }
 }

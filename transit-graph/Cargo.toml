@@ -5,7 +5,8 @@ authors = ["Al McElrath <hello@yrns.org>"]
 edition = "2021"
 
 [features]
-default = ["serde"]
+default = ["edit", "serde"]
+edit = []
 serde = ["dep:serde", "dep:ron"]
 
 [dependencies]
@@ -17,7 +18,7 @@ thiserror = "1.0.58"
 
 [[example]]
 name = "text"
-test = true
+test = false
 
 [dev-dependencies]
 rustyline = "14.0.0"

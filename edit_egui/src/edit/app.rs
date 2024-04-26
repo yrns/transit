@@ -1,7 +1,9 @@
-use crate::*;
-use eframe::egui;
-use std::path::PathBuf;
-use tracing::error;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+
+use super::*;
 
 pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Z);
 pub const REDO: KeyboardShortcut =
@@ -39,7 +41,7 @@ where
     pub fn load(&mut self) {
         // Load recent file.
         if let Some(path) = &self.recent {
-            match Edit::load(path) {
+            match Edit::load_and_validate(path) {
                 Ok(edit) => {
                     info!("loaded from recent: {}", path.display());
                     self.edit = edit;
@@ -84,7 +86,7 @@ where
             .add_filter("ron", &["ron"])
             .show_open_single_file()
         {
-            Ok(Some(p)) => match Edit::load(&p) {
+            Ok(Some(p)) => match Edit::load_and_validate(&p) {
                 Ok(edit) => {
                     self.recent = Some(p);
                     self.edit = edit;

@@ -1,6 +1,10 @@
+//! Editable graph, undo/redo operations.
+
 use petgraph::visit::EdgeRef;
 
 use crate::*;
+
+// TODO: make undo an optional feature
 
 // Source, target, edge.
 pub type EOp<T> = (Idx, Idx, Edge<T>);

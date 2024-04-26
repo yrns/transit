@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::{error, info};
-use transit_graph::Graph;
+use transit_graph::{Context, Graph, Idx, IntMap, Tdx};
 
 /// Maps symbol to source location.
 pub type SymbolMap = HashMap<String, edit::Locator>;
@@ -39,36 +39,40 @@ pub type SymbolMap = HashMap<String, edit::Locator>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("watch error")]
-    Watch(#[from] edit::WatchError),
+    //#[error("watch error")]
+    //Watch(#[from] edit::WatchError),
     #[error("janet error")]
     Janet(#[from] janetrs::client::Error),
 }
 
+// TODO: replace some of this with bevy_mod_scripting? bevy_asset for watching?
+// TODO: build the editor with support for all supported source types, not just one
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Source {
     pub path: PathBuf,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    watcher: Option<edit::Watcher>,
+    // TODO: move watcher into the editor
+    //#[cfg_attr(feature = "serde", serde(skip))]
+    //watcher: Option<edit::Watcher>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub symbols: SymbolMap,
 }
 
 impl edit::Source for Source {
-    type Context = JanetContext;
-    type RunContext = JanetClient;
+    // type Context = JanetContext;
+    // type RunContext = JanetClient;
+
     type Error = Error;
 
     fn from_path(path: &Path) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        let watcher = edit::Watcher::new(path)?.into();
+        //let watcher = edit::Watcher::new(path)?.into();
         let symbols = get_symbols(path)?.unwrap_or_default();
 
         Ok(Self {
             path: path.to_path_buf(),
-            watcher,
+            //watcher,
             symbols,
         })
     }
@@ -86,13 +90,14 @@ impl edit::Source for Source {
     }
 
     fn update(&mut self) -> Result<(), Self::Error> {
-        if let Some(watcher) = &mut self.watcher {
-            if watcher.changed() {
-                if let Some(symbols) = get_symbols(&self.path)? {
-                    self.symbols = symbols;
-                }
-            }
-        }
+        // FIXXXX
+        // if let Some(watcher) = &mut self.watcher {
+        //     if watcher.changed() {
+        //         if let Some(symbols) = get_symbols(&self.path)? {
+        //             self.symbols = symbols;
+        //         }
+        //     }
+        // }
 
         Ok(())
     }
@@ -112,33 +117,74 @@ impl edit::Source for Source {
     fn extensions(&self) -> &[&str] {
         &["janet"]
     }
+}
 
-    fn resolve(&self, edit: &edit::Edit<Self>, client: &JanetClient) -> Graph<State, Transition> {
-        let f = |symbol: &Option<String>| {
-            symbol
-                .as_deref()
-                .map(|symbol| resolve(symbol, client))
-                .unwrap_or_else(Janet::nil)
-        };
+pub fn resolve(edit: &edit::Edit<Source>, client: &JanetClient) -> Graph<State, Transition> {
+    let f = |symbol: &Option<String>| {
+        symbol
+            .as_deref()
+            .map(|symbol| resolve_symbol(symbol, client))
+            .unwrap_or_else(Janet::nil)
+    };
 
-        edit.graph.map(
-            |_i, state| State {
-                enter: f(&state.enter),
-                exit: f(&state.exit),
-                ..Default::default()
-            },
-            |_i, transition| Transition {
-                id: transition.id.clone(),
-                guard: f(&transition.guard),
-                local: Janet::nil(),
-            },
-        )
+    edit.graph.map(
+        |_i, state| State {
+            enter: f(&state.enter),
+            exit: f(&state.exit),
+            ..Default::default()
+        },
+        |_i, transition| Transition {
+            id: transition.id.clone(),
+            guard: f(&transition.guard),
+            local: Janet::nil(),
+        },
+    )
+}
+
+// Resolve a symbol and return the result if it's a function.
+pub fn resolve_symbol<'a>(symbol: impl Into<JanetSymbol<'a>>, client: &JanetClient) -> Janet {
+    client
+        .env()
+        .and_then(|env| env.resolve(symbol))
+        .and_then(|value| match value.unwrap() {
+            TaggedJanet::Function(_) => Some(value),
+            _ => None,
+        })
+        .unwrap_or_else(Janet::nil)
+}
+
+//#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct Locals<S, T>(IntMap<usize, S>, IntMap<usize, T>);
+
+impl<S, T> Default for Locals<S, T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default())
     }
 }
 
-pub struct JanetContext {
-    //client: &'a JanetClient,
-    pub context: Janet,
+impl<S, T> Locals<S, T>
+where
+    S: Clone,
+    T: Clone,
+{
+    fn state(&mut self, i: Idx, s: &S) -> &mut S {
+        self.0.entry(i.index()).or_insert_with(|| s.clone())
+    }
+
+    fn transition(&mut self, i: Tdx, t: &T) -> &mut T {
+        self.1.entry(i.index()).or_insert_with(|| t.clone())
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+        self.1.clear();
+    }
+}
+
+pub struct JanetContext<'a> {
+    pub client: &'a JanetClient,
+    // State/transition local values.
+    pub locals: Locals<Janet, Janet>,
 }
 
 //#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -162,6 +208,7 @@ impl Default for State {
 
 /// Each event has an `id` which must match the transition(s) it corresponds to. This avoids calling
 /// into Janet for every event/transition to see if the guard passes.
+/// TODO: make this a table and read the id from it?
 #[derive(Debug)]
 pub struct Event {
     pub id: String, // TODO: make id generic?
@@ -194,14 +241,13 @@ impl Transition {
     pub fn new(id: &str, symbol: &str, client: &JanetClient, local: Janet) -> Self {
         Self {
             id: id.to_owned(),
-            guard: resolve(symbol, client),
+            guard: resolve_symbol(symbol, client),
             local,
         }
     }
 }
 
-impl transit_graph::Context for JanetContext {
-    type Event = Event;
+impl<'a> Context<Janet, Event> for JanetContext<'a> {
     type State = State;
     type Transition = Transition;
 
@@ -212,27 +258,13 @@ impl transit_graph::Context for JanetContext {
     fn transition(&mut self, source: &State, target: &State) {
         info!("transition: source: {:?} target: {:?}", source, target);
     }
-}
 
-// Resolve a symbol and return the result if it's a function.
-pub fn resolve<'a>(symbol: impl Into<JanetSymbol<'a>>, client: &JanetClient) -> Janet {
-    client
-        .env()
-        .and_then(|env| env.resolve(symbol))
-        .and_then(|value| match value.unwrap() {
-            TaggedJanet::Function(_) => Some(value),
-            _ => None,
-        })
-        .unwrap_or_else(Janet::nil)
-}
-
-impl transit_graph::State<JanetContext> for State {
-    fn enter(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
-        if let TaggedJanet::Function(mut f) = self.enter.unwrap() {
+    fn enter(&mut self, inner: &mut Janet, event: Option<&Event>, state: &Self::State, index: Idx) {
+        if let TaggedJanet::Function(mut f) = state.enter.unwrap() {
             match f.call([
-                self.local,
-                ctx.context,
-                *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
+                *self.locals.state(index, &state.local),
+                *inner,
+                event.map(|e| e.value).unwrap_or(Janet::nil()),
             ]) {
                 Ok(_) => (),
                 Err(e) => error!("error in enter: {e:?}"),
@@ -240,45 +272,53 @@ impl transit_graph::State<JanetContext> for State {
         }
     }
 
-    fn exit(&mut self, ctx: &mut JanetContext, event: Option<&Event>) {
-        if let TaggedJanet::Function(mut f) = self.exit.unwrap() {
+    fn exit(&mut self, inner: &mut Janet, event: Option<&Event>, state: &Self::State, index: Idx) {
+        if let TaggedJanet::Function(mut f) = state.exit.unwrap() {
             match f.call([
-                self.local,
-                ctx.context,
-                *event.map(|e| &e.value).unwrap_or(&Janet::nil()),
+                *self.locals.state(index, &state.local),
+                *inner,
+                event.map(|e| e.value).unwrap_or(Janet::nil()),
             ]) {
                 Ok(_) => (),
                 Err(e) => error!("error in exit: {e:?}"),
             }
         }
     }
-}
 
-impl transit_graph::Transition<JanetContext> for Transition {
-    fn guard(&mut self, ctx: &mut JanetContext, event: &Event) -> bool {
-        if event.id == self.id {
-            let value = event.value;
-            if let TaggedJanet::Function(mut f) = self.guard.unwrap() {
-                match f.call([self.local, ctx.context, value]) {
-                    Ok(res) => {
-                        info!("guard result: {:?}", res);
-                        match res.unwrap() {
-                            TaggedJanet::Boolean(b) => b,
-                            _ => res.is_truthy(),
-                        }
-                    }
-                    Err(e) => {
-                        error!("error in guard: {e:?}");
-                        false
+    // Do we even need this? Just put it in the guard. TODO
+    fn filter(&mut self, event: &Event, transition: &Transition, _index: Tdx) -> bool {
+        event.id == transition.id
+    }
+
+    fn guard(
+        &mut self,
+        inner: &mut Janet,
+        event: &Event,
+        transition: &Self::Transition,
+        index: Tdx,
+    ) -> bool {
+        if let TaggedJanet::Function(mut f) = transition.guard.unwrap() {
+            match f.call([
+                *self.locals.transition(index, &transition.local),
+                *inner,
+                event.value,
+            ]) {
+                Ok(res) => {
+                    info!("guard result: {:?}", res);
+                    match res.unwrap() {
+                        TaggedJanet::Boolean(b) => b,
+                        _ => res.is_truthy(),
                     }
                 }
-            } else {
-                // If there is no guard but the id matches it passes by default.
-                info!("no guard");
-                true
+                Err(e) => {
+                    error!("error in guard: {e:?}");
+                    false
+                }
             }
         } else {
-            false
+            // If there is no guard but the id matches it passes by default.
+            info!("no guard");
+            true
         }
     }
 }

@@ -9,7 +9,7 @@ default = []
 
 # https://github.com/mainmatter/cargo-autoinherit ?
 [workspace]
-members = ["transit-graph", "edit_egui", "janet", "eframe-dynamic"]
+members = ["transit-graph", "edit_egui", "janet", "eframe-dynamic", "rust"]
 
 [dependencies]
 edit_egui = { path = "./edit_egui" }

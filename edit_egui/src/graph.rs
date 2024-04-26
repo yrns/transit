@@ -1,3 +1,5 @@
+use emath::*;
+
 use crate::*;
 
 /// Edit graph.

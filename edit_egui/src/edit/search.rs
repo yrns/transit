@@ -1,6 +1,5 @@
-use crate::*;
+use super::*;
 use eframe::egui::text::*;
-use transit_graph::Idx;
 
 #[derive(Default)]
 pub struct SearchBox<T> {

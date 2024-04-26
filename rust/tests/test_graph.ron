@@ -1,0 +1,720 @@
+(
+    source: None,
+    graph: (
+        graph: (
+            nodes: [
+                (
+                    parent: None,
+                    state: (
+                        id: "test",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: Some((0, (
+                            x: 0.0,
+                            y: 64.0,
+                        ), (
+                            x: -36.71428,
+                            y: 0.0,
+                        ))),
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(0),
+                    state: (
+                        id: "red",
+                        enter: Some("enter_red"),
+                        exit: Some("exit_red"),
+                        rect: (
+                            min: (
+                                x: 43.71428,
+                                y: 50.571434,
+                            ),
+                            max: (
+                                x: 299.71426,
+                                y: 114.571434,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+                (
+                    parent: Some(0),
+                    state: (
+                        id: "blue",
+                        enter: Some("enter_blue"),
+                        exit: Some("exit_blue"),
+                        rect: (
+                            min: (
+                                x: 435.42862,
+                                y: 49.714264,
+                            ),
+                            max: (
+                                x: 691.4286,
+                                y: 113.714264,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                ),
+            ],
+            node_holes: [],
+            edge_property: directed,
+            edges: [
+                Some((1, 2, Transition((
+                    id: "A",
+                    guard: Some("guard_a"),
+                    pos: (
+                        x: 344.4286,
+                        y: 86.42856,
+                    ),
+                    c1: (
+                        x: 64.0,
+                        y: 0.0,
+                    ),
+                    c2: (
+                        x: -64.0,
+                        y: -0.0,
+                    ),
+                    port1: 0,
+                    port2: 0,
+                )))),
+                Some((0, 1, Initial(Initial))),
+                Some((2, 1, Transition((
+                    id: "B",
+                    guard: Some("guard_b"),
+                    pos: (
+                        x: 199.28596,
+                        y: 145.42853,
+                    ),
+                    c1: (
+                        x: 755.4286,
+                        y: 83.714264,
+                    ),
+                    c2: (
+                        x: -28.000008,
+                        y: 36.285713,
+                    ),
+                    port1: 0,
+                    port2: 1,
+                )))),
+            ],
+        ),
+        root: 0,
+    ),
+    narrow: None,
+    selection: Transition(2),
+    undo: (
+        undos: [
+            UpdateNode(0, (
+                parent: None,
+                state: (
+                    id: "untitled",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        max: (
+                            x: inf,
+                            y: inf,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertNode(1),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "untitled",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 290.57144,
+                            y: 154.28572,
+                        ),
+                        max: (
+                            x: 546.5714,
+                            y: 218.28572,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertNode(2),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "untitled",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 458.57144,
+                            y: 312.0,
+                        ),
+                        max: (
+                            x: 714.5714,
+                            y: 376.0,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "untitled",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 150.85713,
+                            y: 102.000015,
+                        ),
+                        max: (
+                            x: 406.85712,
+                            y: 166.00002,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertEdge(0),
+            UpdateEdge(0, Transition((
+                id: "untitled > untitled",
+                guard: None,
+                pos: (
+                    x: 804.4285,
+                    y: 390.7143,
+                ),
+                c1: (
+                    x: 469.99997,
+                    y: 163.42857,
+                ),
+                c2: (
+                    x: 326.85715,
+                    y: 291.14285,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "untitled",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 149.99998,
+                            y: 129.42857,
+                        ),
+                        max: (
+                            x: 405.99997,
+                            y: 193.42857,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "untitled",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 390.85715,
+                            y: 257.14285,
+                        ),
+                        max: (
+                            x: 646.8571,
+                            y: 321.14285,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(0, Transition((
+                id: "a",
+                guard: None,
+                pos: (
+                    x: 804.4285,
+                    y: 390.7143,
+                ),
+                c1: (
+                    x: 469.99997,
+                    y: 163.42857,
+                ),
+                c2: (
+                    x: 326.85715,
+                    y: 291.14285,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "blue",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 390.85715,
+                            y: 257.14285,
+                        ),
+                        max: (
+                            x: 646.8571,
+                            y: 321.14285,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(0, Transition((
+                id: "a",
+                guard: None,
+                pos: (
+                    x: 680.1428,
+                    y: 176.42859,
+                ),
+                c1: (
+                    x: 469.99997,
+                    y: 163.42857,
+                ),
+                c2: (
+                    x: 326.85715,
+                    y: 291.14285,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(0, Transition((
+                id: "a",
+                guard: None,
+                pos: (
+                    x: 596.99994,
+                    y: 308.4286,
+                ),
+                c1: (
+                    x: 469.99997,
+                    y: 163.42857,
+                ),
+                c2: (
+                    x: 326.85715,
+                    y: 291.14285,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateEdge(0, Transition((
+                id: "a",
+                guard: None,
+                pos: (
+                    x: 596.99994,
+                    y: 308.4286,
+                ),
+                c1: (
+                    x: 43.99994,
+                    y: -0.28572083,
+                ),
+                c2: (
+                    x: 326.85715,
+                    y: 291.14285,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "blue",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 213.42859,
+                            y: 265.71426,
+                        ),
+                        max: (
+                            x: 469.42856,
+                            y: 329.71426,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "blue",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 152.57146,
+                            y: 247.71426,
+                        ),
+                        max: (
+                            x: 408.5714,
+                            y: 311.71426,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "red",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 149.99998,
+                            y: 129.42857,
+                        ),
+                        max: (
+                            x: 405.99997,
+                            y: 193.42857,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "blue",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 527.14294,
+                            y: 142.28569,
+                        ),
+                        max: (
+                            x: 783.1429,
+                            y: 206.28569,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateEdge(0, Transition((
+                id: "a",
+                guard: None,
+                pos: (
+                    x: 596.99994,
+                    y: 308.4286,
+                ),
+                c1: (
+                    x: 43.99994,
+                    y: -0.28572083,
+                ),
+                c2: (
+                    x: -51.142914,
+                    y: 1.4285889,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(1, (
+                parent: Some(0),
+                state: (
+                    id: "red",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 121.71428,
+                            y: 158.57144,
+                        ),
+                        max: (
+                            x: 377.71426,
+                            y: 222.57144,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "blue",
+                    enter: None,
+                    exit: None,
+                    rect: (
+                        min: (
+                            x: 504.00006,
+                            y: 157.71426,
+                        ),
+                        max: (
+                            x: 760.0,
+                            y: 221.71426,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            Transaction([
+                UpdateNode(0, (
+                    parent: None,
+                    state: (
+                        id: "test",
+                        enter: None,
+                        exit: None,
+                        rect: (
+                            min: (
+                                x: 0.0,
+                                y: 0.0,
+                            ),
+                            max: (
+                                x: inf,
+                                y: inf,
+                            ),
+                        ),
+                        initial: None,
+                        collapsed: false,
+                        pan: (
+                            x: 0.0,
+                            y: 0.0,
+                        ),
+                        zoom: 1.0,
+                    ),
+                )),
+                InsertEdge(1),
+            ]),
+            UpdateEdge(0, Transition((
+                id: "a",
+                guard: None,
+                pos: (
+                    x: 476.14276,
+                    y: 257.85715,
+                ),
+                c1: (
+                    x: 43.99994,
+                    y: -0.28572083,
+                ),
+                c2: (
+                    x: -51.142914,
+                    y: 1.4285889,
+                ),
+                port1: 0,
+                port2: 0,
+            ))),
+            UpdateNode(2, (
+                parent: Some(0),
+                state: (
+                    id: "blue",
+                    enter: Some("enter_blue"),
+                    exit: Some("exit_blue"),
+                    rect: (
+                        min: (
+                            x: 389.14294,
+                            y: 58.28569,
+                        ),
+                        max: (
+                            x: 645.1429,
+                            y: 122.28569,
+                        ),
+                    ),
+                    initial: None,
+                    collapsed: false,
+                    pan: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    zoom: 1.0,
+                ),
+            )),
+            InsertEdge(2),
+            UpdateEdge(2, Transition((
+                id: "blue > red",
+                guard: None,
+                pos: (
+                    x: 1059.0,
+                    y: 172.85712,
+                ),
+                c1: (
+                    x: 755.4286,
+                    y: 83.714264,
+                ),
+                c2: (
+                    x: -20.28572,
+                    y: 94.571434,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "blue > red",
+                guard: None,
+                pos: (
+                    x: 328.71448,
+                    y: 138.5714,
+                ),
+                c1: (
+                    x: 755.4286,
+                    y: 83.714264,
+                ),
+                c2: (
+                    x: -20.28572,
+                    y: 94.571434,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "blue > red",
+                guard: None,
+                pos: (
+                    x: 328.71448,
+                    y: 138.5714,
+                ),
+                c1: (
+                    x: 755.4286,
+                    y: 83.714264,
+                ),
+                c2: (
+                    x: -28.000008,
+                    y: 36.285713,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+            UpdateEdge(2, Transition((
+                id: "blue > red",
+                guard: None,
+                pos: (
+                    x: 199.28596,
+                    y: 145.42853,
+                ),
+                c1: (
+                    x: 755.4286,
+                    y: 83.714264,
+                ),
+                c2: (
+                    x: -28.000008,
+                    y: 36.285713,
+                ),
+                port1: 0,
+                port2: 1,
+            ))),
+        ],
+        redos: [],
+    ),
+    version: 1,
+)

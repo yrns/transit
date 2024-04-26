@@ -8,7 +8,8 @@ use transit_graph::Statechart;
 
 fn main() -> Result<()> {
     let graph = make_graph();
-    let mut door = Statechart::new(&graph, Door::default());
+    let mut ctx = DoorContext;
+    let mut door = Statechart::new(Door::default(), &mut ctx, &graph);
 
     // TODO: start over make reset work and fix history reset
     println!("What would you like to do? (o)pen (c)lose (l)ock (u)nlock (b)ash, or maybe (s)tart over or (q)uit");
@@ -28,7 +29,7 @@ fn main() -> Result<()> {
                         'u' => Some(DoorEvent::Unlock(Some("the right key".to_string()))),
                         'b' => Some(DoorEvent::Bash(Attack { damage: 40. })),
                         's' => {
-                            door.reset(Door::default());
+                            door.reset(Door::default(), &mut ctx, &graph);
                             continue;
                         }
                         'q' => break,
@@ -38,12 +39,12 @@ fn main() -> Result<()> {
                         }
                     };
                     if let Some(event) = event {
-                        let res = door.transition(event);
+                        let res = door.transition(&mut ctx, &graph, event);
                         if !res {
                             //dbg!(_e);
                             println!(
                                 "That didn't work. The door is {}.",
-                                door.graph.state(door.active).unwrap()
+                                graph.state(door.active).unwrap()
                             );
                         }
                     }

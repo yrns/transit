@@ -1,3 +1,8 @@
+//! Statechart graph structures.
+
+#[cfg_attr(feature = "edit", path = "edit.rs")]
+mod edit;
+
 use std::{collections::HashSet, iter::Iterator};
 
 pub use petgraph::Direction;
@@ -8,7 +13,10 @@ use petgraph::{
 };
 use thiserror::Error;
 
-use crate::Context;
+//use crate::Context;
+
+#[cfg(feature = "edit")]
+pub use edit::*;
 
 pub type Idx = NodeIndex<u32>;
 pub type Tdx = EdgeIndex<u32>;
@@ -132,19 +140,19 @@ pub type TransitionRef<'a, T> = (Tdx, Idx, Idx, &'a T, bool);
 // Indices, and mutable references to edge information.
 //pub type TransitionMut<'a, T> = (Tdx, Idx, Idx, &'a mut T, &'a mut bool);
 
-#[allow(unused)]
-fn edge_transition_filter<C, E>(
-    edge: EdgeReference<Edge<C::Transition>, u32>,
-) -> Option<TransitionRef<'_, C::Transition>>
-where
-    C: Context,
-{
-    match edge.weight() {
-        Edge::Transition(t, _) => Some((edge.id(), edge.source(), edge.target(), t, false)),
-        Edge::Internal(t) => Some((edge.id(), edge.source(), edge.target(), t, true)),
-        _ => None,
-    }
-}
+// #[allow(unused)]
+// fn edge_transition_filter<C, E>(
+//     edge: EdgeReference<Edge<C::Transition>, u32>,
+// ) -> Option<TransitionRef<'_, C::Transition>>
+// where
+//     C: Context,
+// {
+//     match edge.weight() {
+//         Edge::Transition(t, _) => Some((edge.id(), edge.source(), edge.target(), t, false)),
+//         Edge::Internal(t) => Some((edge.id(), edge.source(), edge.target(), t, true)),
+//         _ => None,
+//     }
+// }
 
 impl<T> From<T> for Edge<T> {
     fn from(transition: T) -> Self {
@@ -153,7 +161,7 @@ impl<T> From<T> for Edge<T> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Graph<S, T> {
     // TODO: pub(crate)
     pub graph: StableDiGraph<Node<S>, Edge<T>, u32>,

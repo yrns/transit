@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use janetrs::*;
 
+// TODO: replace this w/ reflect? or something from bevy_mod_scripting?
+
 pub trait FromJanet
 where
     Self: Sized,

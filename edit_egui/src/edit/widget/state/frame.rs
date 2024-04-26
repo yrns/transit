@@ -1,4 +1,5 @@
-use crate::*;
+use eframe::egui;
+use egui::*;
 
 pub struct Frame {
     is_root: bool,
