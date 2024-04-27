@@ -17,6 +17,9 @@ fn main() -> Result<(), InquireError> {
         "Lock",
         "Unlock",
         "Bash",
+        // This is to test history. The door will be restored to its previous state from the
+        // destroyed state.
+        "Cast a restoration spell",
         "Start over",
         "Quit",
     ];
@@ -37,6 +40,7 @@ fn main() -> Result<(), InquireError> {
             "Lock" => DoorEvent::Lock(select_key()),
             "Unlock" => DoorEvent::Unlock(select_key()),
             "Bash" => DoorEvent::Bash(Attack { damage: 40. }),
+            "Cast a restoration spell" => DoorEvent::Restore,
             "Start over" => {
                 door.reset(Door::default(), &mut ctx, &graph);
                 continue;

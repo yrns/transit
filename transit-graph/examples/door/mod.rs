@@ -47,6 +47,7 @@ pub enum DoorEvent {
     Open,
     Close,
     Bash(Attack),
+    Restore,
 }
 
 pub struct DoorContext;
@@ -259,8 +260,23 @@ impl Transition for CloseGuard {
     }
 }
 
-// We can't easily clone Box<dyn Transition> so just dispatch on an
-// enum.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RestoreGuard;
+
+impl Transition for RestoreGuard {
+    fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
+        match event {
+            DoorEvent::Restore => {
+                println!("The door's splinters knit themselves back together.");
+                inner.hit_points = Default::default();
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+// We can't easily clone Box<dyn Transition> (or serialize) so just dispatch on an enum.
 #[derive(Serialize, Deserialize, Clone)]
 pub enum DoorGuard {
     Bash(BashGuard),
@@ -269,6 +285,7 @@ pub enum DoorGuard {
     Unlock(UnlockGuard),
     Open(OpenGuard),
     Close(CloseGuard),
+    Restore(RestoreGuard),
 }
 
 impl Transition for DoorGuard {
@@ -280,6 +297,7 @@ impl Transition for DoorGuard {
             DoorGuard::Unlock(g) => g.guard(inner, event),
             DoorGuard::Open(g) => g.guard(inner, event),
             DoorGuard::Close(g) => g.guard(inner, event),
+            DoorGuard::Restore(g) => g.guard(inner, event),
         }
     }
 }
@@ -288,13 +306,16 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
     let mut g = Graph::new();
 
     let intact = g.add_state(DoorState::Intact, None);
+
+    // Set the root node initial to `intact`.
+    let _op = g.set_root_initial((Initial::Initial, intact));
+
     let locked = g.add_state(DoorState::Locked, Some(intact));
+    // Start locked, but remember the previous state if the door is restored via magic.
+    let _op = g.set_initial(intact, Some((Initial::HistoryShallow, locked)));
     let closed = g.add_state(DoorState::Closed, Some(intact));
     let open = g.add_state(DoorState::Open, Some(intact));
     let destroyed = g.add_state(DoorState::Destroyed, None);
-
-    // Set the root node initial to "locked".
-    let _op = g.set_root_initial((Initial::Initial, locked));
 
     let _t = g.add_transition(intact, destroyed, DoorGuard::Bash(BashGuard {}));
 
@@ -322,6 +343,8 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
             key: "silver key".to_owned(),
         }),
     );
+
+    let _op = g.add_transition(destroyed, intact, DoorGuard::Restore(RestoreGuard {}));
 
     g
 }

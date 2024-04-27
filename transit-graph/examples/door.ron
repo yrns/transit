@@ -29,7 +29,8 @@
         node_holes: [],
         edge_property: directed,
         edges: [
-            Some((0, 2, Initial(Initial))),
+            Some((0, 1, Initial(Initial))),
+            Some((1, 2, Initial(HistoryShallow))),
             Some((1, 5, Transition(Bash(())))),
             Some((1, 1, Internal(BashSelf(())))),
             Some((2, 3, Transition(Unlock((
@@ -40,6 +41,7 @@
             Some((3, 2, Transition(Lock((
                 key: "silver key",
             ))))),
+            Some((5, 1, Transition(Restore(())))),
         ],
     ),
     root: 0,
