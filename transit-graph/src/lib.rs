@@ -215,6 +215,7 @@ impl<T> Statechart<T> {
         // Recursively find initial using local history.
         let initial = self.initial(graph, next);
         assert!(graph.in_path(next, initial));
+        let next = initial;
 
         // For transitions, exit states up to the common ancestor.
         if let Some(ca) = common_ancestor {
@@ -249,7 +250,7 @@ impl<T> Statechart<T> {
         // (including the initial state).
         // TODO: add a test to check we are entering the root
         let mut p2 = graph
-            .path_iter(initial)
+            .path_iter(next)
             .take_while(|&i| Some(i) != common_ancestor)
             .collect::<Vec<_>>();
         p2.reverse();
