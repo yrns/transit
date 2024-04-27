@@ -18,8 +18,7 @@ thiserror = "1.0.58"
 
 [[example]]
 name = "text"
-test = false
+test = true
 
 [dev-dependencies]
-rustyline = "14.0.0"
-#serde_traitobject = "0.2.4"
+inquire = "0.7.5"

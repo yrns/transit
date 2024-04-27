@@ -55,17 +55,6 @@ impl Context<Door, DoorEvent> for DoorContext {
     type State = DoorState;
     type Transition = DoorGuard;
 
-    fn dispatch(&mut self, _event: &DoorEvent) {
-        //println!("dispatching {:?} old context: {:?}", event, self);
-    }
-
-    fn transition(&mut self, _source: &DoorState, _target: &DoorState) {
-        // println!(
-        //     "transitioned: {} -> {} new context: {:?}",
-        //     source, target, self
-        // );
-    }
-
     fn enter(
         &mut self,
         _inner: &mut Door,
@@ -122,11 +111,6 @@ impl std::fmt::Display for DoorState {
     }
 }
 
-// trait State {
-//     fn enter(&mut self, inner: &mut Door, event: &DoorEvent);
-//     fn exit(&mut self, inner: &mut Door, event: &DoorEvent);
-// }
-
 // Techically this isn't needed since we're matching on the enum.
 trait Transition {
     fn guard(&self, _inner: &mut Door, _event: &DoorEvent) -> bool {
@@ -139,16 +123,14 @@ impl DoorState {
         match self {
             DoorState::Intact => println!("You are in front of a large wooden door."),
             // It only makes sense to print this if we're coming from open.
-            DoorState::Closed => println!("The door is now closed."),
+            // DoorState::Closed => println!("The door is now closed."),
             DoorState::Open => println!("The door is now open."),
             DoorState::Destroyed => println!("The door shatters into many pieces."),
             _ => (),
         }
     }
 
-    fn exit(&self) {
-        // nothing
-    }
+    fn exit(&self) {}
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -214,16 +196,16 @@ pub struct LockGuard {
 
 impl Transition for LockGuard {
     fn guard(&self, _inner: &mut Door, event: &DoorEvent) -> bool {
-        if let DoorEvent::Lock(Some(key)) = event {
-            if key == &self.key {
+        match event {
+            DoorEvent::Lock(Some(key)) if key == &self.key => {
                 println!("You lock the door.");
                 true
-            } else {
+            }
+            DoorEvent::Lock(Some(_)) => {
                 println!("That isn't the right key.");
                 false
             }
-        } else {
-            false
+            _ => false,
         }
     }
 }
@@ -235,17 +217,17 @@ pub struct UnlockGuard {
 
 impl Transition for UnlockGuard {
     fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
-        if let DoorEvent::Unlock(Some(key)) = event {
-            if key == &self.key {
+        match event {
+            DoorEvent::Unlock(Some(key)) if key == &self.key => {
                 println!("You unlock the door.");
                 true
-            } else {
+            }
+            DoorEvent::Unlock(Some(_)) => {
                 println!("That isn't the right key. The lock wears slightly.");
                 inner.attempts += 1;
                 false
             }
-        } else {
-            false
+            _ => false,
         }
     }
 }
@@ -268,7 +250,10 @@ pub struct CloseGuard;
 impl Transition for CloseGuard {
     fn guard(&self, _inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
-            DoorEvent::Close => true,
+            DoorEvent::Close => {
+                println!("The door is now closed.");
+                true
+            }
             _ => false,
         }
     }
@@ -310,8 +295,6 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
 
     // Set the root node initial to "locked".
     let _op = g.set_root_initial((Initial::Initial, locked));
-    // Set the intact state initial to "locked"
-    //g.graph[intact].set_initial(Initial::Initial(locked));
 
     let _t = g.add_transition(intact, destroyed, DoorGuard::Bash(BashGuard {}));
 
@@ -324,7 +307,7 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
         locked,
         closed,
         DoorGuard::Unlock(UnlockGuard {
-            key: "the right key".to_owned(),
+            key: "silver key".to_owned(),
         }),
     );
 
@@ -336,7 +319,7 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
         closed,
         locked,
         DoorGuard::Lock(LockGuard {
-            key: "the right key".to_owned(),
+            key: "silver key".to_owned(),
         }),
     );
 
