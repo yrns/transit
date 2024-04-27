@@ -209,59 +209,50 @@ impl<T> Statechart<T> {
         ctx: &mut C,
         graph: &Graph<C::State, C::Transition>,
         event: Option<&E>,
+        // This is None on initialization. So is `event`.
         common_ancestor: Option<Idx>,
     ) {
-        // When does this return None given there is always a root? TODO: we already know the common
-        // ancestor for initial edges
-        //let a = self.graph.common_ancestor(self.active, next);
-        let a = common_ancestor.unwrap_or(self.active);
-
-        let not_a = |i: &Idx| i != &a;
-
-        // Path from the active state to the common ancestor. Don't
-        // include the common ancestor since we are not entering or
-        // exiting it. Collect so we can take mutable refs to states
-        // below.
-        let p1 = graph
-            .path_iter(self.active)
-            .take_while(not_a)
-            .collect::<Vec<_>>();
-
         // Recursively find initial using local history.
         let initial = self.initial(graph, next);
-
         assert!(graph.in_path(next, initial));
 
-        // Path from the common ancestor to the next node (including the initial state).
+        // For transitions, exit states up to the common ancestor.
+        if let Some(ca) = common_ancestor {
+            let mut last = self.active;
+
+            // Path from the active state to the common ancestor. Don't include the common ancestor
+            // since we are not entering or exiting it.
+            let p1 = graph.path_iter(self.active).take_while(|&i| i != ca);
+
+            for i in p1 {
+                ctx.exit(&mut self.inner, event, &graph.graph[i].state, i);
+
+                // Update history when exiting a state.
+                if let Some((initial, i)) = graph.initial(i) {
+                    _ = match initial {
+                        Initial::HistoryShallow => self.history.insert(i.index(), last),
+                        Initial::HistoryDeep => self.history.insert(i.index(), self.active),
+                        _ => None,
+                    };
+                };
+
+                // you can't have a history with no child
+                // states, and we're not checking that
+                // here - FIX?
+                last = i;
+                //Ok(())
+            }
+            //.collect::<Result<_>>()?;
+        }
+
+        // Path from the common ancestor (not including) (or root if None) to the next node
+        // (including the initial state).
+        // TODO: add a test to check we are entering the root
         let mut p2 = graph
             .path_iter(initial)
-            .take_while(not_a)
+            .take_while(|&i| Some(i) != common_ancestor)
             .collect::<Vec<_>>();
         p2.reverse();
-
-        let mut last = self.active;
-        for i in p1 {
-            ctx.exit(&mut self.inner, event, &graph.graph[i].state, i);
-
-            // Update history when exiting a state.
-            if let Some((initial, i)) = graph.initial(i) {
-                _ = match initial {
-                    Initial::HistoryShallow => self.history.insert(i.index(), last),
-                    Initial::HistoryDeep => self.history.insert(i.index(), self.active),
-                    _ => None,
-                };
-            };
-
-            // you can't have a history with no child
-            // states, and we're not checking that
-            // here - FIX?
-            last = i;
-            //Ok(())
-        }
-        //.collect::<Result<_>>()?;
-
-        // let a = vec!["a", "b", "c"];
-        // assert_eq!(a.into_iter().skip_while(|l| *l != "b").skip(1).next(), Some("c"));
 
         for i in p2 {
             ctx.enter(&mut self.inner, event, &graph.graph[i].state, i);
