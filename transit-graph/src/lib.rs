@@ -99,12 +99,14 @@ impl<T> Statechart<T> {
 // }
 
 impl<T> Statechart<T> {
+    /// Create a new statechart. Requires a [Context] and [Graph] to traverse to the initial state.
     pub fn new<C: Context<T, E>, E>(
         inner: T,
         ctx: &mut C,
         graph: &Graph<C::State, C::Transition>,
     ) -> Statechart<T> {
-        // TODO: is this really true? do we even need to call enters on init?
+        // Transitions can't be made to or from the root, so if the root doesn't have an initial, it
+        // will be stuck. TODO: maybe this should be a warning
         let initial = graph
             .initial(graph.root)
             .map(|i| i.1)
@@ -122,8 +124,7 @@ impl<T> Statechart<T> {
         sc
     }
 
-    // TODO: does history make sense for the root initial?
-    // FIX: remove me?
+    /// Reset with new `inner` value.
     pub fn reset<C: Context<T, E>, E>(
         &mut self,
         inner: T,
@@ -237,9 +238,6 @@ impl<T> Statechart<T> {
                     };
                 };
 
-                // you can't have a history with no child
-                // states, and we're not checking that
-                // here - FIX?
                 last = i;
                 //Ok(())
             }
@@ -248,7 +246,6 @@ impl<T> Statechart<T> {
 
         // Path from the common ancestor (not including) (or root if None) to the next node
         // (including the initial state).
-        // TODO: add a test to check we are entering the root
         let mut p2 = graph
             .path_iter(next)
             .take_while(|&i| Some(i) != common_ancestor)

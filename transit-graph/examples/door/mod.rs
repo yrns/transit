@@ -23,14 +23,16 @@ pub struct Door {
     pub hit_points: HitPoints,
     pub key: String,
     pub attempts: u32,
+    pub running: bool,
 }
 
 impl Default for Door {
     fn default() -> Self {
         Door {
             hit_points: Default::default(),
-            key: "the right key".to_string(),
+            key: "silver key".to_string(),
             attempts: 0,
+            running: false,
         }
     }
 }
@@ -58,22 +60,22 @@ impl Context<Door, DoorEvent> for DoorContext {
 
     fn enter(
         &mut self,
-        _inner: &mut Door,
+        inner: &mut Door,
         _event: Option<&DoorEvent>,
         state: &DoorState,
         _index: Idx,
     ) {
-        state.enter()
+        state.enter(inner)
     }
 
     fn exit(
         &mut self,
-        _inner: &mut Door,
+        inner: &mut Door,
         _event: Option<&DoorEvent>,
         state: &DoorState,
         _index: Idx,
     ) {
-        state.exit();
+        state.exit(inner);
     }
 
     fn guard(
@@ -120,8 +122,9 @@ trait Transition {
 }
 
 impl DoorState {
-    fn enter(&self) {
+    fn enter(&self, inner: &mut Door) {
         match self {
+            DoorState::None => inner.running = true,
             DoorState::Intact => println!("You are in front of a large wooden door."),
             // It only makes sense to print this if we're coming from open.
             // DoorState::Closed => println!("The door is now closed."),
@@ -131,7 +134,12 @@ impl DoorState {
         }
     }
 
-    fn exit(&self) {}
+    fn exit(&self, _inner: &mut Door) {
+        match self {
+            DoorState::None => panic!("root state exited"),
+            _ => (),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -191,14 +199,12 @@ impl Transition for BashGuardSelf {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct LockGuard {
-    key: String,
-}
+pub struct LockGuard;
 
 impl Transition for LockGuard {
-    fn guard(&self, _inner: &mut Door, event: &DoorEvent) -> bool {
+    fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
-            DoorEvent::Lock(Some(key)) if key == &self.key => {
+            DoorEvent::Lock(Some(key)) if key == &inner.key => {
                 println!("You lock the door.");
                 true
             }
@@ -212,14 +218,12 @@ impl Transition for LockGuard {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct UnlockGuard {
-    key: String,
-}
+pub struct UnlockGuard;
 
 impl Transition for UnlockGuard {
     fn guard(&self, inner: &mut Door, event: &DoorEvent) -> bool {
         match event {
-            DoorEvent::Unlock(Some(key)) if key == &self.key => {
+            DoorEvent::Unlock(Some(key)) if key == &inner.key => {
                 println!("You unlock the door.");
                 true
             }
@@ -324,26 +328,10 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
     // Internal transition -- the guard mutates the context but does not transition.
     let _op = g.set_internal(bash, true);
 
-    let _op = g.add_transition(
-        locked,
-        closed,
-        DoorGuard::Unlock(UnlockGuard {
-            key: "silver key".to_owned(),
-        }),
-    );
-
+    let _op = g.add_transition(locked, closed, DoorGuard::Unlock(UnlockGuard {}));
     let _op = g.add_transition(closed, open, DoorGuard::Open(OpenGuard {}));
-
     let _op = g.add_transition(open, closed, DoorGuard::Close(CloseGuard {}));
-
-    let _op = g.add_transition(
-        closed,
-        locked,
-        DoorGuard::Lock(LockGuard {
-            key: "silver key".to_owned(),
-        }),
-    );
-
+    let _op = g.add_transition(closed, locked, DoorGuard::Lock(LockGuard {}));
     let _op = g.add_transition(destroyed, intact, DoorGuard::Restore(RestoreGuard {}));
 
     g
@@ -352,5 +340,33 @@ pub fn make_graph() -> Graph<DoorState, DoorGuard> {
 #[test]
 fn export() {
     let g = make_graph();
-    g.export_to_file("examples/door.ron").unwrap();
+    g.export_to_file("examples/door_graph.ron").unwrap();
+}
+
+#[test]
+fn test_door_history() {
+    let graph = make_graph();
+    let ctx = &mut DoorContext;
+    let mut sc = Statechart::new(Door::default(), ctx, &graph);
+
+    // make sure the root enter is called
+    assert!(sc.inner.running);
+    assert!(sc.transition(
+        ctx,
+        &graph,
+        DoorEvent::Unlock(Some("silver key".to_owned()))
+    ));
+    assert_eq!(graph.state(sc.active).unwrap().to_string(), "closed"); // "unlocked"
+    assert!(sc.transition(
+        ctx,
+        &graph,
+        DoorEvent::Bash(Attack {
+            damage: sc.inner.hit_points.max
+        })
+    ));
+    assert_eq!(graph.state(sc.active).unwrap().to_string(), "destroyed");
+    assert!(sc.transition(ctx, &graph, DoorEvent::Restore));
+
+    // restored to closed
+    assert_eq!(graph.state(sc.active).unwrap().to_string(), "closed");
 }

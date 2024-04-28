@@ -33,14 +33,10 @@
             Some((1, 2, Initial(HistoryShallow))),
             Some((1, 5, Transition(Bash(())))),
             Some((1, 1, Internal(BashSelf(())))),
-            Some((2, 3, Transition(Unlock((
-                key: "silver key",
-            ))))),
+            Some((2, 3, Transition(Unlock(())))),
             Some((3, 4, Transition(Open(())))),
             Some((4, 3, Transition(Close(())))),
-            Some((3, 2, Transition(Lock((
-                key: "silver key",
-            ))))),
+            Some((3, 2, Transition(Lock(())))),
             Some((5, 1, Transition(Restore(())))),
         ],
     ),
