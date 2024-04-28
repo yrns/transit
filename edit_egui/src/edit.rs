@@ -205,21 +205,19 @@ fn paint_resize_corner_with_style(ui: &mut Ui, rect: &Rect, stroke: Stroke, corn
 /// Default control point offset from source.
 const CP_OFFSET: Vec2 = vec2(64.0, 0.0);
 
-#[inline]
-pub fn approx_cp(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
-    (start.to_vec2() + CP_OFFSET, end.to_vec2() - CP_OFFSET)
+pub fn approx_cp(_start: Pos2, _end: Pos2) -> (Vec2, Vec2) {
+    // (start.to_vec2() + CP_OFFSET, end.to_vec2() - CP_OFFSET)
+    (CP_OFFSET, -CP_OFFSET)
 }
 
 /// This is for state initial connections. Initial states are always down and right since the start
 /// is near the upper left.
-#[inline]
 pub fn approx_cp_down(start: Pos2, end: Pos2) -> (Vec2, Vec2) {
     let d = end - start;
     // Try to keep the control point inside the source/parent rect.
     (CP_OFFSET.yx(), vec2(-CP_OFFSET.x.min(d.x), CP_OFFSET.y))
 }
 
-#[inline]
 pub fn approx_cp_self(_start: Pos2, _end: Pos2) -> (Vec2, Vec2) {
     (vec2(128.0, -96.0), vec2(128.0, 96.0))
 }
