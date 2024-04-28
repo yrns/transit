@@ -125,6 +125,7 @@ where
                     if ui.button("New").clicked() {
                         clear_state = true;
                         self.edit = Default::default();
+                        self.recent = None;
                         ui.close_menu();
                     }
                     if ui.button("Open...").clicked() {
