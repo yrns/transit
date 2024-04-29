@@ -131,7 +131,11 @@ where
         // Only clear drags that target states. The rest are resolved later.
         match std::mem::take(&mut edit_data.drag) {
             Drag::AddTransition(a, Some(b)) => match drag_transition {
-                Some(t) => commands.push(Command::AddTransition(a, b, t)),
+                Some(mut t) => {
+                    // The position is in screen-space, adjust to root-space.
+                    t.pos -= edit_data.root_rect.min.to_vec2();
+                    commands.push(Command::AddTransition(a, b, t));
+                }
                 None => {
                     warn!("no drag_transition!");
                 }

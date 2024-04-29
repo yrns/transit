@@ -273,8 +273,8 @@ impl Transition {
     }
 }
 
-pub fn midpoint(a: Pos2, b: Pos2) -> Pos2 {
-    (a + b.to_vec2()) * 0.5
+pub fn midpoint(a: impl Into<Pos2>, b: impl Into<Pos2>) -> Pos2 {
+    (a.into() + b.into().to_vec2()) * 0.5
 }
 
 #[allow(unused)]

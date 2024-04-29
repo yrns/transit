@@ -196,11 +196,17 @@ where
                 }
             }
 
-            self.edit.show(
-                &mut edit_data,
-                self.base_dirs.as_ref().map(|b| b.home_dir()),
-                ui,
-            );
+            // FIX: make this work
+            egui::ScrollArea::both()
+                //.scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .show(ui, |ui| {
+                    edit_data.root_rect = ui.min_rect();
+                    self.edit.show(
+                        &mut edit_data,
+                        self.base_dirs.as_ref().map(|b| b.home_dir()),
+                        ui,
+                    );
+                });
 
             // Process editor commands.
             edit_data.commands.retain(|command| match command {

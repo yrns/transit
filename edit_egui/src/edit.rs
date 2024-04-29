@@ -146,8 +146,8 @@ impl Rects {
 }
 
 /// Mutable data, passed to each call of show_state.
-#[derive(Default)]
 pub struct EditData {
+    root_rect: Rect,
     rects: Rects,
     drag: Drag,
     // TEMP
@@ -155,6 +155,20 @@ pub struct EditData {
     commands: Vec<Command>,
     search: SearchBox<Idx>,
     symbols: SearchBox<String>,
+}
+
+impl Default for EditData {
+    fn default() -> Self {
+        Self {
+            root_rect: Rect::ZERO, // ?
+            rects: Default::default(),
+            drag: Default::default(),
+            drag_transition: None,
+            commands: Default::default(),
+            search: Default::default(),
+            symbols: Default::default(),
+        }
+    }
 }
 
 impl EditData {
@@ -468,7 +482,8 @@ where
             Transition {
                 id,
                 guard: None,
-                pos: start + ((cp.0 + cp.1) * 0.5),
+                // This is in screen-space which is wrong, we adjust it when the drag is resolved.
+                pos: midpoint(start, end),
                 c1: cp.0,
                 c2: cp.1,
                 port1: ports.0,
@@ -1381,14 +1396,10 @@ where
                 //     ui.painter().add(bezier);
                 // });
 
-                // `pos` is left/top (rect min), relative to root, so we have to include the ui min rect
                 let h = ui.style().spacing.interact_size.y;
-                let root_rect = edit_data
-                    .rects
-                    .get_rect(self.root())
-                    .expect("root rect always exists");
                 let rect = Rect::from_min_size(
-                    root_rect.min + t_pos.to_vec2(), // - vec2(0.0, h / 2.0),
+                    // `t_pos` is left/top (rect min), relative to root.
+                    edit_data.root_rect.min + t_pos.to_vec2(),
                     // What width?
                     Vec2::new(128.0, h),
                 );

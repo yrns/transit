@@ -36,6 +36,7 @@ pub struct Edit<S> {
     #[serde(default)]
     pub selection: Selection,
     /// Undo history.
+    // TODO: limit history size, maybe move this to persistence
     #[serde(default)]
     pub undo: Undo,
     /// Versioning.
