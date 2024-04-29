@@ -174,7 +174,7 @@ where
                 ctx.data_mut(|d| d.remove::<EditData>(ui.id()));
             }
 
-            // Keep edit data in temp storage. Why? Just keep it in App...
+            // Keep edit data in temp storage. So it persists?
             let edit_data = ui.data_mut(|d| d.get_temp(ui.id()));
             let edit_data = edit_data.unwrap_or_else(|| {
                 let data = Arc::new(Mutex::new(EditData::new()));

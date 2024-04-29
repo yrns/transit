@@ -52,11 +52,12 @@ impl Drag {
     }
 
     /// Get the index of the currently dragged transition.
+    // Should we change the name? This only refers to transitions where we're dragging the
+    // endpoints.
     pub(crate) fn dragged_tdx(&self) -> Option<Tdx> {
         match self {
-            Drag::TransitionSource(_, _, tdx)
-            | Drag::TransitionTarget(_, _, tdx)
-            | Drag::TransitionId(tdx, _) => Some(*tdx),
+            Drag::TransitionSource(_, _, tdx) | Drag::TransitionTarget(_, _, tdx) => Some(*tdx),
+            // | Drag::TransitionId(tdx, _)
             _ => None,
         }
     }

@@ -1037,7 +1037,7 @@ where
                 }
             }); // end initial
 
-            // Show id.
+            // Show state id.
             let InnerResponse { inner, response } = Editabel::new().show(&state.id, ui);
 
             // Clicking the label selects the state.
