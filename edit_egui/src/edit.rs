@@ -1344,22 +1344,12 @@ where
                 }
 
                 // Show target control.
-                let target_rect = Rect::from_center_size(end, control_size_sq);
-                if ui.is_rect_visible(target_rect) {
-                    let response = ui.allocate_rect(target_rect, Sense::drag());
-
-                    match edit_data.drag {
-                        Drag::None if response.drag_started() => {
-                            edit_data.drag = Drag::TransitionTarget(endpoints.0, None, tdx)
-                        }
-                        _ => (),
-                    }
-
-                    let color = ui.style().interact(&response).fg_stroke.color;
-
-                    let mut mesh = arrow(control_size, color);
-                    mesh.translate(end.to_vec2());
-                    ui.painter().add(mesh);
+                if self
+                    .show_endpoint(false, Rect::from_center_size(end, control_size_sq), &mut ui)
+                    .drag_started()
+                {
+                    assert!(!edit_data.drag.in_drag());
+                    edit_data.drag = Drag::TransitionTarget(endpoints.0, None, tdx);
                 }
 
                 // Show control points if selected.
@@ -1504,10 +1494,6 @@ where
 
                 cubic([start, c1, c2, end], &mut ui);
 
-                let mut mesh = arrow(control_size, color);
-                mesh.translate(end.to_vec2());
-                ui.painter().add(mesh);
-
                 // Show control points if selected.
                 if selected {
                     for (cp, p) in [(ControlPoint::C1, c1), (ControlPoint::C2, c2)] {
@@ -1536,28 +1522,37 @@ where
                 }
 
                 // Show target control.
-                let target_rect = Rect::from_center_size(end, control_size_sq);
-                if ui.is_rect_visible(target_rect) {
-                    let response = ui.allocate_rect(target_rect, Sense::drag());
-
-                    match edit_data.drag {
-                        Drag::None if response.drag_started() => {
-                            edit_data.drag = Drag::Initial(i, None, Default::default());
-                        }
-                        _ => (),
-                    }
-
-                    let color = ui.style().interact(&response).fg_stroke.color;
-
-                    let mut mesh = arrow(control_size, color);
-                    mesh.translate(end.to_vec2());
-                    ui.painter().add(mesh);
+                if self
+                    .show_endpoint(false, Rect::from_center_size(end, control_size_sq), &mut ui)
+                    .drag_started()
+                {
+                    assert!(!edit_data.drag.in_drag());
+                    edit_data.drag = Drag::Initial(i, None, Default::default());
                 }
             }
             Connection::DragTransition(c1, c2) | Connection::DragInitial(_, (c1, c2)) => {
+                // No drag since we're already dragging.
+                self.show_endpoint(false, Rect::from_center_size(end, control_size_sq), &mut ui);
                 cubic([start, start + c1, end + c2, end], &mut ui);
             }
         }
+    }
+
+    pub fn show_endpoint(&self, is_source: bool, rect: Rect, ui: &mut Ui) -> Response {
+        let response = ui.allocate_rect(rect, Sense::drag());
+
+        let color = ui.style().interact(&response).fg_stroke.color;
+
+        if ui.is_rect_visible(rect) {
+            if is_source {
+                // TODO
+            } else {
+                let mesh = arrow(rect, color);
+                //mesh.translate(end.to_vec2());
+                ui.painter().add(mesh);
+            }
+        }
+        response
     }
 
     pub fn show_control_point(&self, rect: Rect, ui: &mut Ui) -> Response {
@@ -1582,12 +1577,10 @@ where
     }
 }
 
-pub fn arrow(size: f32, color: Color32) -> Mesh {
+pub fn arrow(rect: Rect, color: Color32) -> Mesh {
     let mut mesh = Mesh::default();
 
     mesh.add_triangle(0, 1, 2);
-
-    let rect = Rect::from_center_size(pos2(0.0, 0.0), Vec2::splat(size));
 
     mesh.vertices.push(Vertex {
         pos: rect.left_top(),
