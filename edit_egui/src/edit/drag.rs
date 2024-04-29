@@ -51,6 +51,16 @@ impl Drag {
         self.dragged_idx() == Some(idx)
     }
 
+    /// Get the index of the currently dragged transition.
+    pub(crate) fn dragged_tdx(&self) -> Option<Tdx> {
+        match self {
+            Drag::TransitionSource(_, _, tdx)
+            | Drag::TransitionTarget(_, _, tdx)
+            | Drag::TransitionId(tdx, _) => Some(*tdx),
+            _ => None,
+        }
+    }
+
     pub(crate) fn resizing(&self, idx: Idx) -> bool {
         matches!(self, Drag::Resize(i, ..) if *i == idx)
     }

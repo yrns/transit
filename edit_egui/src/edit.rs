@@ -809,12 +809,13 @@ where
                 );
             }
 
-            // Show all transitions we are the common ancestor for. TODO cache this list
-            for t in self
-                .graph
-                .transition_indices()
-                .filter(|t| self.graph.transition_common_ancestor(*t) == Some(idx))
-            {
+            // Show all transitions we are the common ancestor for. Filter out the dragged
+            // transition since it's drawn later.
+            // TODO cache this list
+            let dragged_tdx = edit_data.drag.dragged_tdx();
+            for t in self.graph.transition_indices().filter(|&t| {
+                self.graph.transition_common_ancestor(t) == Some(idx) && dragged_tdx != Some(t)
+            }) {
                 //warn!(t = t.index(), ca = state.id);
                 self.show_transition(edit_data, t, ui)
             }
