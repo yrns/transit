@@ -71,10 +71,10 @@ pub enum Edge<T> {
 }
 
 impl<T> Edge<T> {
-    // Not sure why this is move.
+    // TODO: move this to undo? all &mut self methods?
+    // TODO: this should not be pub without checking the endpoints
     pub fn set_internal(self, internal: bool) -> Self {
         match self {
-            // TODO this should not be pub without checking the endpoints
             Edge::Transition(t, _) if internal => Edge::Internal(t),
             Edge::Internal(t) if !internal => Edge::Transition(t, None),
             _ => panic!("not a transition"),
@@ -318,6 +318,10 @@ impl<S, T> Graph<S, T> {
         self.graph.edge_endpoints(i)
     }
 
+    pub fn source(&self, i: Tdx) -> Option<Idx> {
+        Some(self.endpoints(i)?.0)
+    }
+
     pub fn is_self_transition(&self, i: Tdx) -> bool {
         self.endpoints(i).map(|(a, b)| a == b).unwrap_or_default()
     }
@@ -336,7 +340,9 @@ impl<S, T> Graph<S, T> {
     pub fn transition_common_ancestor(&self, tdx: Tdx) -> Option<Idx> {
         match self.graph.edge_weight(tdx)? {
             Edge::Transition(_, ca) => *ca,
-            Edge::Internal(_) | Edge::Initial(_) => None,
+            // Use the source's parent for internal transitions.
+            Edge::Internal(_) => self.parent(self.source(tdx)?),
+            Edge::Initial(_) => None,
         }
     }
 

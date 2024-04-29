@@ -229,12 +229,28 @@ where
 
     #[must_use = "op"]
     pub fn set_internal(&mut self, i: Tdx, internal: bool) -> Op<S, T> {
+        assert!(self.is_self_transition(i));
+
+        let source_parent = (!internal).then(|| {
+            self.source(i)
+                .and_then(|s| self.parent(s))
+                .expect("source parent")
+        });
+
         let e = &mut self.graph[i];
         assert!(e.is_transition());
-        let op = Op::UpdateEdge(i, e.clone());
-        *e = e.clone().set_internal(internal);
-        // Set common ancestor? Leave it as None for now.
-        op
+
+        let mut e0 = e.clone().set_internal(internal);
+
+        // Set common ancestor to the old parent if !internal:
+        if let Edge::Transition(_, ca) = &mut e0 {
+            assert!(source_parent.is_some());
+            *ca = source_parent;
+        }
+
+        // swap new and old, and return the old
+        std::mem::swap(e, &mut e0);
+        Op::UpdateEdge(i, e0)
     }
 
     // TODO: check root? validation?
