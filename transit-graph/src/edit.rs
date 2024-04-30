@@ -82,8 +82,7 @@ where
         let mut ops = Vec::new();
 
         // Kept things go to the parent state (if not root).
-        let parent = self.graph.node_weight(i).and_then(|s| s.parent).unwrap();
-        //.filter(|i| *i != self.root);
+        let parent = self.parent(i).expect("removed state has a parent");
 
         // Clean up child states.
         for child in self.children(i).collect::<Vec<_>>() {
@@ -97,8 +96,16 @@ where
         // Clean up initial/history.
         let mut path = self.path_walk(i);
         while let Some(p) = path.next(self) {
-            if let Some((initial, _)) = self.initial(p) {
-                ops.extend(self.set_initial(p, Some((initial, parent))))
+            if let Some((initial, j)) = self.initial(p) {
+                if i == j {
+                    // If this is the parent, remove the initial. Otherwise, set the initial to the
+                    // parent state.
+                    if parent == p {
+                        ops.extend(self.set_initial(p, None));
+                    } else {
+                        ops.extend(self.set_initial(p, Some((initial, parent))));
+                    }
+                }
             }
         }
 
