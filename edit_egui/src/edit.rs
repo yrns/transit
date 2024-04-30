@@ -1287,6 +1287,8 @@ where
 
         let control_size = if selected { 8.0 } else { 6.0 };
         let control_size_sq = Vec2::splat(control_size);
+        let source_rect = Rect::from_center_size(start, control_size_sq);
+        let target_rect = Rect::from_center_size(end, control_size_sq);
 
         let color = if selected {
             ui.style().visuals.selection.stroke.color
@@ -1319,7 +1321,8 @@ where
                     _ => (t.c1, t.pos - drag_offset, t.c2),
                 };
 
-                // Control points are relative to the start and end, respectively.
+                // Control points are relative to the start and end, respectively. This puts them in
+                // screen-space.
                 let c1 = start + c1;
                 let c2 = end + c2;
 
@@ -1327,25 +1330,17 @@ where
                 let endpoints = self.graph.endpoints(tdx).unwrap();
 
                 // Show source control. Maybe only if selected?
-                let source_rect = Rect::from_center_size(start, control_size_sq);
-                if ui.is_rect_visible(source_rect) {
-                    let response = ui.allocate_rect(source_rect, Sense::drag());
-
-                    match edit_data.drag {
-                        Drag::None if response.drag_started() => {
-                            edit_data.drag = Drag::TransitionSource(endpoints.1, None, tdx)
-                        }
-
-                        _ => (),
-                    }
-
-                    let color = ui.style().interact(&response).fg_stroke.color;
-                    ui.painter().circle_filled(start, control_size * 0.5, color);
+                if self
+                    .show_endpoint(true, source_rect, &mut ui)
+                    .drag_started()
+                {
+                    assert!(!edit_data.drag.in_drag());
+                    edit_data.drag = Drag::TransitionSource(endpoints.1, None, tdx)
                 }
 
                 // Show target control.
                 if self
-                    .show_endpoint(false, Rect::from_center_size(end, control_size_sq), &mut ui)
+                    .show_endpoint(false, target_rect, &mut ui)
                     .drag_started()
                 {
                     assert!(!edit_data.drag.in_drag());
@@ -1523,7 +1518,7 @@ where
 
                 // Show target control.
                 if self
-                    .show_endpoint(false, Rect::from_center_size(end, control_size_sq), &mut ui)
+                    .show_endpoint(false, target_rect, &mut ui)
                     .drag_started()
                 {
                     assert!(!edit_data.drag.in_drag());
@@ -1531,8 +1526,9 @@ where
                 }
             }
             Connection::DragTransition(c1, c2) | Connection::DragInitial(_, (c1, c2)) => {
-                // No drag since we're already dragging.
-                self.show_endpoint(false, Rect::from_center_size(end, control_size_sq), &mut ui);
+                // Initial does not need this and self-transitions look weird. TODO?
+                //self.show_endpoint(true, source_rect, &mut ui);
+                self.show_endpoint(false, target_rect, &mut ui);
                 cubic([start, start + c1, end + c2, end], &mut ui);
             }
         }
@@ -1541,11 +1537,12 @@ where
     pub fn show_endpoint(&self, is_source: bool, rect: Rect, ui: &mut Ui) -> Response {
         let response = ui.allocate_rect(rect, Sense::drag());
 
-        let color = ui.style().interact(&response).fg_stroke.color;
-
         if ui.is_rect_visible(rect) {
+            let color = ui.style().interact(&response).fg_stroke.color;
+
             if is_source {
-                // TODO
+                ui.painter()
+                    .circle_filled(rect.center(), rect.width() * 0.5, color);
             } else {
                 let mesh = arrow(rect, color);
                 //mesh.translate(end.to_vec2());

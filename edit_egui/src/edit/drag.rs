@@ -20,8 +20,9 @@ pub enum Drag {
     Initial(Idx, Option<(Idx, usize)>, (Vec2, Vec2)),
     InitialControl((Idx, ControlPoint), Vec2),
     AddTransition(Idx, Option<Idx>),
-    // For the next two variants the first field is the opposite endpoint!
+    /// The first field is the opposite endpoint!
     TransitionSource(Idx, Option<Idx>, Tdx),
+    /// The first field is the opposite endpoint!
     TransitionTarget(Idx, Option<Idx>, Tdx),
     TransitionControl((Tdx, ControlPoint), Vec2),
     TransitionId(Tdx, Vec2),
