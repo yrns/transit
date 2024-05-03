@@ -129,7 +129,6 @@ where
     ) {
         let commands = &mut edit_data.commands;
 
-        // Only clear drags that target states. The rest are resolved later.
         match std::mem::take(&mut edit_data.drag) {
             Drag::AddTransition(a, Some(b)) => match drag_transition {
                 Some(mut t) => {
@@ -173,13 +172,33 @@ where
                     .unwrap_or_else(|| (Initial::Initial, target));
                 commands.push(Command::SetInitial(i, initial, (port, c1, c2)))
             }
-
-            // TEMP put these back to be handled later
-            drag @ Drag::Resize(_, _)
-            | drag @ Drag::InitialControl(_, _)
-            | drag @ Drag::TransitionControl(_, _)
-            | drag @ Drag::TransitionId(_, _) => edit_data.drag = drag,
-
+            Drag::Resize(idx, delta) => edit_data.commands.push(Command::ResizeState(idx, delta)),
+            Drag::InitialControl((idx, cp), delta) => {
+                if let Some(mut state) = self.graph.state(idx).cloned() {
+                    if let Some(initial) = &mut state.initial {
+                        match cp {
+                            ControlPoint::C1 => initial.1 += delta,
+                            ControlPoint::C2 => initial.2 += delta,
+                        }
+                        edit_data.commands.push(Command::UpdateState(idx, state))
+                    }
+                }
+            }
+            Drag::TransitionControl((tdx, cp), delta) => {
+                if let Some(mut t) = self.graph.transition(tdx).cloned() {
+                    match cp {
+                        ControlPoint::C1 => t.c1 += delta,
+                        ControlPoint::C2 => t.c2 += delta,
+                    }
+                    edit_data.commands.push(Command::UpdateTransition(tdx, t))
+                }
+            }
+            Drag::TransitionId(tdx, delta) => {
+                if let Some(mut t) = self.graph.transition(tdx).cloned() {
+                    t.pos += delta;
+                    edit_data.commands.push(Command::UpdateTransition(tdx, t))
+                }
+            }
             // A state can't be dragged to itself, hence the index check. TODO: we already
             // checked this?
             Drag::State {

@@ -29,25 +29,18 @@ pub use watch::*;
 
 macro_rules! drag_delta {
     // First rule is the default update.
-    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $end:expr) => {
+    ($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr) => {
         drag_delta!(
             ($response, $ui, $drag, $drag_ty, $drag_id),
-            |delta: &mut Vec2| *delta += $response.drag_delta(),
-            $end
+            |delta: &mut Vec2| *delta += $response.drag_delta()
         )
     };
-    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $update:expr, $end:expr) => {
+    (($response:ident, $ui:ident, $drag:ident, $drag_ty:ident, $drag_id:expr), $update:expr) => {
         match $drag {
             Drag::None if $response.drag_started() => *$drag = $drag_id.into(),
             Drag::$drag_ty(_id, delta, ..) if *_id == $drag_id => {
                 if $response.dragged() {
                     $update(delta)
-                } else if $response.drag_stopped() {
-                    // egui handles dragging vs clicking now, but we still check the delta
-                    if delta.abs().max_elem() >= 1.0 {
-                        $end(delta)
-                    }
-                    *$drag = Drag::None;
                 }
             }
             _ => (), // if started/dragged/released error?
@@ -823,16 +816,12 @@ where
 
                 let drag = &mut edit_data.drag;
 
-                drag_delta!(
-                    (response, ui, drag, Resize, idx),
-                    |delta: &mut Vec2| {
-                        // Find the minimum delta such that we don't resize smaller than the header size
-                        // (including inset). Limit max?
-                        let size = state.rect.size();
-                        *delta = (header_rect.size() - size).max(*delta + response.drag_delta())
-                    },
-                    |delta: &Vec2| edit_data.commands.push(Command::ResizeState(idx, *delta))
-                );
+                drag_delta!((response, ui, drag, Resize, idx), |delta: &mut Vec2| {
+                    // Find the minimum delta such that we don't resize smaller than the header size
+                    // (including inset). Limit max?
+                    let size = state.rect.size();
+                    *delta = (header_rect.size() - size).max(*delta + response.drag_delta())
+                });
             }
 
             // Show all transitions we are the common ancestor for. Filter out the dragged
@@ -1365,17 +1354,7 @@ where
                         );
 
                         let drag = &mut edit_data.drag;
-                        drag_delta!(
-                            (response, ui, drag, TransitionControl, (tdx, cp)),
-                            |delta: &mut Vec2| {
-                                let mut t = t.clone();
-                                match cp {
-                                    ControlPoint::C1 => t.c1 += *delta,
-                                    ControlPoint::C2 => t.c2 += *delta,
-                                }
-                                edit_data.commands.push(Command::UpdateTransition(tdx, t))
-                            }
-                        );
+                        drag_delta!(response, ui, drag, TransitionControl, (tdx, cp));
                     }
                 }
 
@@ -1450,14 +1429,7 @@ where
                                 }
 
                                 let drag = &mut edit_data.drag;
-                                drag_delta!(
-                                    (response, ui, drag, TransitionId, tdx),
-                                    |delta: &Vec2| {
-                                        let mut t = t.clone();
-                                        t.pos = t.pos + *delta;
-                                        edit_data.commands.push(Command::UpdateTransition(tdx, t))
-                                    }
-                                );
+                                drag_delta!(response, ui, drag, TransitionId, tdx);
                             }
                         })
                         .response;
@@ -1507,21 +1479,7 @@ where
                         );
 
                         let drag = &mut edit_data.drag;
-                        drag_delta!(
-                            (response, ui, drag, InitialControl, (i, cp)),
-                            |delta: &Vec2| {
-                                if let Some(state) = self.graph.state(i) {
-                                    let mut state = state.clone();
-                                    if let Some(initial) = &mut state.initial {
-                                        match cp {
-                                            ControlPoint::C1 => initial.1 += *delta,
-                                            ControlPoint::C2 => initial.2 += *delta,
-                                        }
-                                        edit_data.commands.push(Command::UpdateState(i, state))
-                                    }
-                                }
-                            }
-                        );
+                        drag_delta!(response, ui, drag, InitialControl, (i, cp));
                     }
                 }
 
