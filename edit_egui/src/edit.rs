@@ -356,16 +356,17 @@ where
 
         // The root rect auto-sizes to include its children. This is the scrollable area.
         // TODO: this should include transitions too
-        let root_rect = self
-            .graph
-            .children_rect(self.root())
-            .translate(offset)
-            // Expand to the available space (this might not be needed with auto-shrink off).
-            .union(ui.max_rect());
+        let root_rect = self.graph.children_rect(self.root()).translate(offset);
+
+        // Add a small amount of buffer space.
+        let root_rect = Rect::from_min_max(root_rect.min, root_rect.max + Vec2::splat(64.0));
 
         // Clamp to zero since egui doesn't work with negative scroll offsets. TODO: force states
         // into the root_rect when dragging?
         let root_rect = root_rect.intersect(Rect::from_min_max(ui.min_rect().min, root_rect.max));
+
+        // Expand to the available space (this might not be needed with auto-shrink off).
+        let root_rect = root_rect.union(ui.max_rect());
 
         edit_data.root_rect = root_rect;
 
