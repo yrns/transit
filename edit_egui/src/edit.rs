@@ -698,11 +698,11 @@ where
         );
     }
 
-    pub fn show_resize(&self, id: Id, rect: Rect, ui: &mut Ui) -> Response {
+    pub fn show_resize(&self, ui: &mut Ui) -> Response {
         let resize_size = Vec2::splat(ui.visuals().resize_corner_size);
-        let resize_rect = Rect::from_min_size(rect.max - resize_size, resize_size);
-        let resize_response = ui.interact(resize_rect, id.with("resize"), Sense::drag());
-        if ui.is_rect_visible(rect) {
+        let resize_rect = Rect::from_min_size(ui.max_rect().max - resize_size, resize_size);
+        let resize_response = ui.interact(resize_rect, ui.id().with("resize"), Sense::drag());
+        if ui.is_rect_visible(resize_rect) {
             paint_resize_corner(ui, &resize_response);
         }
         resize_response
@@ -773,13 +773,11 @@ where
         let is_target = edit_data.drag.is_target(idx);
         let is_dragging = edit_data.drag.is_dragging(idx);
 
-        //let parent_clip_rect = ui.clip_rect();
-
         let child_states_and_header = |ui: &mut Ui| {
-            // Do we need to shrink based on the frame stroke still? TODO
-            //dbg!(ui.visuals().clip_rect_margin);
+            // We are inside the state frame, which is already clipped with the margin, but we still
+            // need to intersect with the parent. (Except for the root.)
             if !root {
-                ui.set_clip_rect(clipped_rect);
+                ui.set_clip_rect(ui.clip_rect().intersect(clipped_rect));
             }
 
             // We can't use dragged_id because we don't know the child's id yet.
@@ -816,8 +814,12 @@ where
             // Resize. Cannot resize the root state. Only show the resize if the pointer is in the rect,
             // or we are currently resizing it (since the pointer can be outside while dragging - it's a
             // frame behind?). TODO: this should be hovered, not contained
-            if !root && (edit_data.drag.resizing(idx) || ui.rect_contains_pointer(rect)) {
-                let response = self.show_resize(ui.id(), rect, ui);
+            if !root
+                && (edit_data.drag.resizing(idx)
+                    // Unless we're resizing this state, don't show when dragging.
+                    || (ui.rect_contains_pointer(rect) && !edit_data.drag.in_drag()))
+            {
+                let response = self.show_resize(ui);
 
                 let drag = &mut edit_data.drag;
 
