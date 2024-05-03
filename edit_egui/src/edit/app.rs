@@ -196,14 +196,14 @@ where
                 }
             }
 
-            // FIX: make this work
             egui::ScrollArea::both()
-                //.scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible)
-                .show(ui, |ui| {
-                    edit_data.root_rect = ui.min_rect();
+                .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .auto_shrink(false)
+                .show_viewport(ui, |ui, viewport| {
                     self.edit.show(
                         &mut edit_data,
                         self.base_dirs.as_ref().map(|b| b.home_dir()),
+                        viewport,
                         ui,
                     );
                 });

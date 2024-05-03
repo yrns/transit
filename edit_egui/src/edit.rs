@@ -149,6 +149,7 @@ impl Rects {
 pub struct EditData {
     root_rect: Rect,
     rects: Rects,
+    /// Current drag state.
     drag: Drag,
     // TEMP
     drag_transition: Option<Transition>,
@@ -324,7 +325,13 @@ where
         self.narrow.unwrap_or(self.graph.root)
     }
 
-    pub fn show(&self, mut edit_data: &mut EditData, home_dir: Option<&Path>, ui: &mut Ui) {
+    pub fn show(
+        &self,
+        mut edit_data: &mut EditData,
+        home_dir: Option<&Path>,
+        _viewport: Rect,
+        ui: &mut Ui,
+    ) {
         // Toggle debug.
         let focus = ui.memory(|m| m.focused());
         if focus.is_none() && ui.input(|i| i.key_pressed(Key::D)) {
@@ -351,15 +358,27 @@ where
             edit_data.search.query.clear();
         }
 
+        let offset = ui.min_rect().min.to_vec2();
+
+        // The root rect auto-sizes to include its children. This is the scrollable area.
+        // TODO: this should include transitions too
+        let root_rect = self
+            .graph
+            .children_rect(self.root())
+            .translate(offset)
+            // Expand to the available space (this might not be needed with auto-shrink off).
+            .union(ui.max_rect());
+
+        // Clamp to zero since egui doesn't work with negative scroll offsets. TODO: force states
+        // into the root_rect when dragging?
+        let root_rect = root_rect.intersect(Rect::from_min_max(ui.min_rect().min, root_rect.max));
+
+        edit_data.root_rect = root_rect;
+
+        // TODO: allocate viewport
+
         // Show root and recursively show children.
-        self.show_state(
-            self.root(),
-            ui.min_rect().min.to_vec2(),
-            0,
-            &mut edit_data,
-            home_dir,
-            ui,
-        );
+        self.show_state(self.root(), offset, 0, &mut edit_data, home_dir, ui);
 
         // Show the dragged state last, unclipped, if any.
         // TODO: initial still draws under this... draw with show_transitions?
@@ -499,25 +518,15 @@ where
         edit_data: &mut EditData,
         ui: &mut Ui,
     ) -> Option<Transition> {
-        // FIX: this crazy - we're matching drag multiple times per transition
-
-        // TODO: ideally we'd start from the root state and show all enclosed transitions, then recurse
-        // through visible states - also keep a set of transitions per state
-        //for (tdx, source, target, t, internal) in self.graph.transitions() {
-
-        // If we are narrowed, skip unenclosed transitions. This is a little weird to not show
-        // anything for incoming and outgoing transitions. Maybe there should be an indicator of
-        // hidden transitions. TODO?
-        // if self.narrow.is_some() && !self.graph.enclosed(self.root(), tdx) {
-        //     continue;
-        // }
         match edit_data.drag {
+            // these two are the same with start/end reversed?
             Drag::TransitionSource(b, a, tdx) => {
                 let (t, (source, target), internal) = self.transition(tdx)?;
 
                 match a {
                     Some(a) => {
                         let (t, (start, end)) =
+                            // FIX: how is this different from new_transition?
                             self.drag_transition(a, b, &edit_data.rects, t, (source, target));
                         self.show_connection(
                             start,
@@ -590,6 +599,8 @@ where
             }
             _ => (),
         };
+
+        // FIX: merge these?
 
         // New transition in progress.
         if let Drag::AddTransition(source, target) = edit_data.drag {
@@ -698,53 +709,55 @@ where
         let resize_size = Vec2::splat(ui.visuals().resize_corner_size);
         let resize_rect = Rect::from_min_size(rect.max - resize_size, resize_size);
         let resize_response = ui.interact(resize_rect, id.with("resize"), Sense::drag());
-        paint_resize_corner(ui, &resize_response);
+        if ui.is_rect_visible(rect) {
+            paint_resize_corner(ui, &resize_response);
+        }
         resize_response
     }
 
-    /// Returns the drop target, which is ourself or descendant that contains the pointer.
+    /// Show a state and its descendants recursively.
     pub fn show_state(
         &self,
         idx: Idx,
-        // Parent rect min. FIX: this is just ui.min_rect().min?
+        // Parent rect min in screen-space. This is not the same as ui.min_rect().min for the root
+        // state which is constrained by the scroll area viewport.
         offset: Vec2,
         depth: usize,
         edit_data: &mut EditData,
         home_dir: Option<&Path>,
-        ui: &mut Ui,
+        ui: &mut Ui, // parent_ui
     ) {
-        //let offset = ui.min_rect().min.to_vec2();
         let state = self.graph.state(idx).unwrap();
         let root = idx == self.root();
         let interact_pos = ui.ctx().pointer_interact_pos();
 
-        let mut rect = state.rect.translate(offset);
+        let rect = if root {
+            edit_data.root_rect
+        } else {
+            let rect = state.rect.translate(offset);
 
-        match &edit_data.drag {
-            &Drag::State {
-                source,
-                press_origin,
-                ..
-            } if source == idx => {
-                // Missing from x11 or the default cursor theme?
-                //ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+            match edit_data.drag {
+                Drag::State {
+                    source,
+                    press_origin,
+                    ..
+                } if source == idx => {
+                    // Missing from x11 or the default cursor theme?
+                    //ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
 
-                if let Some(p) = interact_pos {
-                    rect = rect.translate(-(press_origin - p))
-                } else {
-                    warn!("no interact_pos with drag");
+                    if let Some(p) = interact_pos {
+                        rect.translate(-(press_origin - p))
+                    } else {
+                        warn!("no interact_pos with drag");
+                        rect
+                    }
                 }
-            }
-            _ => (),
-        }
 
-        match edit_data.drag {
-            // Use all available space for the root.
-            _ if root => rect = ui.max_rect(),
-            Drag::Resize(i, delta) if i == idx => {
-                rect = Rect::from_min_size(rect.min, state.rect.size() + delta)
+                Drag::Resize(i, delta) if i == idx => {
+                    Rect::from_min_max(rect.min, rect.max + delta)
+                }
+                _ => rect,
             }
-            _ => (),
         };
 
         // This means offscreen states won't get updated, but that shouldn't matter?
@@ -752,23 +765,29 @@ where
             return;
         }
 
+        let clipped_rect = rect.intersect(ui.clip_rect());
+
         // Write rect. Transitions use these to find ports, so clip them to the parent. We don't
         // clip the rect outright because we don't want anything wrapping or otherwise changing,
         // just clipping.
-        edit_data
-            .rects
-            .insert_rect(idx, rect.intersect(ui.clip_rect()), |idx| {
-                self.graph.max_ports(idx)
-            });
+        edit_data.rects.insert_rect(
+            idx,
+            // We want edit_data.root_rect to be a shortcut for (and identical to) the rect stored.
+            if root { rect } else { clipped_rect },
+            |idx| self.graph.max_ports(idx),
+        );
 
         let is_target = edit_data.drag.is_target(idx);
         let is_dragging = edit_data.drag.is_dragging(idx);
 
-        let parent_clip_rect = ui.clip_rect();
+        //let parent_clip_rect = ui.clip_rect();
 
         let child_states_and_header = |ui: &mut Ui| {
-            // Do we need to shrink based on the frame stoke still? TODO
-            ui.set_clip_rect(ui.max_rect().intersect(parent_clip_rect));
+            // Do we need to shrink based on the frame stroke still? TODO
+            //dbg!(ui.visuals().clip_rect_margin);
+            if !root {
+                ui.set_clip_rect(clipped_rect);
+            }
 
             // We can't use dragged_id because we don't know the child's id yet.
             let dragged_idx = edit_data.drag.dragged_idx();
@@ -790,10 +809,7 @@ where
                 )
             }
 
-            // Show the header and resize after child states so they interact first. So does this
-            // mean the allocated rects for child states don't take up space? Something is taking up
-            // space in the parent ui and throwing the available space off. This only ever worked
-            // because nothing was taking up space.
+            // replace this with a frame?
             let header_inset = Vec2::splat(4.0);
             //let header_rect = ui.available_rect_before_wrap().shrink2(header_inset);
             let header_rect = rect.shrink2(header_inset);
@@ -835,7 +851,7 @@ where
                 self.show_transition(edit_data, t, ui)
             }
 
-            // This fills the space so we can interact with the background.
+            // This fills the rest of the frame so we can interact with the background.
             _ = ui.allocate_space(ui.available_size_before_wrap());
 
             // Can't drag the root state.
@@ -848,24 +864,22 @@ where
 
         // TODO: state_ui?
         let state_response = {
-            // There is no "allocate_ui_at_rect_with_id"... We don't even need the
-            // `allocate_ui_at_rect` since we're positioning the contents manually and it calls
-            // `child_ui_with_id_source` itself.
-            let mut ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
-
-            widget::state::state_frame(
+            let mut child_ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
+            let InnerResponse { inner, response: _ } = widget::state::state_frame(
                 root,
                 depth,
                 matches!(self.selection, Selection::State(i) if i == idx),
                 is_target,
                 is_dragging,
             )
-            .show(&mut ui, child_states_and_header)
-        };
+            .show(&mut child_ui, child_states_and_header);
 
-        // ui.ctx()
-        //     .debug_painter()
-        //     .debug_rect(ui.min_rect(), Color32::DEBUG_COLOR, "min_rect");
+            if root {
+                _ = ui.allocate_rect(child_ui.min_rect(), Sense::hover());
+            }
+
+            inner
+        };
 
         // Can't select root.
         if state_response.clicked() {
@@ -1544,6 +1558,7 @@ where
                 ui.painter()
                     .circle_filled(rect.center(), rect.width() * 0.5, color);
             } else {
+                // TODO this should be flipped for a self-transition
                 let mesh = arrow(rect, color);
                 //mesh.translate(end.to_vec2());
                 ui.painter().add(mesh);

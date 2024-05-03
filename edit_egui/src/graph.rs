@@ -3,6 +3,7 @@ use emath::*;
 use crate::*;
 
 /// Edit graph.
+// TODO: revert back to type and make a trait?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 #[derive(Default, Clone)]
@@ -93,6 +94,15 @@ impl std::ops::DerefMut for EditGraph {
 }
 
 impl EditGraph {
+    /// Find the union of all child rects (non-recursive).
+    pub fn children_rect(&self, i: Idx) -> Rect {
+        let rect = |i| self.state(i).expect("state exists").rect;
+        self.children(i)
+            .map(rect)
+            .reduce(Rect::union)
+            .unwrap_or(Rect::ZERO)
+    }
+
     pub fn path_string(&self, i: Idx) -> String {
         self.path(i)
             .into_iter()

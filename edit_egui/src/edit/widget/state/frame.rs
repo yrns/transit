@@ -26,8 +26,11 @@ pub fn state_frame(
 }
 
 impl Frame {
-    // We always return the inner response and drop the frame's.
-    pub fn show(&self, ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> Response) -> Response {
+    pub fn show(
+        &self,
+        ui: &mut Ui,
+        add_contents: impl FnOnce(&mut Ui) -> Response,
+    ) -> InnerResponse<Response> {
         // Always? Check root:
         let frame = if self.is_root {
             egui::Frame::none() //.fill(ui.style().visuals.window_fill()) // too flat
@@ -41,9 +44,15 @@ impl Frame {
         let frame = &mut prep.frame;
         let response = add_contents(&mut prep.content_ui);
 
-        let style = ui.style();
+        // if !self.is_root {
+        //     ui.ctx().debug_painter().debug_rect(
+        //         prep.content_ui.min_rect(),
+        //         Color32::DEBUG_COLOR,
+        //         "frame clip",
+        //     );
+        // }
 
-        // TODO: Make a background for the root so we can show drag_valid.
+        let style = ui.style();
 
         // The default window frame looks good, so let's stick closer to that.
         //let widget_visuals = style.interact_selectable(&response, self.selected);
@@ -90,7 +99,10 @@ impl Frame {
             style.visuals.window_stroke()
         };
 
-        _ = prep.end(ui);
-        response
+        // ui.ctx()
+        //     .debug_painter()
+        //     .debug_rect(ui.min_rect(), Color32::DEBUG_COLOR, "frame");
+
+        InnerResponse::new(response, prep.end(ui))
     }
 }
