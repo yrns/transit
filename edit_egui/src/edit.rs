@@ -325,13 +325,7 @@ where
         self.narrow.unwrap_or(self.graph.root)
     }
 
-    pub fn show(
-        &self,
-        mut edit_data: &mut EditData,
-        home_dir: Option<&Path>,
-        _viewport: Rect,
-        ui: &mut Ui,
-    ) {
+    pub fn show(&self, mut edit_data: &mut EditData, home_dir: Option<&Path>, ui: &mut Ui) {
         // Toggle debug.
         let focus = ui.memory(|m| m.focused());
         if focus.is_none() && ui.input(|i| i.key_pressed(Key::D)) {
@@ -374,8 +368,6 @@ where
         let root_rect = root_rect.intersect(Rect::from_min_max(ui.min_rect().min, root_rect.max));
 
         edit_data.root_rect = root_rect;
-
-        // TODO: allocate viewport
 
         // Show root and recursively show children.
         self.show_state(self.root(), offset, 0, &mut edit_data, home_dir, ui);
