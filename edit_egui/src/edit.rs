@@ -951,6 +951,101 @@ where
         }
     }
 
+    fn show_initial(
+        &self,
+        idx: Idx,
+        state: &State,
+        edit_data: &mut EditData,
+        ui: &mut Ui,
+    ) -> Response {
+        ui.horizontal(|ui| {
+            // Use less spacing between the initial control and the history indicator.
+            ui.spacing_mut().item_spacing.x = 2.0;
+
+            let initial_size = Vec2::splat(6.0);
+            let response = ui.allocate_response(initial_size, Sense::click_and_drag());
+            let initial = self.graph.initial(idx);
+
+            let rect = Rect::from_center_size(response.rect.center(), initial_size);
+            let start = rect.center();
+
+            // Left click cycles initial type. Right click clears. Drag sets new initial.
+            if response.clicked() {
+                edit_data.commands.push(Command::StepInitial(idx))
+            } else if response.clicked_by(PointerButton::Secondary) {
+                edit_data.commands.push(Command::UnsetInitial(idx))
+            }
+
+            let show_initial = match edit_data.drag {
+                Drag::None if response.drag_started() => {
+                    edit_data.drag = Drag::Initial(idx, None, Default::default());
+                    true
+                }
+                Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
+                    // Reuse existing port if dragging to existing target?
+                    if let Some(end) = target
+                        .and_then(|(t, p)| edit_data.rects.port_in(t, p))
+                        .or_else(|| ui.ctx().pointer_interact_pos())
+                    {
+                        // bias the initial down
+                        *cp = approx_cp_down(start, end);
+                        self.show_connection(
+                            start,
+                            end,
+                            Connection::DragInitial(idx, *cp),
+                            edit_data,
+                            ui,
+                        );
+                    }
+                    true
+                }
+                _ => {
+                    if let Some((i, (port, c1, c2))) = initial.map(|(_, i)| i).zip(state.initial) {
+                        if let Some(end) = edit_data.rects.port_in(i, port) {
+                            self.show_connection(
+                                start,
+                                end,
+                                Connection::Initial(idx, (c1, c2)),
+                                edit_data,
+                                ui,
+                            );
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
+            };
+
+            let color = ui.style().interact(&response).fg_stroke.color;
+            let color = ecolor::tint_color_towards(color, Color32::YELLOW);
+            ui.painter().circle(
+                rect.center(),
+                rect.size().max_elem() * 0.5,
+                if show_initial {
+                    color
+                } else {
+                    Color32::TRANSPARENT
+                },
+                Stroke::new(2.0, color),
+            );
+
+            // Initial type.
+            if let Some((initial, _)) = initial {
+                match initial {
+                    Initial::HistoryShallow => {
+                        ui.colored_label(color, "h");
+                    }
+                    Initial::HistoryDeep => {
+                        ui.colored_label(color, "h*");
+                    }
+                    _ => (),
+                }
+            }
+        })
+        .response
+    }
+
     // Collapsable? How do we redirect incoming transitions to child states?
     pub fn show_header(
         &self,
@@ -962,93 +1057,10 @@ where
         ui: &mut Ui,
     ) -> InnerResponse<()> {
         ui.horizontal(|ui| {
-            // Initial first, with less spacing between the initial control and the history indicator.
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-
-                let initial_size = Vec2::splat(6.0);
-                let response = ui.allocate_response(initial_size, Sense::click_and_drag());
-                let initial = self.graph.initial(idx);
-
-                let rect = Rect::from_center_size(response.rect.center(), initial_size);
-                let start = rect.center();
-
-                // Left click cycles initial type. Right click clears. Drag sets new initial.
-                if response.clicked() {
-                    edit_data.commands.push(Command::StepInitial(idx))
-                } else if response.clicked_by(PointerButton::Secondary) {
-                    edit_data.commands.push(Command::UnsetInitial(idx))
-                }
-
-                let show_initial = match edit_data.drag {
-                    Drag::None if response.drag_started() => {
-                        edit_data.drag = Drag::Initial(idx, None, Default::default());
-                        true
-                    }
-                    Drag::Initial(_idx, target, ref mut cp) if _idx == idx => {
-                        // Reuse existing port if dragging to existing target?
-                        if let Some(end) = target
-                            .and_then(|(t, p)| edit_data.rects.port_in(t, p))
-                            .or_else(|| ui.ctx().pointer_interact_pos())
-                        {
-                            // bias the initial down
-                            *cp = approx_cp_down(start, end);
-                            self.show_connection(
-                                start,
-                                end,
-                                Connection::DragInitial(idx, *cp),
-                                edit_data,
-                                ui,
-                            );
-                        }
-                        true
-                    }
-                    _ => {
-                        if let Some((i, (port, c1, c2))) =
-                            initial.map(|(_, i)| i).zip(state.initial)
-                        {
-                            if let Some(end) = edit_data.rects.port_in(i, port) {
-                                self.show_connection(
-                                    start,
-                                    end,
-                                    Connection::Initial(idx, (c1, c2)),
-                                    edit_data,
-                                    ui,
-                                );
-                            }
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                };
-
-                let color = ui.style().interact(&response).fg_stroke.color;
-                let color = ecolor::tint_color_towards(color, Color32::YELLOW);
-                ui.painter().circle(
-                    rect.center(),
-                    rect.size().max_elem() * 0.5,
-                    if show_initial {
-                        color
-                    } else {
-                        Color32::TRANSPARENT
-                    },
-                    Stroke::new(2.0, color),
-                );
-
-                // Initial type.
-                if let Some((initial, _)) = initial {
-                    match initial {
-                        Initial::HistoryShallow => {
-                            ui.colored_label(color, "h");
-                        }
-                        Initial::HistoryDeep => {
-                            ui.colored_label(color, "h*");
-                        }
-                        _ => (),
-                    }
-                }
-            }); // end initial
+            // Only show initial if there are child states.
+            if self.graph.children(idx).next().is_some() {
+                self.show_initial(idx, state, edit_data, ui);
+            }
 
             // Show state id.
             let InnerResponse { inner, response } = Editabel::new().show(&state.id, ui);
