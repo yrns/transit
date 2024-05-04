@@ -9,6 +9,7 @@ edition = "2021"
 default = []
 
 [dependencies]
+bevy_app = "0.13"
 bevy_asset = "0.13"
 bevy_ecs = "0.13"
 bevy_reflect = "0.13"
@@ -22,5 +23,4 @@ thiserror = "1.0.58"
 bevy_eventlistener = "0.7.0"
 
 [dev-dependencies]
-bevy_app = "0.13"
 bevy_core = "0.13"

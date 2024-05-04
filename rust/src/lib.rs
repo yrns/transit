@@ -7,7 +7,10 @@
 mod asset;
 mod source;
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    marker::PhantomData,
+};
 
 use bevy_asset::{Assets, Handle};
 use bevy_ecs::{
@@ -254,11 +257,38 @@ pub fn handle_event<E: Event + Enum + Clone>(
 //     todo!()
 // }
 
+pub struct Plugin<E> {
+    phantom: PhantomData<E>,
+}
+
+impl<E> Default for Plugin<E> {
+    fn default() -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<E> bevy_app::Plugin for Plugin<E>
+where
+    E: Event + Enum + Clone,
+{
+    fn build(&self, app: &mut bevy_app::App) {
+        use bevy_app::Update;
+        use bevy_asset::AssetApp;
+
+        app.init_asset::<EditGraph>()
+            .init_asset_loader::<EditGraphLoader>()
+            .insert_resource(GraphCache::<E>::default())
+            .add_systems(Update, handle_event::<E>);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy_app::prelude::*;
-    use bevy_asset::{AssetApp, AssetServer, LoadState};
+    use bevy_app::prelude::App;
+    use bevy_asset::{AssetServer, LoadState};
     use bevy_reflect::Reflect;
 
     #[derive(Component, Default)]
@@ -308,10 +338,8 @@ mod tests {
                 file_path: "tests".to_owned(),
                 ..Default::default()
             },
+            Plugin::<E>::default(),
         ));
-
-        app.init_asset::<EditGraph>()
-            .init_asset_loader::<EditGraphLoader>();
 
         let asset_server = app.world.get_resource::<AssetServer>().unwrap();
 
@@ -336,15 +364,12 @@ mod tests {
             transit_graph::Statechart::new((), &mut OneShot(&mut app.world, id), &graph);
 
         app.insert_resource(actions);
-        let mut graph_cache = GraphCache::<E>::default();
+        let mut graph_cache = app.world.get_resource_mut::<GraphCache<E>>().unwrap();
         graph_cache.0.insert(handle.clone_weak(), graph);
-        app.insert_resource(graph_cache);
 
         app.world
             .entity_mut(id)
             .insert(Statechart(statechart, handle));
-
-        app.add_systems(Update, handle_event::<E>);
 
         //dbg!(app.world.entity(id).get::<Statechart>().unwrap().0.active);
 
