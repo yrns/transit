@@ -7,15 +7,12 @@
 mod asset;
 mod source;
 
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    marker::PhantomData,
-};
+use std::{collections::HashMap, marker::PhantomData};
 
-use bevy_asset::{Assets, Handle};
+use bevy_asset::{AssetEvent, AssetId, Assets, Handle};
 use bevy_ecs::{
     prelude::*,
-    system::{SystemId, SystemParam, SystemState},
+    system::{SystemId, SystemState},
 };
 #[allow(unused)]
 // TODO:
@@ -64,7 +61,7 @@ impl<E> Default for Actions<E> {
 }
 
 #[derive(Resource)]
-pub struct GraphCache<E>(HashMap<Handle<EditGraph>, Graph<State<E>, Transition<E>>>);
+pub struct GraphCache<E>(HashMap<AssetId<EditGraph>, Graph<State<E>, Transition<E>>>);
 
 impl<E> Default for GraphCache<E> {
     fn default() -> Self {
@@ -135,10 +132,7 @@ where
     }
 }
 
-fn resolve_graph<E>(
-    graph: &edit::EditGraph,
-    actions: &Actions<E>,
-) -> Graph<State<E>, Transition<E>> {
+fn resolve<E>(graph: &edit::EditGraph, actions: &Actions<E>) -> Graph<State<E>, Transition<E>> {
     graph.map(
         |_i,
          edit::State {
@@ -165,41 +159,25 @@ fn resolve_graph<E>(
     )
 }
 
-#[derive(SystemParam)]
-pub struct Graphs<'w, E: 'static> {
-    graph_cache: ResMut<'w, GraphCache<E>>,
-    edit_graphs: Res<'w, Assets<EditGraph>>,
-    actions: Res<'w, Actions<E>>,
-}
-
-impl<'w, E> Graphs<'w, E> {
-    pub fn resolve(
-        &mut self,
-        handle: &Handle<EditGraph>,
-    ) -> Option<&Graph<State<E>, Transition<E>>> {
-        // TODO remove clone? hashbrown has entry_ref
-        // we can't use or_insert_with since the insertion can fail
-        match self.graph_cache.0.entry(handle.clone_weak()) {
-            Entry::Occupied(e) => Some(e.into_mut()),
-            Entry::Vacant(e) => {
-                //TODO: warn
-                let EditGraph(edit::Edit { graph, .. }) = self.edit_graphs.get(handle)?;
-
-                // Insert it and return a reference.
-                Some(e.insert(resolve_graph(graph, &*self.actions)))
+fn resolve_graph<E: Event>(
+    mut graph_cache: ResMut<GraphCache<E>>,
+    edit_graphs: Res<Assets<EditGraph>>,
+    actions: Res<Actions<E>>,
+    mut asset_events: EventReader<AssetEvent<EditGraph>>,
+) {
+    for event in asset_events.read() {
+        dbg!(event);
+        match event {
+            AssetEvent::Added { id } | AssetEvent::Modified { id } => {
+                if let Some(g) = edit_graphs.get(*id) {
+                    _ = graph_cache.0.insert(*id, resolve(&g.0.graph, &*actions))
+                }
             }
+            AssetEvent::Removed { id } | AssetEvent::Unused { id } => _ = graph_cache.0.remove(id),
+            _ => (),
         }
     }
 }
-
-#[derive(Resource)]
-struct EventSystemState<E: Event>(
-    SystemState<(
-        Query<'static, 'static, (Entity, &'static mut Statechart)>,
-        Res<'static, GraphCache<E>>,
-        EventReader<'static, 'static, E>,
-    )>,
-);
 
 pub fn handle_event<E: Event + Enum + Clone>(
     world: &mut World,
@@ -219,20 +197,12 @@ pub fn handle_event<E: Event + Enum + Clone>(
 
     world.resource_scope(|world, graphs: Mut<GraphCache<E>>| {
         for (entity, handle) in entities.iter() {
-            let Some(graph) = graphs.0.get(handle) else {
+            let Some(graph) = graphs.0.get(&handle.id()) else {
                 continue;
             };
 
             // Clone the statechart since we can't hold a mutable ref.
             let mut sc = world.entity(*entity).get::<Statechart>().unwrap().clone();
-
-            // // Get the graph from the cache or create it from the original asset (if it exists).
-            // // This could be handled in a separate system with asset events. Or done with a more
-            // // specialized system that only uses one graph per component type.
-            // let Some(graph) = graphs.resolve(&s.1) else {
-            //     warn!("no graph");
-            //     continue;
-            // };
 
             let mut ctx = OneShot(world, *entity);
             if events
@@ -280,7 +250,7 @@ where
         app.init_asset::<EditGraph>()
             .init_asset_loader::<EditGraphLoader>()
             .insert_resource(GraphCache::<E>::default())
-            .add_systems(Update, handle_event::<E>);
+            .add_systems(Update, (resolve_graph::<E>, handle_event::<E>).chain());
     }
 }
 
@@ -331,6 +301,8 @@ mod tests {
         let id = app.world.register_system(guard_a);
         actions.transitions.insert("guard_a", id);
 
+        app.insert_resource(actions);
+
         app.add_plugins((
             // asset server needs this
             bevy_core::TaskPoolPlugin::default(),
@@ -354,22 +326,22 @@ mod tests {
             app.update();
         }
 
-        let graph_assets = app.world.get_resource::<Assets<EditGraph>>().unwrap();
-        let graph0 = graph_assets.get(&handle).unwrap();
-        let graph = resolve_graph(&graph0.0.graph, &actions);
+        // We need one additional update to resolve the graph.
+        app.update();
 
-        // we need context, which means we need the Entity before the statechart can exist
+        // We need a context, which means we need the Entity before the statechart can exist.
         let id = app.world.spawn(Counter(0)).id();
-        let statechart =
-            transit_graph::Statechart::new((), &mut OneShot(&mut app.world, id), &graph);
 
-        app.insert_resource(actions);
-        let mut graph_cache = app.world.get_resource_mut::<GraphCache<E>>().unwrap();
-        graph_cache.0.insert(handle.clone_weak(), graph);
-
+        // We need a reference to the graph while mutating world. We need a mutable world ref every
+        // time we spawn a statechart...
         app.world
-            .entity_mut(id)
-            .insert(Statechart(statechart, handle));
+            .resource_scope(|world, graph_cache: Mut<GraphCache<E>>| {
+                let graph = graph_cache.0.get(&handle.id()).unwrap();
+                let statechart =
+                    transit_graph::Statechart::new((), &mut OneShot(world, id), &graph);
+
+                world.entity_mut(id).insert(Statechart(statechart, handle));
+            });
 
         //dbg!(app.world.entity(id).get::<Statechart>().unwrap().0.active);
 
