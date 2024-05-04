@@ -728,8 +728,8 @@ where
                     press_origin,
                     ..
                 } if source == idx => {
-                    // Missing from x11 or the default cursor theme?
-                    //ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                    // Half these are sissing from x11 or the default cursor theme?
+                    ui.ctx().set_cursor_icon(CursorIcon::Grab);
 
                     if let Some(p) = interact_pos {
                         rect.translate(-(press_origin - p))
