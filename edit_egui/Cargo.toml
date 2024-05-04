@@ -12,9 +12,7 @@ editor = [
         "dep:eframe",
         "dep:tracing",
         "dep:native-dialog",
-        "dep:nohash-hasher",
         "dep:notify-debouncer-mini",
-
         "dep:directories",
 ]
 serde = ["dep:ron", "dep:serde", "eframe/persistence", "relative-path/serde"]
@@ -28,7 +26,6 @@ eframe = { version = "0.1.0", path = "../eframe-dynamic", package = "eframe-dyna
 #eframe = { version = "0.20.1", default-features = false, features = ["default_fonts", "wgpu"] }
 native-dialog = { version = "0.7.0", optional = true }
 serde = { version = "1", optional = true, features = ["derive"] }
-nohash-hasher = { version = "0.2.0", optional = true }
 notify-debouncer-mini = { version = "0.4.1", optional = true }
 # TODO
 relative-path = "1.9.2"

@@ -5,7 +5,7 @@ mod graph;
 pub use graph::*;
 //pub use source::Source;
 
-pub use nohash_hasher::IntMap;
+pub use nohash_hasher::{IntMap, IntSet};
 
 // TODO: use statecharts as as states, "includes"
 // the statechart needs to implement some interface that makes it behave as a state

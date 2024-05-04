@@ -1,3 +1,5 @@
+use transit_graph::IntSet;
+
 use super::*;
 
 /// Current state, transition, or initial drag.
@@ -14,6 +16,8 @@ pub enum Drag {
         depth: usize,
         /// We can't access the pointer `press_origin` after the drag is stopped, so we store it here.
         press_origin: Pos2,
+        /// Set of descendants.
+        desc: IntSet<usize>,
     },
     Resize(Idx, Vec2),
     // Only Initial has a port?

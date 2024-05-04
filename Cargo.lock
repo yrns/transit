@@ -1249,7 +1249,6 @@ dependencies = [
  "eframe-dynamic",
  "emath",
  "native-dialog",
- "nohash-hasher",
  "notify-debouncer-mini",
  "relative-path",
  "ron",

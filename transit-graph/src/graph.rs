@@ -254,6 +254,22 @@ impl<S, T> Graph<S, T> {
             .filter(move |i| self.graph[*i].parent == Some(p))
     }
 
+    // TODO: more efficiently
+    pub fn descendants(&self, p: Idx) -> impl Iterator<Item = Idx> + '_ {
+        let mut v = vec![];
+
+        fn recur<S, T>(g: &Graph<S, T>, i: Idx, v: &mut Vec<Idx>) {
+            v.push(i);
+            for c in g.children(i) {
+                recur(g, c, v);
+            }
+        }
+
+        recur(self, p, &mut v);
+
+        v.into_iter()
+    }
+
     // Once we filter we can't reverse?
     pub fn children_rev(&self, p: Idx) -> impl Iterator<Item = (Idx, &Node<S>)> {
         self.graph

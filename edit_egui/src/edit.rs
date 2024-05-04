@@ -24,7 +24,7 @@ use egui::{
 };
 use search::{SearchBox, Submit};
 use tracing::{error, info, warn};
-use transit_graph::{Direction, Graph, Idx, Initial, Tdx};
+use transit_graph::{Direction, Graph, Idx, Initial, IntMap, Tdx};
 pub use watch::*;
 
 macro_rules! drag_delta {
@@ -50,7 +50,7 @@ macro_rules! drag_delta {
 
 // Store rect in root-space, and incoming/outgoing max ports. Rename?
 #[derive(Default)]
-pub struct Rects(nohash_hasher::IntMap<usize, (Rect, MaxPorts)>);
+pub struct Rects(IntMap<usize, (Rect, MaxPorts)>);
 
 impl Rects {
     fn from_graph(graph: &Graph<State, Transition>) -> Self {
@@ -898,6 +898,7 @@ where
                         offset: p - rect.min,
                         depth,
                         press_origin: p,
+                        desc: self.graph.descendants(idx).map(|i| i.index()).collect(),
                     }
                 }
             }
@@ -917,6 +918,7 @@ where
                 ui.label(format!("{} ({})", state.id, idx.index()));
                 if ui.button("Add state").clicked() {
                     // Position is the original click, relative to parent.
+                    // FIX does this work still?
                     let p = ui.min_rect().min - rect.min.to_vec2();
                     edit_data.commands.push(Command::AddState(idx, p));
                     ui.close_menu();
@@ -1001,14 +1003,29 @@ where
                 }
                 _ => {
                     if let Some((i, (port, c1, c2))) = initial.map(|(_, i)| i).zip(state.initial) {
+                        let drag_descendant = match &edit_data.drag {
+                            Drag::State { desc, .. } => desc.contains(&i.index()),
+                            _ => false,
+                        };
+
                         if let Some(end) = edit_data.rects.port_in(i, port) {
-                            self.show_connection(
-                                start,
-                                end,
-                                Connection::Initial(idx, (c1, c2)),
-                                edit_data,
-                                ui,
-                            );
+                            let conn = Connection::Initial(idx, (c1, c2));
+                            // Show the initial connection in a foreground layer if the target is
+                            // being dragged.
+                            // FIX: this is a frame behind
+                            if drag_descendant {
+                                ui.with_layer_id(
+                                    LayerId::new(
+                                        Order::Foreground,
+                                        ui.id().with("initial_connection"),
+                                    ),
+                                    |ui| {
+                                        self.show_connection(start, end, conn, edit_data, ui);
+                                    },
+                                );
+                            } else {
+                                self.show_connection(start, end, conn, edit_data, ui);
+                            }
                         }
                         true
                     } else {
@@ -1082,6 +1099,8 @@ where
             }
 
             self.show_symbol(SymbolId::Enter(idx), &state.enter, edit_data, ui);
+
+            // TODO? the exit is never called for the root state currently
             self.show_symbol(SymbolId::Exit(idx), &state.exit, edit_data, ui);
 
             // Show source file in the root state. Maybe this should be left click to goto, right
@@ -1284,6 +1303,7 @@ where
             _ => false,
         };
 
+        // We never allocate the min size...
         let mut ui = ui.child_ui_with_id_source(
             ui.max_rect(),
             *ui.layout(),
