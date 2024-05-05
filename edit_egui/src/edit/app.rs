@@ -8,6 +8,7 @@ use super::*;
 pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Z);
 pub const REDO: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Z);
+pub const QUIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Q);
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -111,6 +112,8 @@ where
             self.edit.undo();
         } else if ctx.input_mut(|i| i.consume_shortcut(&REDO)) {
             self.edit.redo();
+        } else if ctx.input_mut(|i| i.consume_shortcut(&QUIT)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
         // TODO: https://github.com/emilk/egui/blob/master/examples/confirm_exit/src/main.rs
@@ -159,7 +162,10 @@ where
                     {
                         self.edit.redo();
                     }
-                    if ui.button("Quit").clicked() {
+                    if ui
+                        .add(Button::new("Quit").shortcut_text(ui.ctx().format_shortcut(&QUIT)))
+                        .clicked()
+                    {
                         // TODO: prompt to save?
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
