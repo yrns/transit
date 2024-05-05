@@ -1410,67 +1410,84 @@ where
                 );
 
                 // Show id, guard, internal...
-                let response = ui.allocate_ui_at_rect(rect, |ui| {
-                    let _response = ui
-                        .horizontal(|ui| {
-                            // ui.label("🗝");
+                let ir = ui.allocate_ui_at_rect(rect, |ui| {
+                    ui.horizontal(|ui| {
+                        // ui.label("🗝");
 
-                            // HACK: If the id is empty we need something to click on to change it...
-                            let tid = if t.id.is_empty() { "untitled" } else { &t.id };
-                            let InnerResponse { inner, response } =
-                                Editabel::sense(Sense::click_and_drag()).show(tid, ui);
-                            if let Some(id) = inner {
-                                edit_data
-                                    .commands
-                                    .push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
+                        // HACK: If the id is empty we need something to click on to change it...
+                        let tid = if t.id.is_empty() { "untitled" } else { &t.id };
+                        let InnerResponse { inner, response } =
+                            Editabel::sense(Sense::click()).show(tid, ui);
+                        if let Some(id) = inner {
+                            edit_data
+                                .commands
+                                .push(Command::UpdateTransition(tdx, t.clone().with_id(id)))
+                        }
+
+                        self.show_symbol(SymbolId::Guard(tdx), &t.guard, edit_data, ui);
+
+                        // Self-transition, internal checkbox.
+                        if endpoints.0 == endpoints.1 {
+                            let mut internal = internal;
+                            if ui.checkbox(&mut internal, "int.").clicked() {
+                                edit_data.commands.push(Command::SetInternal(tdx, internal));
                             }
+                        }
 
-                            self.show_symbol(SymbolId::Guard(tdx), &t.guard, edit_data, ui);
-
-                            // Self-transition, internal checkbox.
-                            if endpoints.0 == endpoints.1 {
-                                let mut internal = internal;
-                                if ui.checkbox(&mut internal, "int.").clicked() {
-                                    edit_data.commands.push(Command::SetInternal(tdx, internal));
-                                }
-                            }
-
-                            // Context menu on right click.
-                            if !edit_data.drag.in_drag() {
-                                // debug ports:
-                                // let response = response.on_hover_text_at_pointer(format!(
-                                //     "port1: {} port2: {}",
-                                //     t.port1, t.port2
-                                // ));
-                                _ = response.context_menu(|ui| {
-                                    ui.label(format!("{} ({})", t.id, tdx.index()));
-                                    if ui.button("Remove transition").clicked() {
-                                        edit_data.commands.push(Command::RemoveTransition(tdx));
-                                        ui.close_menu();
-                                    }
-                                })
-                            }
-
-                            if response.double_clicked() {
-                                dbg!("double");
-                            } else {
-                                if response.clicked() {
-                                    edit_data
-                                        .commands
-                                        .push(Command::UpdateSelection(Selection::Transition(tdx)))
-                                }
-
-                                let drag = &mut edit_data.drag;
-                                drag_delta!(response, ui, drag, TransitionId, tdx);
-                            }
-                        })
-                        .response;
+                        response
+                    })
+                    .inner // id response
                 });
+
+                // merge these so we can click on the label to select
+                let response = ir.response | ir.inner.interact(Sense::click_and_drag());
+
+                // Context menu on right click.
+                if !edit_data.drag.in_drag() {
+                    // debug ports:
+                    // let response = response.on_hover_text_at_pointer(format!(
+                    //     "port1: {} port2: {}",
+                    //     t.port1, t.port2
+                    // ));
+                    _ = response.context_menu(|ui| {
+                        ui.label(format!("{} ({})", t.id, tdx.index()));
+                        if ui.button("Remove transition").clicked() {
+                            edit_data.commands.push(Command::RemoveTransition(tdx));
+                            ui.close_menu();
+                        }
+                    })
+                }
+
+                // if response.double_clicked() {
+                //     dbg!("double");
+                // } else {
+                if response.clicked() {
+                    edit_data
+                        .commands
+                        .push(Command::UpdateSelection(Selection::Transition(tdx)))
+                }
+
+                let drag = &mut edit_data.drag;
+                if let Some(id) = ui.ctx().drag_started_id() {
+                    if id == ui.id() {
+                        info!(?id, "dragging transition id");
+                    }
+                }
+                match drag {
+                    Drag::None if response.drag_started() => *drag = dbg!(tdx).into(),
+                    Drag::TransitionId(_id, delta, ..) if *_id == tdx => {
+                        if response.dragged() {
+                            *delta += dbg!(response.drag_delta());
+                        }
+                    }
+                    _ => (),
+                };
+                //}
 
                 // Draw curve(s) last because we need the min response rect.
                 let rect_offset = vec2(4.0, 0.0);
                 let left = rect.left_center() - rect_offset;
-                let right = response.response.rect.right_center() + rect_offset;
+                let right = response.interact_rect.right_center() + rect_offset;
 
                 // If the transition is moving right to left swap left and right.
                 for pts in if start.x < end.x {
