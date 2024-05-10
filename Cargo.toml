@@ -14,11 +14,14 @@ members = ["transit-graph", "edit_egui", "janet", "eframe-dynamic", "rust"]
 [dependencies]
 edit_egui = { path = "./edit_egui" }
 janet = { path = "./janet" }
+rust = { path = "./rust" }
 # TODO only in dev
 eframe = { path = "./eframe-dynamic", package = "eframe-dynamic" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = "0.3"
 font-kit = "0.13.0"
+serde = "1"
+thiserror = "1"
 
 # https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]

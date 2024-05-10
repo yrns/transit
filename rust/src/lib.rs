@@ -23,7 +23,7 @@ use edit_egui as edit;
 use tracing::{error, info, warn};
 use transit_graph::{Context, Graph, Idx, Tdx};
 
-pub use asset::*;
+use asset::{EditGraph, EditGraphLoader};
 pub use source::*;
 
 #[derive(Clone, Debug, Default)]

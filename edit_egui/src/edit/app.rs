@@ -10,13 +10,19 @@ pub const REDO: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Z);
 pub const QUIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::Q);
 
-#[derive(serde::Deserialize, serde::Serialize)]
+//impl<T: Source + ?Sized> Source for Box<T> {}
+
+//#[derive(Default)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[serde(default)]
 pub struct App<S> {
     /// Most-recently opened file.
     pub recent: Option<PathBuf>,
     #[serde(skip)] // De/serialized from/to `recent`.
     pub edit: Edit<S>,
+    /// Watches source files for changes.
+    #[serde(skip)]
+    pub watcher: Option<Watcher>,
     #[serde(skip)] // TODO configurable?
     pub editor: EmacsClient,
     #[serde(skip)]
@@ -29,6 +35,7 @@ impl<S> Default for App<S> {
         Self {
             recent: None,
             edit: Edit::default(),
+            watcher: None,
             editor: EmacsClient::default(),
             base_dirs: directories::BaseDirs::new(),
         }
@@ -37,19 +44,24 @@ impl<S> Default for App<S> {
 
 impl<S> App<S>
 where
-    S: Source + serde::de::DeserializeOwned + serde::Serialize,
+    S: SelectSource + Source + serde::de::DeserializeOwned + serde::Serialize,
 {
-    pub fn load(&mut self) {
+    pub fn init(&mut self) {
         // Load recent file.
         if let Some(path) = &self.recent {
-            match Edit::load_and_validate(path) {
+            match self.load(path.as_path()) {
                 Ok(edit) => {
                     info!("loaded from recent: {}", path.display());
                     self.edit = edit;
+                    self.source_changed();
                 }
                 Err(e) => error!("error loading recent file: {path:?}: {e:?}"),
             }
         }
+    }
+
+    pub fn load(&self, path: &Path) -> Result<Edit<S>, Error> {
+        Edit::load_and_validate(path)
     }
 
     /// Select a path and save.
@@ -87,6 +99,7 @@ where
             .add_filter("ron", &["ron"])
             .show_open_single_file()
         {
+            // TODO call load
             Ok(Some(p)) => match Edit::load_and_validate(&p) {
                 Ok(edit) => {
                     self.recent = Some(p);
@@ -104,8 +117,8 @@ where
         let mut clear_state = false;
 
         // Check for updates to the source.
-        if let Some(ref mut source) = self.edit.source {
-            source.update().unwrap_or_else(|e| error!("{e:?}"));
+        if self.watcher.as_mut().is_some_and(|w| w.changed()) {
+            self.source_changed();
         }
 
         if ctx.input_mut(|i| i.consume_shortcut(&UNDO)) {
@@ -124,6 +137,7 @@ where
         #[cfg(not(target_arch = "wasm32"))]
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
+                // Rename "Transit"?
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
                         clear_state = true;
@@ -227,10 +241,37 @@ where
                     }
                     false
                 }
+                Command::SelectSourcePath(p) => {
+                    self.select_source(p.clone());
+                    false
+                }
                 _ => true,
             });
 
             self.edit.process_commands(edit_data.commands.drain(..));
         });
+    }
+
+    fn source_changed(&mut self) {
+        if let Some(source) = &self.edit.source {
+            self.watcher = Watcher::new(source.path())
+                .map_err(|e| error!(?e, "error creating watcher"))
+                .ok();
+
+            match source.symbols() {
+                Ok(s) => self.edit.symbols = s,
+                Err(e) => error!(?e, "error generating symbols"),
+            }
+        } else {
+            self.edit.symbols.clear();
+        }
+    }
+
+    fn select_source(&mut self, path: PathBuf) {
+        match S::select(path) {
+            Some(s) => self.edit.source = Some(s),
+            None => error!("no supported source type"),
+        }
+        self.source_changed();
     }
 }

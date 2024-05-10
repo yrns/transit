@@ -278,14 +278,6 @@ where
             edit.version = 1;
         }
 
-        // Start watching source path.
-        if let Some(source) = &mut edit.source {
-            match S::from_path(source.path()) {
-                Ok(s) => *source = s,
-                Err(e) => error!("error in source: {:?}", e),
-            }
-        }
-
         Ok(edit)
     }
 
@@ -1154,10 +1146,7 @@ where
             .map(Cow::from)
             .unwrap_or_else(|| self.graph.generate_symbol(id).into());
 
-        let location = self
-            .source
-            .as_ref()
-            .and_then(|source| source.symbol(&gensym));
+        let location = self.symbols.get(gensym.as_str());
 
         // Hovering displays symbol name and source location. This API is insane just to bold one word...
         let hover_text = {
@@ -1239,7 +1228,7 @@ where
                 )),
                 // A symbol is set but doesn't exist in the source so insert it.
                 None => {
-                    let template = source.insert_template().replace("{}", &symbol);
+                    let template = source.template().replace("{}", &symbol);
                     edit_data.commands.push(Command::InsertSymbol(
                         symbol,
                         source.path().to_path_buf(),
@@ -1264,21 +1253,17 @@ where
         };
 
         // Show search box.
-        if let Some(symbols) = self
-            .source
-            .as_ref()
-            // We just want the keys.
-            .map(|source| source.symbols().map(|(s, _)| s))
+        match edit_data
+            .symbols
+            .show(set_focus, self.symbols.keys(), response.id, ui)
         {
-            match edit_data.symbols.show(set_focus, symbols, response.id, ui) {
-                Submit::Query(s) | Submit::Result(s) => {
-                    // Clear action/guard if the submit is empty.
-                    edit_data
-                        .commands
-                        .push(Command::UpdateSymbol(id, (!s.is_empty()).then_some(s)));
-                }
-                _ => (),
+            Submit::Query(s) | Submit::Result(s) => {
+                // Clear action/guard if the submit is empty.
+                edit_data
+                    .commands
+                    .push(Command::UpdateSymbol(id, (!s.is_empty()).then_some(s)));
             }
+            _ => (),
         }
 
         response

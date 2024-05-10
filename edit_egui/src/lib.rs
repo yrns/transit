@@ -25,8 +25,12 @@ pub enum Selection {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 //#[derive(Default)]
 pub struct Edit<S> {
-    /// Source file.
+    /// Source.
     pub source: Option<S>,
+    /// Symbols.
+    #[cfg(feature = "editor")]
+    #[serde(skip)]
+    pub symbols: SymbolMap,
     /// Graph structure.
     pub graph: EditGraph,
     /// Pseudo root.
@@ -48,6 +52,8 @@ impl<S> Default for Edit<S> {
     fn default() -> Self {
         Self {
             source: None,
+            #[cfg(feature = "editor")]
+            symbols: Default::default(),
             graph: Default::default(),
             narrow: None,
             selection: Selection::None,
@@ -81,6 +87,8 @@ pub enum Error {
     Import(#[from] ron::error::SpannedError),
     #[error("{0}")]
     Export(#[from] ron::Error),
+    #[error("{0}")]
+    Watch(#[from] WatchError),
     #[error("{0}")]
     Other(String),
 }

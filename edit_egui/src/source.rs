@@ -1,56 +1,49 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 /// Symbol locator consisting of a path, line no., and column.
 pub type Locator = (PathBuf, usize, usize);
 
-// TODO:
-// ✓ Produce symbols from a source file.
-// ✓ Watch source file(s) for changes.
-// Produce itself from an edit graph (or symbols).
-// Produce viewable/editable events for debugging/testing.
-// Viewable/editable state.
-// Goto symbol?
-// ✓ Templating. Insert.
-// ✓ Process symbol names (i.e. kebab-case).
-// ✓ Extension(s)?
+/// Maps symbol to source location.
+pub type SymbolMap = HashMap<String, Locator>;
 
 /// Provides language-dependent facilities for dealing with source code.
-pub trait Source {
-    /// Type of context this source produces.
+pub trait Source
+//: From<PathBuf>
+// where
+//     Self: TryFrom<PathBuf>,
+//     <Self as TryFrom<PathBuf>>::Error: Error,
+{
+    // /// Type of context this source produces.
+    // type Context: Context;
 
-    //type Context: Context;
-
-    /// Runtime context used in [Source::resolve].
-
-    //type RunContext;
+    // /// Runtime context used in [Source::resolve].
+    // type RunContext;
 
     /// Error kind.
     type Error: std::error::Error;
 
-    /// Create a new source from a path.
-    fn from_path(path: &Path) -> Result<Self, Self::Error>
-    where
-        Self: Sized;
+    // /// Create a new source from a path.
+    // fn from_path(path: &Path) -> Result<Self, Self::Error>
+    // where
+    //     Self: Sized;
 
-    /// Path to source.
-    fn path(&self) -> &Path; // Option?
+    /// Source path.
+    fn path(&self) -> &Path;
 
-    /// Kebab-case for lisps, etc.
+    /// Kebab-case for lisps, etc. TODO: Cow
     fn normalize_symbol(&self, symbol: &str) -> String;
 
-    /// Returns a symbol locator from source.
-    fn symbol(&self, symbol: &str) -> Option<&Locator>;
+    // /// Returns a symbol locator from source.
+    // fn symbol(&self, symbol: &str) -> Option<&Locator>;
 
-    /// Returns an iterator over all symbols.
-    // TODO: impl Trait should not be used in a public trait, but the only consumer is the edit
-    // crate... just return a HashMap ref?
-    fn symbols(&self) -> impl Iterator<Item = (&String, &Locator)>;
-
-    /// Called every frame; checks source file for changes.
-    fn update(&mut self) -> Result<(), Self::Error>;
+    /// Returns a [HashMap] containing all symbols.
+    fn symbols(&self) -> Result<HashMap<String, Locator>, Self::Error>;
 
     /// Insertion template for new symbols.
-    fn insert_template(&self) -> &str;
+    fn template(&self) -> &str;
 
     /// Source file type description.
     fn description(&self) -> &str;
@@ -66,4 +59,10 @@ pub trait Source {
     // ) -> Graph<<Self::Context as Context>::State, <Self::Context as Context>::Transition>
     // where
     //     Self: Sized;
+}
+
+pub trait SelectSource: Sized {
+    //fn source(&self) -> &dyn Source;
+    fn select(path: PathBuf) -> Option<Self>;
+    //fn select_with_key(path: PathBuf, key: &str) -> Option<Self>;
 }

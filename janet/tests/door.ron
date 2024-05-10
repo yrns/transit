@@ -1,7 +1,7 @@
 (
-    source: Some((
+    source: Some(Janet((
         path: "/home/al/src/transit/janet/tests/door.janet",
-    )),
+    ))),
     graph: (
         graph: (
             nodes: [
@@ -260,6 +260,7 @@
         ),
         root: 0,
     ),
+    narrow: None,
     selection: None,
     undo: (
         undos: [

@@ -13,9 +13,6 @@ use std::{
 use tracing::{error, info};
 use transit_graph::{Context, Graph, Idx, IntMap, Tdx};
 
-/// Maps symbol to source location.
-pub type SymbolMap = HashMap<String, edit::Locator>;
-
 // TODO: Serialization of the Janet graph with serde is tricky without some kind of state-tracking
 // or processing the graph first. Neither the pretty or marshal modules work in a satisfactory
 // manner. We want to be able to serialize a running statechart, and later deserialize it and
@@ -53,60 +50,48 @@ pub struct Source {
     // TODO: move watcher into the editor
     //#[cfg_attr(feature = "serde", serde(skip))]
     //watcher: Option<edit::Watcher>,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub symbols: SymbolMap,
+    //#[cfg_attr(feature = "serde", serde(skip))]
+    //pub symbols: SymbolMap,
+}
+
+impl From<PathBuf> for Source {
+    fn from(path: PathBuf) -> Self {
+        Self { path }
+    }
 }
 
 impl edit::Source for Source {
     // type Context = JanetContext;
     // type RunContext = JanetClient;
-
     type Error = Error;
 
-    fn from_path(path: &Path) -> Result<Self, Self::Error>
-    where
-        Self: Sized,
-    {
-        //let watcher = edit::Watcher::new(path)?.into();
-        let symbols = get_symbols(path)?.unwrap_or_default();
+    // fn from_path(path: &Path) -> Result<Self, Self::Error>
+    // where
+    //     Self: Sized,
+    // {
+    //     //let watcher = edit::Watcher::new(path)?.into();
+    //     let symbols = get_symbols(path)?.unwrap_or_default();
 
-        Ok(Self {
-            path: path.to_path_buf(),
-            //watcher,
-            symbols,
-        })
-    }
+    //     Ok(Self {
+    //         path: path.to_path_buf(),
+    //         //watcher,
+    //         symbols,
+    //     })
+    // }
 
     fn path(&self) -> &Path {
         self.path.as_path()
     }
 
-    fn symbol(&self, symbol: &str) -> Option<&edit::Locator> {
-        self.symbols.get(symbol)
-    }
-
-    fn symbols(&self) -> impl Iterator<Item = (&String, &edit::Locator)> {
-        self.symbols.iter()
-    }
-
-    fn update(&mut self) -> Result<(), Self::Error> {
-        // FIXXXX
-        // if let Some(watcher) = &mut self.watcher {
-        //     if watcher.changed() {
-        //         if let Some(symbols) = get_symbols(&self.path)? {
-        //             self.symbols = symbols;
-        //         }
-        //     }
-        // }
-
-        Ok(())
+    fn symbols(&self) -> Result<HashMap<String, edit::Locator>, Self::Error> {
+        Ok(get_symbols(self.path())?.unwrap_or_default())
     }
 
     fn normalize_symbol(&self, symbol: &str) -> String {
         symbol.to_kebab_case()
     }
 
-    fn insert_template(&self) -> &str {
+    fn template(&self) -> &str {
         "\n\n(defn {} [self ctx ev]\n  )"
     }
 
@@ -323,7 +308,7 @@ impl<'a> Context<Janet, Event> for JanetContext<'a> {
     }
 }
 
-pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
+pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<edit::SymbolMap>, Error> {
     let client = JanetClient::init_with_default_env()?;
 
     // Set the system path to the specified path's directory and drop the extension from the file
@@ -341,7 +326,7 @@ pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
 
         let res = client.run(query)?;
 
-        Ok(SymbolMap::from_janet(res)
+        Ok(edit::SymbolMap::from_janet(res)
             .map_err(|e| {
                 error!("error in SymbolMap::from_janet: {e:?}");
                 e

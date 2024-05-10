@@ -110,16 +110,6 @@ where
                     self.graph.set_initial(i, initial).into()
                 }
                 Command::SetInternal(i, internal) => self.graph.set_internal(i, internal),
-                Command::SelectSourcePath(p) => {
-                    // TODO undo?
-                    match S::from_path(&p) {
-                        Ok(s) => {
-                            self.source = Some(s);
-                        }
-                        Err(e) => error!("error: {:?}", e),
-                    }
-                    Op::Noop
-                }
                 Command::UpdateSymbol(symbol, s) => match symbol {
                     SymbolId::Enter(i) => {
                         let state = self.graph.state(i).map(|state| state.clone().with_enter(s));
@@ -143,7 +133,7 @@ where
                     self.narrow = n;
                     Op::Noop
                 }
-                // Some commands (symbols) are handled by the app, so they never show up here.
+                // Some commands are handled by the app, so they never show up here.
                 _ => {
                     error!(?c, "unhandled command:");
                     Op::Noop

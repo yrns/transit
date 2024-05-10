@@ -3,11 +3,7 @@ use notify_debouncer_mini::{
     notify::{INotifyWatcher, RecursiveMode},
     DebouncedEvent, Debouncer,
 };
-use std::{
-    path::{Path},
-    sync::mpsc::Receiver,
-    time::Duration,
-};
+use std::{path::Path, sync::mpsc::Receiver, time::Duration};
 use tracing::{error, info};
 //use transit_graph::{Context, Graph};
 
