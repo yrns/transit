@@ -49,7 +49,7 @@ impl Source for SourceType {
         }
     }
 
-    fn symbols(&self) -> Result<HashMap<String, Locator>, Self::Error> {
+    fn symbols(&mut self) -> Result<HashMap<String, Locator>, Self::Error> {
         match self {
             SourceType::Janet(s) => s.symbols().map_err(From::from),
             SourceType::Rust(s) => s.symbols().map_err(From::from),
@@ -81,7 +81,7 @@ impl Source for SourceType {
 impl SelectSource for SourceType {
     fn select(path: PathBuf) -> Option<Self> {
         if path.extension().is_some_and(|e| e.to_str() == Some("rs")) {
-            Some(Self::Rust(path.clone().into()))
+            path.clone().try_into().ok().map(Self::Rust)
         } else if path
             .extension()
             .is_some_and(|e| e.to_str() == Some("janet"))

@@ -2,14 +2,12 @@ pub mod from_janet;
 pub mod marshal;
 pub mod pretty;
 
+use edit::SymbolMap;
 use edit_egui as edit;
 use from_janet::FromJanet;
 use heck::ToKebabCase;
 use janetrs::{client::JanetClient, Janet, JanetSymbol, TaggedJanet};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use tracing::{error, info};
 use transit_graph::{Context, Graph, Idx, IntMap, Tdx};
 
@@ -83,7 +81,7 @@ impl edit::Source for Source {
         self.path.as_path()
     }
 
-    fn symbols(&self) -> Result<HashMap<String, edit::Locator>, Self::Error> {
+    fn symbols(&mut self) -> Result<SymbolMap, Self::Error> {
         Ok(get_symbols(self.path())?.unwrap_or_default())
     }
 

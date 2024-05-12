@@ -40,7 +40,7 @@ pub trait Source
     // fn symbol(&self, symbol: &str) -> Option<&Locator>;
 
     /// Returns a [HashMap] containing all symbols.
-    fn symbols(&self) -> Result<HashMap<String, Locator>, Self::Error>;
+    fn symbols(&mut self) -> Result<SymbolMap, Self::Error>;
 
     /// Insertion template for new symbols.
     fn template(&self) -> &str;

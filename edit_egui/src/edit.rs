@@ -1062,7 +1062,7 @@ where
         root: bool,
         state: &State,
         edit_data: &mut EditData,
-        home_dir: Option<&Path>,
+        #[allow(unused)] home_dir: Option<&Path>,
         ui: &mut Ui,
     ) -> InnerResponse<()> {
         ui.horizontal(|ui| {
@@ -1116,16 +1116,24 @@ where
                         edit_data.commands.push(Command::SelectSourcePath(p));
                     }
                 }
-                if let Some(path) = &self.source.as_ref().map(|s| s.path()) {
+                if let Some(source) = &self.source {
+                    #[allow(unused)]
+                    let path: Option<PathBuf> = None;
+
                     // I like tildes.
                     #[cfg(target_os = "linux")]
-                    let path = if let Some(path) = home_dir.and_then(|d| path.strip_prefix(d).ok())
-                    {
-                        PathBuf::from("~/").join(path)
-                    } else {
-                        path.to_path_buf()
-                    };
-                    response.on_hover_text_at_pointer(path.display().to_string());
+                    let path = home_dir
+                        .and_then(|d| source.path().strip_prefix(d).ok())
+                        .map(|p| PathBuf::from("~/").join(p));
+
+                    response.on_hover_text_at_pointer(format!(
+                        "{}\n{}",
+                        path.as_ref()
+                            .map(|p| p.as_path())
+                            .unwrap_or_else(|| source.path())
+                            .display(),
+                        source.description()
+                    ));
                 }
             }
         })
@@ -1462,7 +1470,7 @@ where
                     Drag::None if response.drag_started() => *drag = dbg!(tdx).into(),
                     Drag::TransitionId(_id, delta, ..) if *_id == tdx => {
                         if response.dragged() {
-                            *delta += dbg!(response.drag_delta());
+                            *delta += response.drag_delta();
                         }
                     }
                     _ => (),

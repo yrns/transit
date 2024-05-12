@@ -253,7 +253,7 @@ where
     }
 
     fn source_changed(&mut self) {
-        if let Some(source) = &self.edit.source {
+        if let Some(source) = &mut self.edit.source {
             self.watcher = Watcher::new(source.path())
                 .map_err(|e| error!(?e, "error creating watcher"))
                 .ok();
