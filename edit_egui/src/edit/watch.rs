@@ -14,25 +14,29 @@ pub type WatchError = notify::Error;
 pub type Rx = Receiver<Result<Vec<DebouncedEvent>, WatchError>>;
 
 /// Watches source file for changes.
-pub struct Watcher(Debouncer<INotifyWatcher>, Rx);
+pub struct Watcher {
+    /// This field is never used by we can't drop it.
+    _debouncer: Debouncer<INotifyWatcher>,
+    rx: Rx,
+}
 
 impl Watcher {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, notify::Error> {
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut debouncer = new_debouncer(Duration::from_secs(2), tx)?;
+        let mut _debouncer = new_debouncer(Duration::from_secs(2), tx)?;
 
-        debouncer
+        _debouncer
             .watcher()
             .watch(path.as_ref(), RecursiveMode::NonRecursive)?;
 
-        Ok(Watcher(debouncer, rx))
+        Ok(Watcher { _debouncer, rx })
     }
 
     /// Call periodically to clear the channel.
     pub fn changed(&mut self) -> bool {
         let mut changed = false;
 
-        for res in self.1.try_iter() {
+        for res in self.rx.try_iter() {
             match res {
                 Ok(events) => {
                     for event in events {
