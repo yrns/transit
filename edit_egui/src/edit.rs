@@ -1221,7 +1221,7 @@ where
             .on_hover_text(hover_text)
             .on_disabled_hover_text("source file is unset");
 
-        if response.clicked() {
+        if response.clicked_by(PointerButton::Primary) {
             // enabled -> clicked -> source exists
             let source = self.source.as_ref().expect("source");
             let symbol = source.normalize_symbol(&gensym);
@@ -1254,7 +1254,6 @@ where
 
             // Set query to the current symbol (if any).
             symbols.query = gensym.to_string();
-            symbols.results = None;
             true
         } else {
             false
