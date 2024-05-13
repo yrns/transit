@@ -1607,6 +1607,7 @@ pub fn arrow(rect: Rect, color: Color32) -> Mesh {
     mesh
 }
 
+#[allow(unused)]
 trait UiExt {
     fn drag_offset(&self) -> Option<Vec2>;
 }
