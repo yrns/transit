@@ -10,7 +10,7 @@ persistence = ["eframe/persistence"]
 
 [dependencies]
 #eframe = { version = "0.20.0", path = "../../../clone/egui/crates/eframe", features = ["wgpu"] }
-eframe = { version = "0.27.2", default-features = false, features = ["wgpu", "x11"] }
+eframe = { version = "0.28", default-features = false, features = ["wgpu", "x11"] }
 
 # Its not clear why rlib is necessary but it fixes this issue when running "cargo test --workspace": https://github.com/rust-lang/rust/issues/34909
 [lib]

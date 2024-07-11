@@ -293,12 +293,12 @@ mod tests {
         let mut actions = Actions::default();
         app.add_event::<E>();
 
-        let id = app.world.register_system(enter_red);
+        let id = app.world_mut().register_system(enter_red);
         actions.states.insert("enter_red", id);
-        let id = app.world.register_system(enter_blue);
+        let id = app.world_mut().register_system(enter_blue);
         actions.states.insert("enter_blue", id);
 
-        let id = app.world.register_system(guard_a);
+        let id = app.world_mut().register_system(guard_a);
         actions.transitions.insert("guard_a", id);
 
         app.insert_resource(actions);
@@ -313,12 +313,12 @@ mod tests {
             Plugin::<E>::default(),
         ));
 
-        let asset_server = app.world.get_resource::<AssetServer>().unwrap();
+        let asset_server = app.world().get_resource::<AssetServer>().unwrap();
 
         let handle = asset_server.load("test_graph.ron");
 
         while let LoadState::Loading = app
-            .world
+            .world()
             .get_resource::<AssetServer>()
             .unwrap()
             .load_state(&handle)
@@ -330,11 +330,11 @@ mod tests {
         app.update();
 
         // We need a context, which means we need the Entity before the statechart can exist.
-        let id = app.world.spawn(Counter(0)).id();
+        let id = app.world_mut().spawn(Counter(0)).id();
 
         // We need a reference to the graph while mutating world. We need a mutable world ref every
         // time we spawn a statechart...
-        app.world
+        app.world_mut()
             .resource_scope(|world, graph_cache: Mut<GraphCache<E>>| {
                 let graph = graph_cache.0.get(&handle.id()).unwrap();
                 let statechart =
@@ -343,20 +343,20 @@ mod tests {
                 world.entity_mut(id).insert(Statechart(statechart, handle));
             });
 
-        //dbg!(app.world.entity(id).get::<Statechart>().unwrap().0.active);
+        //dbg!(app.world_mut().entity(id).get::<Statechart>().unwrap().0.active);
 
         // we start in red
-        assert_eq!(app.world.entity(id).get::<Counter>().unwrap().0, 1);
+        assert_eq!(app.world().entity(id).get::<Counter>().unwrap().0, 1);
 
         // enter blue
-        app.world.send_event(E::C); // this should do nothing
-        app.world.send_event(E::A);
+        app.world_mut().send_event(E::C); // this should do nothing
+        app.world_mut().send_event(E::A);
         app.update();
-        assert_eq!(app.world.entity(id).get::<Counter>().unwrap().0, 3);
+        assert_eq!(app.world().entity(id).get::<Counter>().unwrap().0, 3);
 
         // enter red again
-        app.world.send_event(E::B);
+        app.world_mut().send_event(E::B);
         app.update();
-        assert_eq!(app.world.entity(id).get::<Counter>().unwrap().0, 4);
+        assert_eq!(app.world().entity(id).get::<Counter>().unwrap().0, 4);
     }
 }

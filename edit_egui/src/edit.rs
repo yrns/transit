@@ -16,7 +16,6 @@ use drag::*;
 use editabel::Editabel;
 pub use editor::*;
 // TODO: only depend on egui here (need to get rid of eframe-dynamic)
-use crate::*;
 use eframe::egui;
 use egui::{
     epaint::{text::LayoutJob, CubicBezierShape, Vertex},
@@ -26,6 +25,9 @@ use search::{SearchBox, Submit};
 use tracing::{error, info, warn};
 use transit_graph::{Direction, Graph, Idx, Initial, IntMap, Tdx};
 pub use watch::*;
+
+use crate::graph::*;
+use crate::*;
 
 macro_rules! drag_delta {
     // First rule is the default update.
@@ -840,7 +842,7 @@ where
 
         // TODO: state_ui?
         let state_response = {
-            let mut child_ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx);
+            let mut child_ui = ui.child_ui_with_id_source(rect, *ui.layout(), idx, None);
             let InnerResponse { inner, response: _ } = widget::state::state_frame(
                 root,
                 depth,
@@ -1096,7 +1098,7 @@ where
             self.show_symbol(SymbolId::Exit(idx), &state.exit, edit_data, ui);
 
             // Show source file in the root state. Maybe this should be left click to goto, right
-            // click to set, like symbols.
+            // click to set, like symbols. TODO?
             if root {
                 let response = ui.small_button("source");
                 if response.clicked() {
@@ -1305,6 +1307,7 @@ where
                 Connection::Transition(tdx, ..) => Id::new(tdx),
                 Connection::DragTransition(..) => ui.id().with("drag_transition"),
             },
+            None,
         );
 
         let control_size = if selected { 8.0 } else { 6.0 };

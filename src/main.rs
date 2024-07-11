@@ -31,6 +31,10 @@ enum SourceType {
     Rust(rust::Source),
 }
 
+// TODO: Revisit using trait objects (Box<dyn Source>) using this crate:
+// https://crates.io/crates/serde_flexitos. It uses a manual registry and does not require the
+// inventory crate. And so it works on WASM.
+
 // I tried enum_delegate and others and they didn't work...
 impl Source for SourceType {
     type Error = Error;
@@ -101,10 +105,10 @@ impl SelectSource for SourceType {
 
 struct Transit(edit_egui::App<SourceType>);
 
-fn main() {
+fn main() -> eframe::Result {
     // Trace only transit crates.
     Subscriber::builder()
-        // TODO: make these work in emacs' compilation buffer
+        // TODO: make these work in emacs' compilation buffer...
         .with_file(true)
         .with_line_number(true)
         .finish()
@@ -141,10 +145,9 @@ fn main() {
 
             app.init();
 
-            Box::new(Transit(app))
+            Ok(Box::new(Transit(app)))
         }),
     )
-    .expect("run")
 }
 
 impl eframe::App for Transit {

@@ -29,18 +29,17 @@ impl AssetLoader for EditGraphLoader {
     type Asset = EditGraph;
     type Settings = ();
     type Error = Error;
-    fn load<'a>(
+
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a (),
-        _load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::new();
-            reader.read_to_end(&mut bytes).await?;
-            let graph_asset = ron::de::from_bytes::<EditGraph>(&bytes)?;
-            Ok(graph_asset)
-        })
+        _load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        let graph_asset = ron::de::from_bytes::<EditGraph>(&bytes)?;
+        Ok(graph_asset)
     }
 
     fn extensions(&self) -> &[&str] {

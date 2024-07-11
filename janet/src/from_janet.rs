@@ -29,19 +29,26 @@ where
     B: FromJanet,
     C: FromJanet,
 {
+    // What about JanetArray?
     fn from_janet(value: Janet) -> Result<Self, JanetConversionError> {
-        if let TaggedJanet::Tuple(tuple) = value.unwrap() {
-            match (tuple.get(0), tuple.get(1), tuple.get(2)) {
-                (Some(a), Some(b), Some(c)) => {
-                    match (A::from_janet(*a), B::from_janet(*b), C::from_janet(*c)) {
-                        (Ok(a), Ok(b), Ok(c)) => Ok((a, b, c)),
-                        _ => Err(JanetConversionError),
-                    }
+        match value.unwrap() {
+            TaggedJanet::Tuple(tuple) => {
+                // Check the length. In case its longer?
+                if tuple.len() != 3 {
+                    // TODO A more comprehensive error type.
+                    return Err(JanetConversionError::Other);
                 }
-                _ => Err(JanetConversionError),
+                match (tuple.get(0), tuple.get(1), tuple.get(2)) {
+                    (Some(a), Some(b), Some(c)) => {
+                        Ok((A::from_janet(*a)?, B::from_janet(*b)?, C::from_janet(*c)?))
+                    }
+                    _ => Err(JanetConversionError::Other),
+                }
             }
-        } else {
-            Err(JanetConversionError)
+            _ => Err(JanetConversionError::WrongKind(
+                JanetType::Tuple,
+                value.kind(),
+            )),
         }
     }
 }
@@ -64,20 +71,18 @@ where
     }
 }
 
+// We're really only using this to convert symbols, which are (Janet) symbols. String is too generic.
 impl FromJanet for String {
     fn from_janet(janet: Janet) -> Result<Self, JanetConversionError> {
         match janet.unwrap() {
-            TaggedJanet::Keyword(k) => std::str::from_utf8(k.as_bytes())
-                .map(String::from)
-                .map_err(|_| JanetConversionError),
             TaggedJanet::Symbol(s) => std::str::from_utf8(s.as_bytes())
-                .map(String::from)
-                .map_err(|_| JanetConversionError),
-            TaggedJanet::String(s) => s
-                .to_str()
-                .map_err(|_| JanetConversionError)
-                .map(|s| s.into()),
-            _ => Err(JanetConversionError),
+                // .to_str() JanetString has this
+                .map_err(|_| JanetConversionError::Other)
+                .map(String::from),
+            _ => Err(JanetConversionError::WrongKind(
+                JanetType::String,
+                janet.kind(),
+            )),
         }
     }
 }
@@ -86,10 +91,13 @@ impl FromJanet for PathBuf {
     fn from_janet(janet: Janet) -> Result<Self, JanetConversionError> {
         match janet.unwrap() {
             TaggedJanet::String(s) => s
-                .to_str()
-                .map_err(|_| JanetConversionError)
+                .to_path()
+                .map_err(|_| JanetConversionError::Other)
                 .map(PathBuf::from),
-            _ => Err(JanetConversionError),
+            _ => Err(JanetConversionError::WrongKind(
+                JanetType::String,
+                janet.kind(),
+            )),
         }
     }
 }
