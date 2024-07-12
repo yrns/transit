@@ -25,6 +25,8 @@ pub trait Source
     /// Error kind.
     type Error: std::error::Error;
 
+    const EXT: &'static [&'static str] = &[];
+
     // /// Create a new source from a path.
     // fn from_path(path: &Path) -> Result<Self, Self::Error>
     // where
@@ -49,8 +51,8 @@ pub trait Source
     fn description(&self) -> &str;
 
     /// Source file extensions.
-    fn extensions() -> &'static [&'static str] {
-        &[]
+    fn extensions(&self) -> &[&str] {
+        Self::EXT
     }
 
     // Resolve edit graph to a graph usable with [Self::Context].

@@ -42,6 +42,7 @@ pub const FNS_QUERY: &str = "(function_item name: (identifier) @name) @definitio
 
 impl edit::Source for Source {
     type Error = Error;
+    const EXT: &'static [&'static str] = &["rs"];
 
     fn path(&self) -> &Path {
         self.path.as_path()
@@ -97,9 +98,5 @@ impl edit::Source for Source {
 
     fn description(&self) -> &str {
         "Rust one-shot system context for Bevy"
-    }
-
-    fn extensions() -> &'static [&'static str] {
-        &["rs"]
     }
 }

@@ -1109,7 +1109,7 @@ where
                                 Some(p) => dialog.set_location(p),
                                 None => dialog,
                             };
-                            dialog.add_filter(source.description(), S::extensions())
+                            dialog.add_filter(source.description(), source.extensions())
                         }
                         None => dialog,
                     };

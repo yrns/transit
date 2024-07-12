@@ -59,6 +59,8 @@ impl edit::Source for Source {
     // type RunContext = JanetClient;
     type Error = Error;
 
+    const EXT: &'static [&'static str] = &["janet"];
+
     // fn from_path(path: &Path) -> Result<Self, Self::Error>
     // where
     //     Self: Sized,
@@ -91,10 +93,6 @@ impl edit::Source for Source {
 
     fn description(&self) -> &str {
         "Janet"
-    }
-
-    fn extensions() -> &'static [&'static str] {
-        &["janet"]
     }
 }
 

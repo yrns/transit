@@ -28,8 +28,9 @@ enum Error {
     Unknown,
 }
 
+// This serializes (untagged) as a bare path. We deserialize based on the extension from the path.
 #[derive(serde::Serialize, serde::Deserialize)]
-// #[serde(untagged)]
+#[serde(untagged)]
 #[serde(try_from = "PathBuf")]
 enum SourceType {
     Janet(janet::Source),
@@ -78,6 +79,13 @@ impl Source for SourceType {
             SourceType::Rust(s) => s.description(),
         }
     }
+
+    fn extensions(&self) -> &[&str] {
+        match self {
+            SourceType::Janet(s) => s.extensions(),
+            SourceType::Rust(s) => s.extensions(),
+        }
+    }
 }
 
 impl TryFrom<PathBuf> for SourceType {
@@ -88,9 +96,9 @@ impl TryFrom<PathBuf> for SourceType {
             .extension()
             .and_then(std::ffi::OsStr::to_str)
             .ok_or(Error::Unknown)?;
-        if janet::Source::extensions().iter().any(|e| e == &ext) {
+        if janet::Source::EXT.iter().any(|e| e == &ext) {
             Ok(Self::Janet(path.into()))
-        } else if rust::Source::extensions().iter().any(|e| e == &ext) {
+        } else if rust::Source::EXT.iter().any(|e| e == &ext) {
             Ok(Self::Rust(path.into()))
         } else {
             Err(Error::Unknown)
