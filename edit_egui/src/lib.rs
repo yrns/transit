@@ -87,6 +87,7 @@ pub enum Error {
     Import(#[from] ron::error::SpannedError),
     #[error("{0}")]
     Export(#[from] ron::Error),
+    #[cfg(feature = "editor")]
     #[error("{0}")]
     Watch(#[from] WatchError),
     #[error("{0}")]

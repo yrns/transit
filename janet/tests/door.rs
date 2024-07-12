@@ -11,12 +11,12 @@ fn door() {
     // Load the edit graph.
     let edit = edit::Edit::<Source>::load("tests/door.ron").unwrap();
 
-    // Initialize and Load the janet source.
+    // Initialize and load the janet source.
     let client = JanetClient::init_with_default_env().unwrap();
     let source = edit.source.as_ref().unwrap();
-    client.run(read_to_string(&source.path).unwrap()).unwrap();
+    client.run(read_to_string(&source.0).unwrap()).unwrap();
 
-    // Map the edit graph to Graph<JanetContext>.
+    // Map the edit graph.
     let graph = resolve(&edit, &client);
 
     let door = table! {

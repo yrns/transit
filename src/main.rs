@@ -17,15 +17,20 @@ use tracing_subscriber::{
 
 // TODO wasm https://github.com/emilk/eframe_template
 
+// SourceError?
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("janet: {0}")]
     Janet(#[from] janet::Error),
     #[error("rust: {0}")]
     Rust(#[from] rust::Error),
+    #[error("unknown source type")]
+    Unknown,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+// #[serde(untagged)]
+#[serde(try_from = "PathBuf")]
 enum SourceType {
     Janet(janet::Source),
     Rust(rust::Source),
@@ -73,35 +78,25 @@ impl Source for SourceType {
             SourceType::Rust(s) => s.description(),
         }
     }
-
-    fn extensions(&self) -> &[&str] {
-        match self {
-            SourceType::Janet(s) => s.extensions(),
-            SourceType::Rust(s) => s.extensions(),
-        }
-    }
 }
 
-impl SelectSource for SourceType {
-    fn select(path: PathBuf) -> Option<Self> {
-        if path.extension().is_some_and(|e| e.to_str() == Some("rs")) {
-            path.clone().try_into().ok().map(Self::Rust)
-        } else if path
-            .extension()
-            .is_some_and(|e| e.to_str() == Some("janet"))
-        {
-            Some(Self::Janet(path.clone().into()))
-        } else {
-            None
+impl TryFrom<PathBuf> for SourceType {
+    type Error = Error;
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        if let Some(ext) = path.extension() {
+            if let Some(ext) = ext.to_str() {
+                if janet::Source::extensions().iter().any(|e| e == &ext) {
+                    return Ok(Self::Janet(path.into()));
+                } else if rust::Source::extensions().iter().any(|e| e == &ext) {
+                    return Ok(Self::Rust(path.into()));
+                }
+            }
         }
+
+        Err(Error::Unknown)
     }
 }
-
-// impl From<PathBuf> for SourceType {
-//     fn from(path: PathBuf) -> Self {
-//         Self::select(path).unwrap()
-//     }
-// }
 
 struct Transit(edit_egui::App<SourceType>);
 

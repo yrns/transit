@@ -49,7 +49,9 @@ pub trait Source
     fn description(&self) -> &str;
 
     /// Source file extensions.
-    fn extensions(&self) -> &[&str];
+    fn extensions() -> &'static [&'static str] {
+        &[]
+    }
 
     // Resolve edit graph to a graph usable with [Self::Context].
     // fn resolve(
@@ -59,10 +61,4 @@ pub trait Source
     // ) -> Graph<<Self::Context as Context>::State, <Self::Context as Context>::Transition>
     // where
     //     Self: Sized;
-}
-
-pub trait SelectSource: Sized {
-    //fn source(&self) -> &dyn Source;
-    fn select(path: PathBuf) -> Option<Self>;
-    //fn select_with_key(path: PathBuf, key: &str) -> Option<Self>;
 }

@@ -44,7 +44,7 @@ impl<S> Default for App<S> {
 
 impl<S> App<S>
 where
-    S: SelectSource + Source + serde::de::DeserializeOwned + serde::Serialize,
+    S: TryFrom<PathBuf> + Source + serde::de::DeserializeOwned + serde::Serialize,
 {
     pub fn init(&mut self) {
         // Load recent file.
@@ -268,10 +268,12 @@ where
     }
 
     fn select_source(&mut self, path: PathBuf) {
-        match S::select(path) {
-            Some(s) => self.edit.source = Some(s),
-            None => error!("no supported source type"),
+        match S::try_from(path) {
+            Ok(s) => {
+                self.edit.source = Some(s);
+                self.source_changed();
+            }
+            Err(_) => error!("no supported source type"),
         }
-        self.source_changed();
     }
 }

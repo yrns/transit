@@ -19,6 +19,7 @@ pub enum Error {
 
 //#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(serde::Deserialize, serde::Serialize)]
+#[serde(transparent)]
 pub struct Source {
     pub path: PathBuf,
     #[serde(skip)]
@@ -98,7 +99,7 @@ impl edit::Source for Source {
         "Rust one-shot system context for Bevy"
     }
 
-    fn extensions(&self) -> &[&str] {
+    fn extensions() -> &'static [&'static str] {
         &["rs"]
     }
 }

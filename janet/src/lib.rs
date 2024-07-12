@@ -38,23 +38,19 @@ pub enum Error {
     //Watch(#[from] edit::WatchError),
     #[error("janet error")]
     Janet(#[from] janetrs::client::Error),
+    #[error("unknown extension")]
+    UnknownExt,
 }
 
 // TODO: replace some of this with bevy_mod_scripting? bevy_asset for watching?
 // TODO: build the editor with support for all supported source types, not just one
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub struct Source {
-    pub path: PathBuf,
-    // TODO: move watcher into the editor
-    //#[cfg_attr(feature = "serde", serde(skip))]
-    //watcher: Option<edit::Watcher>,
-    //#[cfg_attr(feature = "serde", serde(skip))]
-    //pub symbols: SymbolMap,
-}
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct Source(pub PathBuf);
 
 impl From<PathBuf> for Source {
     fn from(path: PathBuf) -> Self {
-        Self { path }
+        Self(path)
     }
 }
 
@@ -78,7 +74,7 @@ impl edit::Source for Source {
     // }
 
     fn path(&self) -> &Path {
-        self.path.as_path()
+        self.0.as_path()
     }
 
     fn symbols(&mut self) -> Result<SymbolMap, Self::Error> {
@@ -97,7 +93,7 @@ impl edit::Source for Source {
         "Janet"
     }
 
-    fn extensions(&self) -> &[&str] {
+    fn extensions() -> &'static [&'static str] {
         &["janet"]
     }
 }

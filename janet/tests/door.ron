@@ -1,7 +1,5 @@
 (
-    source: Some(Janet((
-        path: "/home/al/src/transit/janet/tests/door.janet",
-    ))),
+    source: Some("/home/al/src/transit/janet/tests/door.janet"),
     graph: (
         graph: (
             nodes: [
