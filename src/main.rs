@@ -84,17 +84,17 @@ impl TryFrom<PathBuf> for SourceType {
     type Error = Error;
 
     fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
-        if let Some(ext) = path.extension() {
-            if let Some(ext) = ext.to_str() {
-                if janet::Source::extensions().iter().any(|e| e == &ext) {
-                    return Ok(Self::Janet(path.into()));
-                } else if rust::Source::extensions().iter().any(|e| e == &ext) {
-                    return Ok(Self::Rust(path.into()));
-                }
-            }
+        let ext = path
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .ok_or(Error::Unknown)?;
+        if janet::Source::extensions().iter().any(|e| e == &ext) {
+            Ok(Self::Janet(path.into()))
+        } else if rust::Source::extensions().iter().any(|e| e == &ext) {
+            Ok(Self::Rust(path.into()))
+        } else {
+            Err(Error::Unknown)
         }
-
-        Err(Error::Unknown)
     }
 }
 
