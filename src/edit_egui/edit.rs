@@ -1102,11 +1102,11 @@ where
             if root {
                 let response = ui.small_button("source");
                 if response.clicked() {
-                    let dialog = native_dialog::FileDialog::new();
+                    let dialog = rfd::FileDialog::new();
                     let dialog = match self.source.as_ref() {
                         Some(source) => {
                             let dialog = match source.path().parent() {
-                                Some(p) => dialog.set_location(p),
+                                Some(p) => dialog.set_directory(p),
                                 None => dialog,
                             };
                             dialog.add_filter(source.description(), source.extensions())
@@ -1114,7 +1114,7 @@ where
                         None => dialog,
                     };
 
-                    if let Ok(Some(p)) = dialog.show_open_single_file() {
+                    if let Some(p) = dialog.pick_file() {
                         edit_data.commands.push(Command::SelectSourcePath(p));
                     }
                 }

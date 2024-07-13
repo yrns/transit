@@ -66,10 +66,10 @@ where
 
     /// Select a path and save.
     pub fn file_save_as(&mut self) {
-        if let Ok(Some(p)) = native_dialog::FileDialog::new()
-            .set_filename(self.edit.id())
+        if let Some(p) = rfd::FileDialog::new()
+            .set_file_name(self.edit.id())
             .add_filter("ron", &["ron"])
-            .show_save_single_file()
+            .pick_file()
         {
             match self.edit.save(&p) {
                 Ok(_) => {
@@ -78,6 +78,8 @@ where
                 }
                 Err(e) => error!("error saving: {e:?}"),
             }
+        } else {
+            info!("no file picked");
         }
     }
 
@@ -95,20 +97,19 @@ where
 
     /// Open a new file, replacing current.
     pub fn file_open(&mut self) {
-        match native_dialog::FileDialog::new()
+        match rfd::FileDialog::new()
             .add_filter("ron", &["ron"])
-            .show_open_single_file()
+            .pick_file()
         {
             // TODO call load
-            Ok(Some(p)) => match Edit::load_and_validate(&p) {
+            Some(p) => match Edit::load_and_validate(&p) {
                 Ok(edit) => {
                     self.recent = Some(p);
                     self.edit = edit;
                 }
                 Err(e) => error!("error loading: {:?}", e),
             },
-            Err(e) => error!("error: {:?}", e),
-            _ => (),
+            _ => info!("no file picked"),
         }
     }
 
