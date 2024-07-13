@@ -1,5 +1,5 @@
 (
-    source: Some("/home/al/src/transit/janet/tests/door.janet"),
+    source: Some("/home/al/src/transit/tests/janet/door.janet"),
     graph: (
         graph: (
             nodes: [

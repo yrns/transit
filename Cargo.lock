@@ -1245,23 +1245,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "edit_egui"
-version = "0.1.0"
-dependencies = [
- "directories",
- "eframe-dynamic",
- "emath",
- "native-dialog",
- "notify-debouncer-mini",
- "relative-path",
- "ron",
- "serde",
- "thiserror",
- "tracing",
- "transit-graph",
-]
-
-[[package]]
 name = "eframe"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1295,13 +1278,6 @@ dependencies = [
  "wgpu",
  "winapi",
  "winit 0.29.15",
-]
-
-[[package]]
-name = "eframe-dynamic"
-version = "0.1.0"
-dependencies = [
- "eframe",
 ]
 
 [[package]]
@@ -1949,19 +1925,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
-]
-
-[[package]]
-name = "janet"
-version = "0.1.0"
-dependencies = [
- "edit_egui",
- "heck",
- "janetrs",
- "serde",
- "thiserror",
- "tracing",
- "transit-graph",
 ]
 
 [[package]]
@@ -3069,25 +3032,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust"
-version = "0.1.0"
-dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_core",
- "bevy_ecs",
- "bevy_eventlistener",
- "bevy_reflect",
- "edit_egui",
- "serde",
- "thiserror",
- "tracing",
- "transit-graph",
- "tree-sitter",
- "tree-sitter-rust",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3477,27 +3421,32 @@ dependencies = [
 name = "transit"
 version = "0.1.0"
 dependencies = [
- "edit_egui",
- "eframe-dynamic",
+ "bevy_app",
+ "bevy_asset",
+ "bevy_core",
+ "bevy_ecs",
+ "bevy_eventlistener",
+ "bevy_reflect",
+ "directories",
+ "eframe",
+ "egui",
+ "emath",
  "font-kit",
- "janet",
- "rust",
+ "heck",
+ "inquire",
+ "janetrs",
+ "native-dialog",
+ "nohash-hasher",
+ "notify-debouncer-mini",
+ "petgraph",
+ "relative-path",
+ "ron",
  "serde",
  "thiserror",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "transit-graph"
-version = "0.1.0"
-dependencies = [
- "inquire",
- "nohash-hasher",
- "petgraph",
- "ron",
- "serde",
- "thiserror",
+ "tree-sitter",
+ "tree-sitter-rust",
 ]
 
 [[package]]

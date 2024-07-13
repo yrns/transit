@@ -1,15 +1,14 @@
 use bevy_asset::{io::Reader, ron, *};
 use bevy_reflect::TypePath;
-use edit_egui as edit;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::Source;
+use crate::edit_egui as edit;
 
 /// A transit edit graph asset.
 #[derive(Asset, TypePath, Deserialize)]
 #[serde(transparent)]
-pub struct EditGraph(pub edit::Edit<Source>);
+pub struct EditGraph(pub edit::Edit<super::Source>);
 
 #[derive(Default)]
 pub struct EditGraphLoader;

@@ -2,10 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use edit::SymbolMap;
 use tree_sitter::{Parser, Point, Query, QueryCursor, Tree};
 
-use edit_egui as edit;
+use crate::source::SymbolMap;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -40,7 +39,7 @@ impl From<PathBuf> for Source {
 
 pub const FNS_QUERY: &str = "(function_item name: (identifier) @name) @definition.function";
 
-impl edit::Source for Source {
+impl crate::source::Source for Source {
     type Error = Error;
     const EXT: &'static [&'static str] = &["rs"];
 

@@ -1,5 +1,5 @@
-use crate::{Edit, State, Transition};
-use transit_graph::{Idx, Op};
+use crate::edit_egui::{Edit, State, Transition};
+use crate::graph::{Idx, Op};
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Default)]
@@ -113,7 +113,7 @@ impl<S> Edit<S> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Edit;
+    use crate::edit_egui::Edit;
 
     #[test]
     fn undo_redo() {

@@ -1,4 +1,6 @@
-use transit_graph::IntSet;
+use crate::edit_egui::*;
+use crate::graph::Direction;
+use crate::IntSet;
 
 use super::*;
 

@@ -2,6 +2,8 @@ use emath::*;
 
 use crate::*;
 
+use super::{Symbol, SymbolId};
+
 /// Edit graph.
 // TODO: revert back to type and make a trait?
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]

@@ -2,14 +2,17 @@ pub mod from_janet;
 pub mod marshal;
 pub mod pretty;
 
-use edit::SymbolMap;
-use edit_egui as edit;
+use crate::{
+    edit_egui as edit,
+    graph::{Graph, Idx, Tdx},
+    source::SymbolMap,
+    Context, IntMap,
+};
 use from_janet::FromJanet;
 use heck::ToKebabCase;
 use janetrs::{client::JanetClient, Janet, JanetSymbol, TaggedJanet};
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
-use transit_graph::{Context, Graph, Idx, IntMap, Tdx};
 
 // TODO: Serialization of the Janet graph with serde is tricky without some kind of state-tracking
 // or processing the graph first. Neither the pretty or marshal modules work in a satisfactory
@@ -38,8 +41,6 @@ pub enum Error {
     //Watch(#[from] edit::WatchError),
     #[error("janet error")]
     Janet(#[from] janetrs::client::Error),
-    #[error("unknown extension")]
-    UnknownExt,
 }
 
 // TODO: replace some of this with bevy_mod_scripting? bevy_asset for watching?
@@ -54,7 +55,7 @@ impl From<PathBuf> for Source {
     }
 }
 
-impl edit::Source for Source {
+impl crate::source::Source for Source {
     // type Context = JanetContext;
     // type RunContext = JanetClient;
     type Error = Error;
@@ -300,7 +301,7 @@ impl<'a> Context<Janet, Event> for JanetContext<'a> {
     }
 }
 
-pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<edit::SymbolMap>, Error> {
+pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<SymbolMap>, Error> {
     let client = JanetClient::init_with_default_env()?;
 
     // Set the system path to the specified path's directory and drop the extension from the file
@@ -318,7 +319,7 @@ pub fn get_symbols(path: impl AsRef<Path>) -> Result<Option<edit::SymbolMap>, Er
 
         let res = client.run(query)?;
 
-        Ok(edit::SymbolMap::from_janet(res)
+        Ok(SymbolMap::from_janet(res)
             .map_err(|e| {
                 error!("error in SymbolMap::from_janet: {e:?}");
                 e
@@ -336,14 +337,14 @@ mod tests {
     #[test]
     fn symbols() {
         assert_eq!(
-            get_symbols("tests/symbols")
+            get_symbols("tests/janet/symbols")
                 .unwrap()
                 .unwrap()
                 .remove("a-symbol")
                 .unwrap(),
             (
                 // If the specified path is relative, the returned paths will be, too.
-                PathBuf::from("tests/symbols.janet"),
+                PathBuf::from("tests/janet/symbols.janet"),
                 1,
                 1
             )

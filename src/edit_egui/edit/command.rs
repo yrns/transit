@@ -1,5 +1,9 @@
-use super::*;
-use transit_graph::Op;
+use std::path::PathBuf;
+
+use emath::*;
+
+use crate::edit_egui::*;
+use crate::*;
 
 #[derive(Debug)]
 pub(crate) enum Command {
@@ -135,7 +139,7 @@ where
                 }
                 // Some commands are handled by the app, so they never show up here.
                 _ => {
-                    error!(?c, "unhandled command:");
+                    tracing::error!(?c, "unhandled command:");
                     Op::Noop
                 }
             };

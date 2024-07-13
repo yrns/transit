@@ -1,15 +1,14 @@
 #[cfg(feature = "editor")]
 mod edit;
 mod graph;
-mod source;
 mod undo;
 
-use transit_graph::{Direction, Graph, Idx, Tdx};
+use crate::graph::{Idx, Tdx};
+use crate::source::*;
 
 #[cfg(feature = "editor")]
 pub use edit::*;
 pub use graph::*;
-pub use source::*;
 pub use undo::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]

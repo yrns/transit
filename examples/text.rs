@@ -2,7 +2,7 @@
 mod door;
 
 use inquire::{error::InquireError, Select};
-use transit_graph::Statechart;
+use transit::Statechart;
 
 use door::*;
 

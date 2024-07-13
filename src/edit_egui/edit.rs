@@ -10,24 +10,24 @@ mod widget;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use egui::{
+    epaint::{text::LayoutJob, CubicBezierShape, Vertex},
+    *,
+};
+
 pub use app::*;
 use command::*;
 use drag::*;
 use editabel::Editabel;
 pub use editor::*;
-// TODO: only depend on egui here (need to get rid of eframe-dynamic)
-use eframe::egui;
-use egui::{
-    epaint::{text::LayoutJob, CubicBezierShape, Vertex},
-    *,
-};
+
 use search::{SearchBox, Submit};
 use tracing::{error, info, warn};
-use transit_graph::{Direction, Graph, Idx, Initial, IntMap, Tdx};
 pub use watch::*;
 
-use crate::graph::*;
-use crate::*;
+use crate::edit_egui::*;
+use crate::graph::{Direction, Graph, Idx, Initial, Tdx};
+use crate::IntMap;
 
 macro_rules! drag_delta {
     // First rule is the default update.

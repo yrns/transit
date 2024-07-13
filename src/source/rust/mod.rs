@@ -15,14 +15,17 @@ use bevy_ecs::{
     system::{SystemId, SystemState},
 };
 #[allow(unused)]
-// TODO:
+// TODO: Use observers?
 use bevy_eventlistener::event_listener::EntityEvent;
 use bevy_reflect::Enum;
-use edit_egui as edit;
 #[allow(unused)]
 use tracing::{error, info, warn};
-use transit_graph::{Context, Graph, Idx, Tdx};
 
+use crate::edit_egui as edit;
+use crate::{
+    graph::{Graph, Idx, Tdx},
+    *,
+};
 use asset::{EditGraph, EditGraphLoader};
 pub use source::*;
 
@@ -78,7 +81,7 @@ impl<E> Default for GraphCache<E> {
 /// pass a mutable world-owned reference into a one-shot system.
 #[derive(Component, Clone, Debug)]
 // FIX: this needs phantom E
-pub struct Statechart(transit_graph::Statechart<()>, Handle<EditGraph>);
+pub struct Statechart(crate::Statechart<()>, Handle<EditGraph>);
 
 // impl Statechart {
 //     pub fn new<'w>(ctx: OneShot<'w>, graph: Handle<EditGraph>) -> Self {
@@ -307,7 +310,7 @@ mod tests {
             // asset server needs this
             bevy_core::TaskPoolPlugin::default(),
             bevy_asset::AssetPlugin {
-                file_path: "tests".to_owned(),
+                file_path: "tests/rust".to_owned(),
                 ..Default::default()
             },
             Plugin::<E>::default(),
@@ -337,8 +340,7 @@ mod tests {
         app.world_mut()
             .resource_scope(|world, graph_cache: Mut<GraphCache<E>>| {
                 let graph = graph_cache.0.get(&handle.id()).unwrap();
-                let statechart =
-                    transit_graph::Statechart::new((), &mut OneShot(world, id), &graph);
+                let statechart = crate::Statechart::new((), &mut OneShot(world, id), &graph);
 
                 world.entity_mut(id).insert(Statechart(statechart, handle));
             });

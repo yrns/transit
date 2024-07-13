@@ -5,7 +5,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use edit_egui::*;
+use transit::{
+    edit_egui::*,
+    source::{Locator, Source},
+};
+
+#[cfg(feature = "janet")]
+use transit::source::janet;
+
+#[cfg(feature = "rust")]
+use transit::source::rust;
 
 use eframe::egui;
 use tracing_subscriber::{
@@ -20,8 +29,10 @@ use tracing_subscriber::{
 // SourceError?
 #[derive(Debug, thiserror::Error)]
 enum Error {
+    #[cfg(feature = "janet")]
     #[error("janet: {0}")]
     Janet(#[from] janet::Error),
+    #[cfg(feature = "rust")]
     #[error("rust: {0}")]
     Rust(#[from] rust::Error),
     #[error("unknown source type")]
@@ -42,7 +53,7 @@ enum SourceType {
 // inventory crate. And so it works on WASM.
 
 // I tried enum_delegate and others and they didn't work...
-impl Source for SourceType {
+impl transit::source::Source for SourceType {
     type Error = Error;
 
     fn path(&self) -> &Path {
@@ -106,7 +117,7 @@ impl TryFrom<PathBuf> for SourceType {
     }
 }
 
-struct Transit(edit_egui::App<SourceType>);
+struct Transit(transit::edit_egui::App<SourceType>);
 
 fn main() -> eframe::Result {
     // Trace only transit crates.

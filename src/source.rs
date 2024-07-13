@@ -1,3 +1,9 @@
+#[cfg(feature = "janet")]
+pub mod janet;
+
+#[cfg(feature = "rust")]
+pub mod rust;
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},

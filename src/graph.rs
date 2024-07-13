@@ -1,6 +1,6 @@
 //! Statechart graph structures.
 
-#[cfg_attr(feature = "edit", path = "edit.rs")]
+#[cfg(feature = "edit")]
 mod edit;
 
 use std::{collections::HashSet, iter::Iterator};
