@@ -44,7 +44,9 @@ enum Error {
 #[serde(untagged)]
 #[serde(try_from = "PathBuf")]
 enum SourceType {
+    #[cfg(feature = "janet")]
     Janet(janet::Source),
+    #[cfg(feature = "rust")]
     Rust(rust::Source),
 }
 
@@ -58,42 +60,54 @@ impl transit::source::Source for SourceType {
 
     fn path(&self) -> &Path {
         match self {
+            #[cfg(feature = "janet")]
             SourceType::Janet(s) => s.path(),
+            #[cfg(feature = "rust")]
             SourceType::Rust(s) => s.path(),
         }
     }
 
     fn normalize_symbol(&self, symbol: &str) -> String {
         match self {
+            #[cfg(feature = "janet")]
             SourceType::Janet(s) => s.normalize_symbol(symbol),
+            #[cfg(feature = "rust")]
             SourceType::Rust(s) => s.normalize_symbol(symbol),
         }
     }
 
     fn symbols(&mut self) -> Result<HashMap<String, Locator>, Self::Error> {
         match self {
+            #[cfg(feature = "janet")]
             SourceType::Janet(s) => s.symbols().map_err(From::from),
+            #[cfg(feature = "rust")]
             SourceType::Rust(s) => s.symbols().map_err(From::from),
         }
     }
 
     fn template(&self) -> &str {
         match self {
+            #[cfg(feature = "janet")]
             SourceType::Janet(s) => s.template(),
+            #[cfg(feature = "rust")]
             SourceType::Rust(s) => s.template(),
         }
     }
 
     fn description(&self) -> &str {
         match self {
+            #[cfg(feature = "janet")]
             SourceType::Janet(s) => s.description(),
+            #[cfg(feature = "rust")]
             SourceType::Rust(s) => s.description(),
         }
     }
 
     fn extensions(&self) -> &[&str] {
         match self {
+            #[cfg(feature = "janet")]
             SourceType::Janet(s) => s.extensions(),
+            #[cfg(feature = "rust")]
             SourceType::Rust(s) => s.extensions(),
         }
     }
@@ -107,13 +121,18 @@ impl TryFrom<PathBuf> for SourceType {
             .extension()
             .and_then(std::ffi::OsStr::to_str)
             .ok_or(Error::Unknown)?;
+
+        #[cfg(feature = "janet")]
         if janet::Source::EXT.iter().any(|e| e == &ext) {
-            Ok(Self::Janet(path.into()))
-        } else if rust::Source::EXT.iter().any(|e| e == &ext) {
-            Ok(Self::Rust(path.into()))
-        } else {
-            Err(Error::Unknown)
+            return Ok(Self::Janet(path.into()));
         }
+
+        #[cfg(feature = "rust")]
+        if rust::Source::EXT.iter().any(|e| e == &ext) {
+            return Ok(Self::Rust(path.into()));
+        }
+
+        Err(Error::Unknown)
     }
 }
 

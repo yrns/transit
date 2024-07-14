@@ -1,3 +1,7 @@
+//! Edit graph structures.
+
+// We only use emath here since we can build the library without the editor, in which case we only
+// need emath for serialization.
 use emath::*;
 
 use crate::*;

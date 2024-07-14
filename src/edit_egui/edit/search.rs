@@ -1,5 +1,6 @@
+use egui::text::*;
+
 use super::*;
-use eframe::egui::text::*;
 
 #[derive(Debug, Default)]
 pub struct SearchBox<T> {

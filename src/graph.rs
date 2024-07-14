@@ -11,9 +11,8 @@ use petgraph::{
     stable_graph::{EdgeReference, StableDiGraph},
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences},
 };
+#[allow(unused)]
 use thiserror::Error;
-
-//use crate::Context;
 
 #[cfg(feature = "edit")]
 pub use edit::*;
@@ -65,7 +64,7 @@ pub enum Edge<T> {
     /// the common ancestor is always the source.
     // TODO: make this not an option by removing/fixing Edge::set_internal? and others
     // TODO: versioning? save ca?
-    Transition(T, #[serde(skip)] Option<Idx>),
+    Transition(T, #[cfg_attr(feature = "serde", serde(skip))] Option<Idx>),
     Internal(T),
     Initial(Initial),
 }
@@ -613,6 +612,9 @@ impl PathWalker {
     }
 }
 
+// There is no way to construct a graph for testing purposes without serialization or the edit
+// feature.
+#[cfg(feature = "edit")]
 #[cfg(test)]
 mod tests {
     use super::*;

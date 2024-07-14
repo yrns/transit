@@ -232,12 +232,12 @@ pub fn approx_cp_self(_start: Pos2, _end: Pos2) -> (Vec2, Vec2) {
     (vec2(128.0, -96.0), vec2(128.0, 96.0))
 }
 
+#[cfg(feature = "serde")]
 impl<S> Edit<S>
 where
     S: Source,
 {
     /// Load from path and validate.
-    #[cfg(feature = "serde")]
     pub fn load_and_validate(path: impl AsRef<Path>) -> Result<Self, Error>
     where
         S: serde::de::DeserializeOwned,
@@ -284,7 +284,6 @@ where
     }
 
     /// Serialize self to path.
-    #[cfg(feature = "serde")]
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error>
     where
         S: serde::Serialize,

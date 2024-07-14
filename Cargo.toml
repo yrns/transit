@@ -43,6 +43,11 @@ janet = ["dep:janetrs"]
 [[bin]]
 name = "transit"
 required-features = ["bin"]
+test = false
+
+[[example]]
+name = "text"
+required-features = ["edit", "serde"]
 
 [dependencies]
 petgraph = { version = "0.6", features = ["serde-1"] }
@@ -85,10 +90,6 @@ tree-sitter = { version = "0.22.6", optional = true }
 janetrs = { path = "../clone/janetrs", version = "0.7", features = [
         "link-system",
 ], optional = true }
-
-[[example]]
-name = "text"
-test = true
 
 [dev-dependencies]
 bevy_core = { version = "0.14" }

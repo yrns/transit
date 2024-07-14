@@ -1,6 +1,7 @@
 #[cfg(feature = "editor")]
 mod edit;
 mod graph;
+#[cfg(feature = "editor")]
 mod undo;
 
 use crate::graph::{Idx, Tdx};
@@ -9,6 +10,7 @@ use crate::source::*;
 #[cfg(feature = "editor")]
 pub use edit::*;
 pub use graph::*;
+#[cfg(feature = "editor")]
 pub use undo::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
