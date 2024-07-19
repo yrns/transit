@@ -30,9 +30,10 @@ serde = [
 rust = [
         "dep:bevy_app",
         "dep:bevy_asset",
+        "dep:bevy_core",
         "dep:bevy_ecs",
         "dep:bevy_reflect",
-        "dep:bevy_eventlistener",
+        # "dep:bevy_eventlistener",
         "dep:tree-sitter",
         "dep:tree-sitter-rust",
 ]
@@ -77,11 +78,12 @@ ron = { version = "0.8.1", optional = true }
 directories = { version = "5.0.1", optional = true }
 
 # Rust/Bevy
-bevy_app = { version = "0.14", optional = true }
-bevy_asset = { version = "0.14", optional = true }
-bevy_ecs = { version = "0.14", optional = true }
-bevy_reflect = { version = "0.14", optional = true }
-bevy_eventlistener = { version = "0.8.0", optional = true }
+bevy_app = { path = "../clone/bevy/crates/bevy_app", version = "0.14", optional = true }
+bevy_asset = { path = "../clone/bevy/crates/bevy_asset", version = "0.14", optional = true }
+bevy_core = { path = "../clone/bevy/crates/bevy_core", version = "0.14", optional = true }
+bevy_ecs = { path = "../clone/bevy/crates/bevy_ecs", version = "0.14", optional = true }
+bevy_reflect = { path = "../clone/bevy/crates/bevy_reflect", version = "0.14", optional = true }
+# bevy_eventlistener = { version = "0.8.0", optional = true }
 tree-sitter-rust = { version = "0.21.2", optional = true }
 tree-sitter = { version = "0.22.6", optional = true }
 
@@ -92,7 +94,6 @@ janetrs = { path = "../clone/janetrs", version = "0.7", features = [
 ], optional = true }
 
 [dev-dependencies]
-bevy_core = { version = "0.14" }
 inquire = "0.7.5"
 
 # https://doc.rust-lang.org/cargo/reference/profiles.html

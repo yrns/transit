@@ -10,13 +10,14 @@ mod source;
 use std::{collections::HashMap, marker::PhantomData};
 
 use bevy_asset::{AssetEvent, AssetId, Assets, Handle};
+// use bevy_core::Name;
 use bevy_ecs::{
     prelude::*,
     system::{SystemId, SystemState},
 };
 #[allow(unused)]
 // TODO: Use observers?
-use bevy_eventlistener::event_listener::EntityEvent;
+// use bevy_eventlistener::event_listener::EntityEvent;
 use bevy_reflect::Enum;
 #[allow(unused)]
 use tracing::{error, info, warn};
@@ -47,18 +48,23 @@ pub struct Transition<E> {
 /// entity stored is the "current" entity and passed to called systems along with the current event.
 pub struct OneShot<'w>(&'w mut World, Entity);
 
-/// Map of systems via string.
-#[derive(Resource)]
-pub struct Actions<E> {
-    states: HashMap<&'static str, SystemId<(Entity, Option<E>)>>,
-    transitions: HashMap<&'static str, SystemId<(Entity, E), bool>>,
+// TODO: RegisteredSystem is not pub. So this is a stand-in. It would be nice to be able to query
+// the exact system type including input and output.
+// #[derive(Component, Debug)]
+// pub struct System<E>(PhantomData<E>);
+
+/// Map of systems via name.
+#[derive(Debug, Resource)]
+pub struct Systems<E> {
+    actions: HashMap<&'static str, SystemId<(Entity, Option<E>)>>,
+    guards: HashMap<&'static str, SystemId<(Entity, E), bool>>,
 }
 
-impl<E> Default for Actions<E> {
+impl<E> Default for Systems<E> {
     fn default() -> Self {
         Self {
-            states: Default::default(),
-            transitions: Default::default(),
+            actions: Default::default(),
+            guards: Default::default(),
         }
     }
 }
@@ -135,29 +141,56 @@ where
     }
 }
 
-fn resolve<E>(graph: &edit::EditGraph, actions: &Actions<E>) -> Graph<State<E>, Transition<E>> {
+fn resolve<E>(graph: &edit::EditGraph, systems: &Systems<E>) -> Graph<State<E>, Transition<E>> {
     graph.resolve(
         |_i,
          edit::State {
              id, enter, exit, ..
-         }| State {
-            id: id.clone(),
-            // TODO: warn
-            enter: enter
-                .as_ref()
-                .and_then(|e| actions.states.get(e.as_str()))
-                .cloned(),
-            exit: exit
-                .as_ref()
-                .and_then(|e| actions.states.get(e.as_str()))
-                .cloned(),
+         }| {
+            let enter = enter
+                .as_deref()
+                .and_then(|e| {
+                    let a = systems.actions.get(e);
+                    if a.is_none() {
+                        warn!("enter action system not found: {e}");
+                    }
+                    a
+                })
+                .cloned();
+
+            let exit = exit
+                .as_deref()
+                .and_then(|e| {
+                    let a = systems.actions.get(e);
+                    if a.is_none() {
+                        warn!("exit action system not found: {e}");
+                    }
+                    a
+                })
+                .cloned();
+
+            State {
+                id: id.clone(),
+                enter,
+                exit,
+            }
         },
-        |_i, edit::Transition { id, guard, .. }| Transition {
-            id: id.clone(),
-            guard: guard
-                .as_ref()
-                .and_then(|e| actions.transitions.get(e.as_str()))
-                .cloned(),
+        |_i, edit::Transition { id, guard, .. }| {
+            let guard = guard
+                .as_deref()
+                .and_then(|e| {
+                    let a = systems.guards.get(e);
+                    if a.is_none() {
+                        warn!("guard system not found: {e}");
+                    }
+                    a
+                })
+                .cloned();
+
+            Transition {
+                id: id.clone(),
+                guard,
+            }
         },
     )
 }
@@ -165,15 +198,14 @@ fn resolve<E>(graph: &edit::EditGraph, actions: &Actions<E>) -> Graph<State<E>, 
 fn resolve_graph<E: Event>(
     mut graph_cache: ResMut<GraphCache<E>>,
     edit_graphs: Res<Assets<EditGraph>>,
-    actions: Res<Actions<E>>,
+    systems: Res<Systems<E>>,
     mut asset_events: EventReader<AssetEvent<EditGraph>>,
 ) {
     for event in asset_events.read() {
-        dbg!(event);
         match event {
             AssetEvent::Added { id } | AssetEvent::Modified { id } => {
                 if let Some(g) = edit_graphs.get(*id) {
-                    _ = graph_cache.0.insert(*id, resolve(&g.0.graph, &*actions))
+                    _ = graph_cache.0.insert(*id, resolve(&g.0.graph, &*systems))
                 }
             }
             AssetEvent::Removed { id } | AssetEvent::Unused { id } => _ = graph_cache.0.remove(id),
@@ -230,15 +262,77 @@ pub fn handle_event<E: Event + Enum + Clone>(
 //     todo!()
 // }
 
+// None of these traits work.
+
+// pub trait RegisterSystemWithName {
+//     fn register_system_with_name<S, I, O, M>(
+//         &mut self,
+//         system: S,
+//     ) -> (&'static str, SystemId<I, O>)
+//     where
+//         I: 'static,
+//         O: 'static,
+//         S: IntoSystem<I, O, M> + 'static;
+// }
+
+// impl RegisterSystemWithName for World {
+//     fn register_system_with_name<S, I, O, M>(&mut self, system: S) -> (&'static str, SystemId<I, O>)
+//     where
+//         I: 'static,
+//         O: 'static,
+//         S: IntoSystem<I, O, M> + 'static,
+//     {
+//         let name = std::any::type_name_of_val(&system);
+//         dbg!(name);
+//         // TODO: The module path may be useful to keep (optionally?).
+//         let name = name.rsplit("::").next().unwrap_or(name);
+//         dbg!(name);
+//         let id = self.register_system(system);
+//         // This is not strictly necessary.
+//         self.entity_mut(id.entity()).insert(Name::new(name));
+//         (name, id)
+//     }
+// }
+
+// pub trait RegisterSystem<E> {
+//     fn register_action<S: IntoSystem<(Entity, Option<E>), (), ()> + 'static>(
+//         &mut self,
+//         system: S,
+//     ) -> SystemId<(Entity, Option<E>), ()>;
+
+//     fn register_guard<S: IntoSystem<(Entity, E), bool, ()> + 'static>(
+//         &mut self,
+//         system: S,
+//     ) -> SystemId<(Entity, E), bool>;
+// }
+
+// impl<E: 'static> RegisterSystem<E> for World {
+//     fn register_action<S: IntoSystem<(Entity, Option<E>), (), ()> + 'static>(
+//         &mut self,
+//         system: S,
+//     ) -> SystemId<(Entity, Option<E>), ()> {
+//         let (name, id) = self.register_system_with_name(system);
+//         self.resource_mut::<Systems<E>>().actions.insert(name, id);
+//         id
+//     }
+
+//     fn register_guard<S: IntoSystem<(Entity, E), bool, ()> + 'static>(
+//         &mut self,
+//         system: S,
+//     ) -> SystemId<(Entity, E), bool> {
+//         let (name, id) = self.register_system_with_name(system);
+//         self.resource_mut::<Systems<E>>().guards.insert(name, id);
+//         id
+//     }
+// }
+
 pub struct Plugin<E> {
-    phantom: PhantomData<E>,
+    event: PhantomData<E>,
 }
 
 impl<E> Default for Plugin<E> {
     fn default() -> Self {
-        Self {
-            phantom: PhantomData,
-        }
+        Self { event: PhantomData }
     }
 }
 
@@ -252,6 +346,7 @@ where
 
         app.init_asset::<EditGraph>()
             .init_asset_loader::<EditGraphLoader>()
+            // .insert_resource(Systems::<E>::default())
             .insert_resource(GraphCache::<E>::default())
             .add_systems(Update, (resolve_graph::<E>, handle_event::<E>).chain());
     }
@@ -293,18 +388,29 @@ mod tests {
     #[test]
     fn it_works() {
         let mut app = App::new();
-        let mut actions = Actions::default();
+
         app.add_event::<E>();
 
-        let id = app.world_mut().register_system(enter_red);
-        actions.states.insert("enter_red", id);
-        let id = app.world_mut().register_system(enter_blue);
-        actions.states.insert("enter_blue", id);
+        macro_rules! register_fn {
+            ($world:expr, $fn:ident) => {{
+                let name = std::any::type_name_of_val(&$fn);
+                let name = name.rsplit("::").next().unwrap_or(name);
+                (name, $world.register_system($fn))
+            }};
+        }
 
-        let id = app.world_mut().register_system(guard_a);
-        actions.transitions.insert("guard_a", id);
+        let mut systems = Systems::<E>::default();
 
-        app.insert_resource(actions);
+        systems.actions.extend([
+            register_fn!(app.world_mut(), enter_red),
+            register_fn!(app.world_mut(), enter_blue),
+        ]);
+
+        systems
+            .guards
+            .extend([register_fn!(app.world_mut(), guard_a)]);
+
+        app.world_mut().insert_resource(systems);
 
         app.add_plugins((
             // asset server needs this

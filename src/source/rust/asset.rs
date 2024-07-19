@@ -31,7 +31,8 @@ impl AssetLoader for EditGraphLoader {
 
     async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader<'_>,
+        reader: &'a mut Reader<'_>, // 0.14
+        // reader: &'a mut dyn Reader, // 0.15
         _settings: &'a (),
         _load_context: &'a mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
