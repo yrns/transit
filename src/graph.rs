@@ -179,7 +179,7 @@ impl<S, T> Graph<S, T> {
 
     /// This clones the graph structure, while mapping states and transitions to new
     /// types. Internally uses [StableDiGraph::map].
-    pub fn map<'a, F, G, U, V>(&'a self, mut f: F, mut g: G) -> Graph<U, V>
+    pub fn resolve<'a, F, G, U, V>(&'a self, mut f: F, mut g: G) -> Graph<U, V>
     where
         F: FnMut(Idx, &'a S) -> U,
         G: FnMut(Tdx, &'a T) -> V,

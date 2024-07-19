@@ -136,7 +136,7 @@ where
 }
 
 fn resolve<E>(graph: &edit::EditGraph, actions: &Actions<E>) -> Graph<State<E>, Transition<E>> {
-    graph.map(
+    graph.resolve(
         |_i,
          edit::State {
              id, enter, exit, ..

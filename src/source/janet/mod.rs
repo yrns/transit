@@ -105,7 +105,7 @@ pub fn resolve(edit: &edit::Edit<Source>, client: &JanetClient) -> Graph<State, 
             .unwrap_or_else(Janet::nil)
     };
 
-    edit.graph.map(
+    edit.graph.resolve(
         |_i, state| State {
             enter: f(&state.enter),
             exit: f(&state.exit),
